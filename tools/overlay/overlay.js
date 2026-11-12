@@ -285,6 +285,7 @@
     '.crumbs button[aria-current=true]{background:#fef3c7;border-color:#d97706;color:#92400e;font-weight:600}' +
     '.sel-full{color:#374151;font-size:11px;margin-top:6px;padding-top:6px;border-top:1px dashed #c4c9d2;word-break:break-all}' +
     '.sel-full.bad{color:#b91c1c}' +
+    '.sel-full.bad{color:#b91c1c}' +
     '.sel-full.editable{cursor:text;display:flex;align-items:center}' +
     '.sel-full.editable .sel-edit{margin-left:auto;width:22px;height:22px;padding:3px;flex:none}' +
     '.sel-full .textin{margin-top:4px}' +
@@ -558,17 +559,12 @@
 
   var aMeta = el('div', { class: 'meta' });
   var aName = el('input', { id: 'modio-area-name', type: 'text', class: 'textin', spellcheck: 'false', maxlength: '60' });
-  var aSelIn = el('input', { id: 'modio-area-sel', type: 'text', class: 'textin mono', spellcheck: 'false', maxlength: '200' });
-  var aSelInfo = el('div', { class: 'hint', 'aria-live': 'polite' });
   var aErr = el('div', { class: 'err', role: 'alert' });
   var aCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var aSave = el('button', { type: 'button', class: 'primary', text: 'Übernehmen' });
   var areaPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ah' }, [
     el('h2', { id: 'modio-ah', text: 'Gleichen Bereich festlegen' }),
     aMeta,
-    el('label', { for: 'modio-area-sel', class: 'fl', text: 'Selektor' }),
-    aSelIn,
-    aSelInfo,
     el('label', { for: 'modio-area-name', class: 'fl', text: 'Name des Bereichs' }),
     aName,
     el('div', { class: 'hint', text: 'Der Bereich wird in die Liste aufgenommen, die Seiten bleiben unverändert. Angleichen mit „Für alle Seiten übernehmen“; spätere Änderungen daran überträgt Modio automatisch.' }),
@@ -826,7 +822,7 @@
   function refreshHighlight() {
     if (selecting && hovered) placeHighlight(hovered, false);
     else if (selected && promptPanel.classList.contains('open')) placeHighlight(selected, true);
-    else if (areaPanel.classList.contains('open')) { var af = null; try { af = aSelIn.value.trim() && document.querySelector(aSelIn.value.trim()); } catch (e) { af = null; } if (af) placeHighlight(af, true); else hl.style.display = 'none'; }
+    else if (areaSel && areaPanel.classList.contains('open')) placeHighlight(areaSel, true);
     else hl.style.display = 'none';
     if (previewed && (promptPanel.classList.contains('open') || areaPanel.classList.contains('open'))) placeBox(pv, pvLabel, previewed);
     else hidePreview();
@@ -1061,76 +1057,102 @@
   // Pfadleiste (body bis ursprünglich gewähltes Element) und Selektor der aktuellen Auswahl
   var customSel = null; // von Hand angepasster Selektor (sonst automatisch aus der Auswahl)
   var selEditing = false;
-  function renderMeta() {
-    selEditing = false;
-    renderCrumbs(pMeta, pathLeaf, selected, selectCrumb, promptPanel, function () { return customSel || selectorFor(selected); });
-    var line = pMeta.querySelector('.sel-full');
+
+  // Vollständiger Pfad ab body (ohne body), je Ebene Tag mit ID bzw. Klassen, ohne Positionsangaben
+  function fullPathFor(node) {
+    var segs = [];
+    for (var n = node; n && n.nodeType === 1 && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      var s = n.tagName.toLowerCase();
+      if (n.id && !looksGenerated(n.id)) s += '#' + esc(n.id);
+      var cls = Array.prototype.filter.call(n.classList || [], function (c) { return !looksGenerated(c) && c.indexOf('modio') !== 0; }).slice(0, 3);
+      if (cls.length) s += '.' + cls.map(esc).join('.');
+      segs.unshift(s);
+    }
+    return segs.join(' > ');
+  }
+
+  // Selektorzeile bearbeitbar machen (Doppelklick oder Stift). o: { value, base, validate, apply, rerender }
+  function attachSelEditor(box, o) {
+    var line = box.querySelector('.sel-full');
     if (!line) return;
     line.classList.add('editable');
     line.title = 'Doppelklick zum Bearbeiten';
     var pen = iconButton('pencil', 'Selektor bearbeiten', { class: 'ghost sel-edit' }, true);
-    pen.addEventListener('click', editSelector);
     line.appendChild(pen);
-    line.addEventListener('dblclick', editSelector);
+    var start = function () {
+      if (selEditing) return;
+      selEditing = true;
+      var input = el('input', { type: 'text', class: 'textin mono', spellcheck: 'false', maxlength: '500', 'aria-label': 'Selektor' });
+      input.value = o.value();
+      var info = el('div', { class: 'hint', 'aria-live': 'polite' });
+      clear(line);
+      line.classList.remove('editable');
+      line.appendChild(el('span', { class: 'sel-lbl', text: 'Selektor' }));
+      line.appendChild(input);
+      line.appendChild(info);
+      var found = null;
+      var check = function () {
+        var v = input.value.trim(), list = null, err = v && o.validate ? o.validate(v) : '';
+        found = null;
+        if (v && !err) {
+          try { list = document.querySelectorAll(v); } catch (e) { list = null; }
+          list = list ? Array.prototype.filter.call(list, function (n) { return n !== host && !host.contains(n); }) : null;
+        }
+        if (!v) info.textContent = 'Leer: automatischer Selektor wird verwendet.';
+        else if (err) info.textContent = err;
+        else if (!list) info.textContent = 'Ungültiger Selektor.';
+        else if (!list.length) info.textContent = 'Trifft auf dieser Seite nichts.';
+        else {
+          found = list[0];
+          info.textContent = list.length === 1 ? 'Trifft genau ein Element. Enter übernimmt, Esc bricht ab.' : 'Trifft ' + list.length + ' Elemente, verwendet wird das erste (hervorgehoben). Enter übernimmt.';
+        }
+        var bad = !!v && !found;
+        info.classList.toggle('bad', bad);
+        input.classList.toggle('bad', bad);
+        if (found || o.base()) placeHighlight(found || o.base(), true);
+        return !bad;
+      };
+      var done = function () { selEditing = false; o.rerender(); };
+      var apply = function () {
+        if (!check()) return false;
+        selEditing = false;
+        o.apply(input.value.trim(), found);
+        return true;
+      };
+      input.addEventListener('input', check);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); apply(); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(); }
+      });
+      input.addEventListener('blur', function () { setTimeout(function () { if (selEditing && !apply()) done(); }, 120); });
+      check();
+      setTimeout(function () { input.focus(); }, 0);
+    };
+    pen.addEventListener('click', start);
+    line.addEventListener('dblclick', start);
   }
 
-  // Selektor im Annotationsdialog von Hand anpassen
-  function editSelector() {
-    if (selEditing) return;
-    selEditing = true;
-    var line = pMeta.querySelector('.sel-full');
-    var input = el('input', { type: 'text', class: 'textin mono', spellcheck: 'false', maxlength: '500', 'aria-label': 'Selektor' });
-    input.value = customSel || selectorFor(selected);
-    var info = el('div', { class: 'hint', 'aria-live': 'polite' });
-    clear(line);
-    line.classList.remove('editable');
-    line.appendChild(el('span', { class: 'sel-lbl', text: 'Selektor' }));
-    line.appendChild(input);
-    line.appendChild(info);
-    var found = null;
-    function check() {
-      var v = input.value.trim(), list = null;
-      found = null;
-      if (v) {
-        try { list = document.querySelectorAll(v); } catch (e) { list = null; }
-        list = list ? Array.prototype.filter.call(list, function (n) { return n !== host && !host.contains(n); }) : null;
-      }
-      if (!v) info.textContent = 'Leer: automatischer Selektor wird verwendet.';
-      else if (!list) info.textContent = 'Ungültiger Selektor.';
-      else if (!list.length) info.textContent = 'Trifft auf dieser Seite nichts.';
-      else {
-        found = list[0];
-        info.textContent = list.length === 1 ? 'Trifft genau ein Element. Enter übernimmt, Esc bricht ab.' : 'Trifft ' + list.length + ' Elemente, verwendet wird das erste (hervorgehoben). Enter übernimmt.';
-      }
-      var bad = !!v && !found;
-      info.classList.toggle('bad', bad);
-      input.classList.toggle('bad', bad);
-      placeHighlight(found || selected, true);
-      return !bad;
-    }
-    function apply() {
-      if (!check()) return false;
-      var v = input.value.trim();
-      if (!v) customSel = null;
-      else {
-        selected = found;
-        customSel = v === selectorFor(found) ? null : v;
-        var inChain = false;
-        for (var n = pathLeaf; n; n = n.parentElement) if (n === selected) inChain = true;
-        if (!inChain) pathLeaf = selected;
-      }
-      renderMeta();
-      placeHighlight(selected, true);
-      return true;
-    }
-    input.addEventListener('input', check);
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); if (apply()) pText.focus(); }
-      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); renderMeta(); placeHighlight(selected, true); pText.focus(); }
+  function renderMeta() {
+    selEditing = false;
+    renderCrumbs(pMeta, pathLeaf, selected, selectCrumb, promptPanel, function () { return customSel || selectorFor(selected); });
+    attachSelEditor(pMeta, {
+      value: function () { return customSel || fullPathFor(selected); },
+      base: function () { return selected; },
+      apply: function (v, found) {
+        if (!v) customSel = null;
+        else {
+          selected = found;
+          customSel = v === selectorFor(found) ? null : v;
+          var inChain = false;
+          for (var n = pathLeaf; n; n = n.parentElement) if (n === selected) inChain = true;
+          if (!inChain) pathLeaf = selected;
+        }
+        renderMeta();
+        placeHighlight(selected, true);
+        pText.focus();
+      },
+      rerender: function () { renderMeta(); placeHighlight(selected, true); pText.focus(); },
     });
-    input.addEventListener('blur', function () { setTimeout(function () { if (selEditing && !apply()) { renderMeta(); placeHighlight(selected, true); } }, 120); });
-    check();
-    setTimeout(function () { input.focus(); input.select(); }, 0);
   }
 
   function renderCrumbs(box, leaf, current, onSelect, panel, selFn) {
@@ -2020,51 +2042,48 @@
       .catch(function (err) { dErr.textContent = 'Entfernen fehlgeschlagen: ' + err.message; });
   }
 
-  var areaLeaf = null, areaSel = null, areaNameTouched = false;
+  var areaLeaf = null, areaSel = null, areaNameTouched = false, areaCustom = null;
+  var AREA_BAD = /[<{};@\\]/;
+  function areaSelector() { return areaCustom || (areaSel && areaSelectorFor(areaSel)) || ''; }
   function renderAreaMeta() {
+    selEditing = false;
     renderCrumbs(aMeta, areaLeaf, areaSel, function (node) {
       areaSel = node;
+      areaCustom = null;
       if (!areaNameTouched) aName.value = areaName(node);
       hidePreview();
-      aSelIn.value = areaSelectorFor(node) || '';
       renderAreaMeta();
-    }, areaPanel, null);
-    checkAreaSel();
-  }
-
-  // Selektor im Feld prüfen: gültig, ohne verbotene Zeichen, trifft etwas; ersten Treffer hervorheben
-  function checkAreaSel() {
-    var sel = aSelIn.value.trim();
-    var msg = '', ok = false, found = null;
-    if (!sel) msg = areaSel ? 'Ohne Positionsangabe nicht eindeutig – Selektor anpassen oder ein übergeordnetes Element wählen.' : 'Selektor fehlt.';
-    else if (/[<{};@\\]/.test(sel)) msg = 'Unzulässiges Zeichen (< { } ; @ \\).';
-    else {
-      var list;
-      try { list = document.querySelectorAll(sel); } catch (e) { list = null; }
-      list = list ? Array.prototype.filter.call(list, function (n) { return !host.contains(n) && n !== host; }) : null;
-      if (!list) msg = 'Ungültiger Selektor.';
-      else if (!list.length) msg = 'Trifft auf dieser Seite nichts.';
-      else {
-        ok = true;
-        found = list[0];
-        msg = list.length === 1 ? 'Trifft genau ein Element.' : 'Trifft ' + list.length + ' Elemente, verwendet wird das erste (hervorgehoben).';
-        if (/nth-|:eq\(/.test(sel)) msg += ' Hinweis: Positionsangaben passen oft nicht auf allen Seiten.';
-      }
-    }
-    aSelInfo.textContent = msg;
-    aSelInfo.classList.toggle('bad', !ok);
-    aSelIn.classList.toggle('bad', !ok);
-    aSave.disabled = isBusy() || !ok;
-    if (found) placeHighlight(found, true);
-    else hl.style.display = 'none';
-    return ok;
+    }, areaPanel, function () { return areaSelector() || 'Ohne Positionsangabe nicht eindeutig – Selektor bearbeiten oder ein übergeordnetes Element wählen'; });
+    var line = aMeta.querySelector('.sel-full');
+    if (line && !areaSelector()) line.classList.add('bad');
+    attachSelEditor(aMeta, {
+      value: function () { return areaCustom || fullPathFor(areaSel); },
+      base: function () { return areaSel; },
+      validate: function (v) { return AREA_BAD.test(v) ? 'Unzulässiges Zeichen (< { } ; @ \\).' : v.length > 200 ? 'Höchstens 200 Zeichen.' : ''; },
+      apply: function (v, found) {
+        if (!v) areaCustom = null;
+        else {
+          areaSel = found;
+          areaCustom = v === areaSelectorFor(found) ? null : v;
+          var inChain = false;
+          for (var n = areaLeaf; n; n = n.parentElement) if (n === areaSel) inChain = true;
+          if (!inChain) areaLeaf = areaSel;
+          if (!areaNameTouched) aName.value = areaName(areaSel);
+        }
+        renderAreaMeta();
+        aName.focus();
+      },
+      rerender: function () { renderAreaMeta(); aName.focus(); },
+    });
+    aSave.disabled = isBusy() || !areaSelector();
+    if (areaSel) placeHighlight(areaSel, true);
   }
   function openAreaDialog(node) {
     closePrompt();
     areaLeaf = areaSel = node;
     areaNameTouched = false;
+    areaCustom = null;
     aName.value = areaName(node);
-    aSelIn.value = areaSelectorFor(node) || '';
     aErr.textContent = '';
     areaPanel.classList.add('open');
     renderAreaMeta();
@@ -2074,19 +2093,19 @@
     if (!areaPanel.classList.contains('open')) return;
     areaPanel.classList.remove('open');
     areaLeaf = areaSel = null;
+    areaCustom = null;
+    selEditing = false;
     refreshHighlight();
   }
   aName.addEventListener('input', function () { areaNameTouched = true; });
-  aSelIn.addEventListener('input', checkAreaSel);
-  aSelIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); aSave.click(); } });
   aName.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); aSave.click(); } });
   aCancel.addEventListener('click', closeAreaDialog);
   // Bereich nur in consistency.json aufnehmen (Seiten bleiben unverändert)
   aSave.addEventListener('click', function () {
     if (!areaSel) return;
-    if (!checkAreaSel()) return;
-    var selector = aSelIn.value.trim();
+    var selector = areaSelector();
     var name = aName.value.trim();
+    if (!selector) { aErr.textContent = 'Kein eindeutiger Selektor. Bitte bearbeiten oder ein übergeordnetes Element wählen.'; return; }
     if (!name) { aErr.textContent = 'Bitte einen Namen angeben.'; return; }
     var c = (design && design.consistency) || { shared: [], ignore: ['class:active', 'class:current', 'aria-current'] };
     var shared = (c.shared || []).slice();
