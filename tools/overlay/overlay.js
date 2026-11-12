@@ -2670,6 +2670,8 @@
   var chCssBase = null; // key -> { selector, media, style: {prop: wert} }
   var chDom = [], chCss = [], chFiles = { changed: 0, files: [] };
   var chReady = false;
+  var chSettleUntil = 0; // bis dahin gehört alles, was sich ändert, zum Ausgangszustand (späte Scripts, Stylesheets)
+  var STABLE_MS = 1500; // eine Änderung zählt erst, wenn sie so lange unverändert bleibt
 
   function isModio(n) { return n === host || (n.nodeType === 1 && (n.hasAttribute('data-modio') || n.id === 'modio-overlay-host')); }
   function kids(n) { return Array.prototype.filter.call(n.children, function (c) { return !isModio(c); }); }
@@ -2699,17 +2701,23 @@
     var pairs = [];
     diffWalk(document.body, chRef.body, pairs, true);
     var now = Date.now();
+    if (now < chSettleUntil) {
+      pairs.forEach(function (p) { chNoise.set(p.live, p.live.outerHTML); });
+      return [];
+    }
     return pairs.filter(function (p) {
       var h = p.live.outerHTML;
       if (chNoise.has(p.live) && chNoise.get(p.live) === h) return false;
       if (chAnimated.has(p.live)) return false;
       var seen = chSeen.get(p.live);
-      if (!seen) chSeen.set(p.live, seen = { html: h, times: [] });
+      if (!seen) chSeen.set(p.live, seen = { html: h, times: [], since: now });
       else if (seen.html !== h) {
         seen.html = h;
+        seen.since = now;
         seen.times = seen.times.filter(function (t) { return now - t < 15000; }).concat(now);
         if (seen.times.length >= 3) { chAnimated.add(p.live); return false; }
       }
+      if (now - seen.since < STABLE_MS) { scheduleCheckIn(STABLE_MS - (now - seen.since) + 50); return false; }
       p.after = h;
       p.before = p.ref.outerHTML;
       p.selector = selectorFor(p.ref, chRef);
@@ -2743,13 +2751,20 @@
     return snap;
   }
 
+  var chCssSeen = new Map(); // key -> { sig, since }
   function computeCss() {
     if (!chCssBase) return [];
+    if (Date.now() < chSettleUntil) { chCssBase = cssSnapshot(); return []; }
     var out = [];
+    var now = Date.now();
     cssSnapshot().forEach(function (r, key) {
       var b = chCssBase.get(key);
       var props = Object.keys(r.style).filter(function (p) { return !b || b.selector !== r.selector || b.style[p] !== r.style[p]; });
       if (!props.length) return;
+      var sigText = r.selector + '|' + props.map(function (p) { return p + ':' + r.style[p]; }).join(';');
+      var cs = chCssSeen.get(key);
+      if (!cs || cs.sig !== sigText) { chCssSeen.set(key, cs = { sig: sigText, since: now }); }
+      if (now - cs.since < STABLE_MS) return;
       out.push({
         key: key, selector: r.selector, media: r.media || null,
         decls: props.map(function (p) { return p + ': ' + r.style[p].replace(/\s*!important$/, ''); }).join('; '),
@@ -2769,6 +2784,7 @@
 
   var chTimer = null;
   function scheduleCheck() { clearTimeout(chTimer); chTimer = setTimeout(runCheck, 700); }
+  function scheduleCheckIn(ms) { clearTimeout(chTimer); chTimer = setTimeout(runCheck, ms); }
   function runCheck() {
     if (!chReady) return;
     chDom = computeDom();
@@ -2796,6 +2812,8 @@
           diffWalk(document.body, chRef.body, initial, true);
           initial.forEach(function (p) { chNoise.set(p.live, p.live.outerHTML); });
           chCssBase = cssSnapshot();
+          chSettleUntil = Date.now() + 7500; // insgesamt ca. 10 s nach dem Laden
+          setTimeout(runCheck, 7600);
           chReady = true;
           new MutationObserver(function (list) {
             for (var i = 0; i < list.length; i++) {
@@ -2805,7 +2823,7 @@
               return;
             }
           }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-          setInterval(function () { if (!document.hidden) { chCss = computeCss(); renderChangesButton(); } }, 2000);
+          setInterval(function () { if (!document.hidden) { chCss = computeCss(); renderChangesButton(); } }, 1000);
           setInterval(function () { if (!document.hidden && !isBusy()) loadFileStatus().then(renderChangesButton); }, 5000);
           loadFileStatus().then(runCheck);
         }, 2500);
