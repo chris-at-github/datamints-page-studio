@@ -22,8 +22,19 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 2. „Öffnen“ → Website mit Overlay. **Alt+A** schaltet den Auswahlmodus, **Pfeil hoch** wählt das Elternelement, Klick oder Enter bestätigt.
 3. Prompt eingeben, optional Referenzbilder (Drag-and-drop, Strg+V, Datei, Bild-URL), „gründlich“ = Opus statt Sonnet → Absenden.
 4. Claude setzt um, der Snapshot entsteht, die Seite lädt neu. Bei auffälligen Änderungen erscheint der Prüfdialog.
-5. „Verlauf“ → zu jedem Stand zurückspringen.
-6. Startseite → „Report erzeugen“ → `sites/<slug>/CHANGES.md`.
+5. „Verlauf“ → zu jedem Stand zurückspringen. „Nachbessern“ korrigiert den letzten Schritt in derselben Claude-Session.
+6. „Als Regel merken“ speichert Werte als gesperrte Tokens (`design/tokens.json`) und Regeln (`design/notes.md`), die in jedem folgenden Schritt verbindlich sind. Details: [projektplan-erweiterung-design.md](projektplan-erweiterung-design.md).
+7. Startseite → „Report erzeugen“ → `sites/<slug>/CHANGES.md`.
+
+Neue Einstellungen in der `.env` (alle optional):
+
+```dotenv
+CLAUDE_BARE=false                                  # true nur mit ANTHROPIC_API_KEY oder apiKeyHelper
+CLAUDE_SETTINGS_FILE=./tools/worker/claude-settings.json
+CLAUDE_MAX_BUDGET_USD=0.50                         # leer oder 0 = ohne Obergrenze
+CONTEXT_HISTORY_COUNT=5
+NOTES_MAX_LINES=40
+```
 
 Ohne DDEV: `npm run server` (Port aus `BRIDGE_PORT`, Origin muss in `MODIO_ALLOWED_ORIGINS` stehen).
 
