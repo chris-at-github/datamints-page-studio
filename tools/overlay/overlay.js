@@ -528,6 +528,7 @@
   var pUrlAdd = el('button', { type: 'button', text: 'URL hinzufügen' });
   var pThumbs = el('div', { class: 'thumbs' });
   var pThorough = el('input', { type: 'checkbox' });
+  pThorough.checked = true; // Standard: stärkeres Modell
   var pTitle = el('h2', { id: 'modio-ph', text: 'Annotation' });
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
@@ -1218,7 +1219,7 @@
   function resetPrompt() {
     pText.value = '';
     pUrl.value = '';
-    pThorough.checked = false;
+    pThorough.checked = true;
     pText.placeholder = 'Was soll an diesem Element geändert werden?';
     refs.forEach(function (r) { if (r.kind === 'file' && r.url) URL.revokeObjectURL(r.url); });
     refs = [];
