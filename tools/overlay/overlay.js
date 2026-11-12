@@ -322,6 +322,7 @@
     '.step-sel{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b7280;word-break:break-all}' +
     'details{margin-top:4px;font-size:13px}' +
     'details>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px;color:#4b5563}' +
+    '.step details>summary{color:#1d4ed8;font-weight:500}' +
     'details>summary::-webkit-details-marker{display:none}' +
     'details>summary .ic{transition:transform .15s ease}' +
     'details[open]>summary .ic{transform:rotate(90deg)}' +
@@ -337,6 +338,10 @@
     '.adv .switch{margin-top:6px}' +
     '.checks{display:flex;flex-direction:column;gap:4px;margin-top:10px}' +
     '.hintrow{margin-top:2px}' +
+    'label.fl{font-size:13px;font-weight:600;margin:4px 0 4px}' +
+    'input.textin{width:100%;font:inherit;padding:6px 8px;border:1px solid #cfd5df;border-radius:7px}' +
+    '.ui.sb-design .panel{right:476px}' +
+    '@media (max-width:940px){.ui.sb-design .panel{right:16px}}' +
     '.hintrow .hint{margin:0}' +
     'button.tokbtn{font-size:12px;padding:3px 8px;color:#374151}' +
     '.tokpop{border:1px solid #cfd5df;border-radius:8px;padding:6px;margin-top:4px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.12)}' +
@@ -517,6 +522,24 @@
     el('div', { class: 'row end' }, [pCancel, pSend]),
   ]);
   ui.appendChild(promptPanel);
+
+  // ---------------------------------------------------- Bereichsdialog (gleicher Bereich)
+
+  var aMeta = el('div', { class: 'meta' });
+  var aName = el('input', { id: 'modio-area-name', type: 'text', class: 'textin', spellcheck: 'false', maxlength: '60' });
+  var aErr = el('div', { class: 'err', role: 'alert' });
+  var aCancel = el('button', { type: 'button', text: 'Abbrechen' });
+  var aSave = el('button', { type: 'button', class: 'primary', text: 'Für alle Seiten übernehmen' });
+  var areaPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ah' }, [
+    el('h2', { id: 'modio-ah', text: 'Gleichen Bereich festlegen' }),
+    aMeta,
+    el('label', { for: 'modio-area-name', class: 'fl', text: 'Name des Bereichs' }),
+    aName,
+    el('div', { class: 'hint', text: 'Der Bereich wird von dieser Seite auf alle anderen Seiten kopiert. Spätere Änderungen daran überträgt Modio automatisch.' }),
+    aErr,
+    el('div', { class: 'row end' }, [aCancel, aSave]),
+  ]);
+  ui.appendChild(areaPanel);
 
   // ---------------------------------------------------- Prüfdialog
 
@@ -767,8 +790,9 @@
   function refreshHighlight() {
     if (selecting && hovered) placeHighlight(hovered, false);
     else if (selected && promptPanel.classList.contains('open')) placeHighlight(selected, true);
+    else if (areaSel && areaPanel.classList.contains('open')) placeHighlight(areaSel, true);
     else hl.style.display = 'none';
-    if (previewed && promptPanel.classList.contains('open')) placeBox(pv, pvLabel, previewed);
+    if (previewed && (promptPanel.classList.contains('open') || areaPanel.classList.contains('open'))) placeBox(pv, pvLabel, previewed);
     else hidePreview();
   }
 
@@ -803,7 +827,7 @@
     var mode = selectMode;
     stopSelecting();
     if (mode === 'token') showPick(target);
-    else if (mode === 'area') addArea(target, function (msg) { dErr.textContent = msg; });
+    else if (mode === 'area') openAreaDialog(target);
     else openPrompt(target);
   }
 
@@ -897,6 +921,7 @@
       }
       if (e.key === 'Escape' && isOwn(e)) {
         if (!pTokPop.hidden) { e.preventDefault(); closeTokPop(true); }
+        else if (areaPanel.classList.contains('open')) closeAreaDialog();
         else if (promptPanel.classList.contains('open')) closePrompt();
         else if (historyPanel.classList.contains('open')) closeHistory();
         else if (designPanel.classList.contains('open')) closeDesign();
@@ -915,12 +940,14 @@
 
   function closePanels() {
     closePrompt();
+    closeAreaDialog();
     closeHistory();
     closeDesign();
     reviewPanel.classList.remove('open');
   }
 
   function openPrompt(target) {
+    closeAreaDialog();
     closeHistory();
     reviewPanel.classList.remove('open');
     selected = target;
@@ -992,33 +1019,37 @@
     placeHighlight(selected, true);
   }
 
-  // Seite, Pfadleiste (body bis ursprünglich gewähltes Element) und Selektor der aktuellen Auswahl
+  // Pfadleiste (body bis ursprünglich gewähltes Element) und Selektor der aktuellen Auswahl
   function renderMeta() {
-    var old = pMeta.querySelector('.crumbs');
-    var oldScroll = old && old.modioLeaf === pathLeaf ? old.scrollLeft : null;
-    clear(pMeta);
+    renderCrumbs(pMeta, pathLeaf, selected, selectCrumb, promptPanel);
+  }
+
+  function renderCrumbs(box, leaf, current, onSelect, panel) {
+    var old = box.querySelector('.crumbs');
+    var oldScroll = old && old.modioLeaf === leaf ? old.scrollLeft : null;
+    clear(box);
     var chain = [];
-    for (var n = pathLeaf; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) chain.unshift(n);
+    for (var n = leaf; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) chain.unshift(n);
     var nav = el('div', { class: 'crumbs', role: 'group', 'aria-label': 'Element-Pfad' });
-    nav.modioLeaf = pathLeaf;
+    nav.modioLeaf = leaf;
     chain.forEach(function (node, i) {
       if (i) nav.appendChild(el('span', { class: 'csep', 'aria-hidden': 'true', text: '›' }));
       var b = el('button', { type: 'button', text: crumbLabel(node), title: describe(node) });
-      if (node === selected) b.setAttribute('aria-current', 'true');
+      if (node === current) b.setAttribute('aria-current', 'true');
       b.addEventListener('mouseenter', function () { showPreview(node); });
       b.addEventListener('focus', function () { showPreview(node); });
       b.addEventListener('mouseleave', hidePreview);
       b.addEventListener('blur', hidePreview);
       b.addEventListener('click', function () {
-        selectCrumb(node);
-        var btns = pMeta.querySelectorAll('.crumbs button'); // nach dem Neuaufbau Fokus halten
+        onSelect(node);
+        var btns = box.querySelectorAll('.crumbs button'); // nach dem Neuaufbau Fokus halten
         if (btns[i]) btns[i].focus({ preventScroll: true });
         hidePreview();
       });
       nav.appendChild(b);
     });
-    pMeta.appendChild(nav);
-    pMeta.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), selectorFor(selected)]));
+    box.appendChild(nav);
+    box.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), selectorFor(current)]));
     nav.addEventListener('scroll', function () { crumbFade(nav); });
     nav.addEventListener('wheel', function (e) {
       var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -1041,7 +1072,7 @@
       }
       crumbFade(nav);
     };
-    if (promptPanel.classList.contains('open')) place();
+    if (panel.classList.contains('open')) place();
     else setTimeout(place, 0);
   }
 
@@ -1280,14 +1311,10 @@
   }
 
   // Element als gleichen Bereich aufnehmen und von dieser Seite auf alle Seiten übertragen
-  function addArea(node, onError, onSent) {
+  function addArea(node, name, onError, onSent) {
     if (isBusy()) { onError('Es läuft noch ein Schritt. Bitte warten.'); return; }
     var selector = selectorFor(node);
-    placeHighlight(node, true);
-    var name = window.prompt('„' + selector + '“ wird als gleicher Bereich gemerkt und von dieser Seite auf alle anderen Seiten kopiert.\n\nName des Bereichs:', areaName(node));
-    refreshHighlight();
-    if (name === null) return;
-    name = name.trim();
+    name = String(name || '').trim();
     if (!name) { onError('Bitte einen Namen angeben.'); return; }
     onError('');
     api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/areas/sync', { page: currentPage(), add: { name: name, selector: selector } })
@@ -1901,6 +1928,43 @@
       .catch(function (err) { dErr.textContent = 'Entfernen fehlgeschlagen: ' + err.message; });
   }
 
+  var areaLeaf = null, areaSel = null, areaNameTouched = false;
+  function renderAreaMeta() {
+    renderCrumbs(aMeta, areaLeaf, areaSel, function (node) {
+      areaSel = node;
+      if (!areaNameTouched) aName.value = areaName(node);
+      hidePreview();
+      renderAreaMeta();
+      placeHighlight(areaSel, true);
+    }, areaPanel);
+  }
+  function openAreaDialog(node) {
+    closePrompt();
+    areaLeaf = areaSel = node;
+    areaNameTouched = false;
+    aName.value = areaName(node);
+    aErr.textContent = '';
+    aSave.disabled = isBusy();
+    areaPanel.classList.add('open');
+    renderAreaMeta();
+    placeHighlight(areaSel, true);
+    setTimeout(function () { aName.focus(); aName.select(); }, 0);
+  }
+  function closeAreaDialog() {
+    if (!areaPanel.classList.contains('open')) return;
+    areaPanel.classList.remove('open');
+    areaLeaf = areaSel = null;
+    refreshHighlight();
+  }
+  aName.addEventListener('input', function () { areaNameTouched = true; });
+  aName.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); aSave.click(); } });
+  aCancel.addEventListener('click', closeAreaDialog);
+  aSave.addEventListener('click', function () {
+    if (!areaSel) return;
+    aSave.disabled = true;
+    addArea(areaSel, aName.value, function (msg) { aErr.textContent = msg; if (msg) aSave.disabled = false; }, closeAreaDialog);
+  });
+
   function syncAreas() {
     if (isDirty() && !window.confirm('Ungespeicherte Änderungen an Tokens und Regeln gehen dabei verloren. Trotzdem fortfahren?')) return;
     if (!window.confirm('Alle gleichen Bereiche von dieser Seite (' + currentPage() + ') auf alle anderen Seiten übernehmen?')) return;
@@ -2092,6 +2156,7 @@
   function closeDesign() {
     if (!designPanel.classList.contains('open')) return;
     if (selecting && selectMode !== 'annotate') stopSelecting();
+    closeAreaDialog();
     designPanel.classList.remove('open');
     ui.classList.remove('sb-design');
     if (!historyPanel.classList.contains('open')) ui.classList.remove('sb-open');
