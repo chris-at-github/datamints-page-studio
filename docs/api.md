@@ -41,6 +41,7 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `report` | `{}` | `report.sh <slug>` |
 | `design-save` | `{ file: "jobs/assets/<job-id>-design.json" }` | `design-save.sh <slug> <datei>` |
 | `tokens-propose` | `{}` | `tokens-propose.sh <slug>` |
+| `pages-add` | `{ urls: [..] }` | `pages-add.sh <slug> <urls.txt>` |
 
 `site-recrawl` hat `params.keepDesign` (Standard `true`) und ruft `site-recrawl.sh <slug> --keep-design|--no-keep-design` auf.
 
@@ -97,6 +98,7 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `POST /api/sites/<slug>/recrawl` | JSON `{ keepDesign?: true }` | `202 { job }` |
 | `POST /api/sites/<slug>/annotations` | `multipart/form-data`: Feld `annotation` (JSON), Dateien im Feld `images` | `202 { job }`, `409` wenn für die Website schon ein Job aktiv ist oder auf Prüfung wartet |
 | `POST /api/jobs/<job-id>/decision` | JSON `{ action: "accept"|"discard" }` | `202 { job }` |
+| `POST /api/sites/<slug>/pages` | JSON `{ urls: [..] }` (max. 100, nur Seiten derselben Website) | `202 { job }` (`pages-add`) |
 | `POST /api/sites/<slug>/rollback` | JSON `{ target }` | `202 { job }` |
 | `POST /api/sites/<slug>/report` | – | `202 { job }` |
 | `GET /api/sites/<slug>/design` | – | `{ initialized, tokens, notes, scan, warnings, annotationId }` (Hinweise des letzten Schritts) |

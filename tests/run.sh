@@ -146,15 +146,15 @@ printf '{"consistency":{"shared":[{"name":"Header","selector":"body > header.sit
 OUT="$(./scripts/design-save.sh "$SLUG" "$CS" 2>/dev/null)"
 check "design-save.sh speichert consistency.json" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e ".shared[0].selector == \"body > header.site-header\"" "$S/design/consistency.json" >/dev/null'
 rm -f "$CS"
-LP="$(dirname "$P")/leistungen/index.html"
-mkdir -p "$(dirname "$LP")" && cp "$P" "$LP"
-git -C "$S" add -A && git -C "$S" commit -qm "Testseite leistungen"
+LP="$(dirname "$P")/kontakt.html"
+cp "$P" "$LP"
+git -C "$S" add -A && git -C "$S" commit -qm "Testseite kontakt"
 OUT="$(./scripts/check-consistency.sh "$SLUG" 2>/dev/null)"
 check "Ausgangsstand ohne Abweichung, nur eigene Seiten" '[[ "$(jq ".warnings | length" <<<"$OUT")" == 0 && "$(jq .pages <<<"$OUT")" == 2 ]]'
 ann A-014
 sed -i '0,/<header class="site-header">/s//<header class="site-header"><span>Neu<\/span>/' "$LP"
 set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-014 2>/dev/null)"; rc=$?; set -e
-check "Abweichender Header als Hinweis, Commit trotzdem" '(( rc == 0 )) && jq -e ".warnings | map(select(.rule == \"consistency\")) | .[0].text | test(\"Header weicht ab auf: .*leistungen\")" <<<"$OUT" >/dev/null'
+check "Abweichender Header als Hinweis, Commit trotzdem" '(( rc == 0 )) && jq -e ".warnings | map(select(.rule == \"consistency\")) | .[0].text | test(\"Header weicht ab auf: .*kontakt\")" <<<"$OUT" >/dev/null'
 ann A-015
 printf '<!-- x -->\n' >>"$LP"
 set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-015 2>/dev/null)"; rc=$?; set -e
@@ -166,6 +166,19 @@ check "consistency.json ohne remember: Prüfung nötig" '(( rc == 3 )) && jq -e 
 ./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
 CTX="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null | jq -r .context)"
 check "Gleiche Bereiche im Kontext" 'grep -q "<gleiche-bereiche" <<<"$CTX" && grep -q "Header: body > header.site-header (alle Seiten)" <<<"$CTX"'
+
+echo "Seiten hinzufügen (pages-add.sh)"
+PA="$(mktemp)"
+printf 'http://127.0.0.1:%s/leistungen/\nhttp://127.0.0.1:%s/\nhttps://example.org/fremd\nhttp://127.0.0.1:%s/fehlt.html\n' "$PORT" "$PORT" "$PORT" >"$PA"
+cp "$P" "$S/../pa-before.html"
+OUT="$(./scripts/pages-add.sh "$SLUG" "$PA" 2>/dev/null)"
+check "Seite hinzugefügt und committet" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e ".added | length == 1" <<<"$OUT" >/dev/null && [[ "$(git -C "$S" log -1 --format=%s)" == "[seiten] 1 Seite(n) hinzugefügt" ]]'
+check "Fremde Domain abgelehnt, Duplikat und Fehler erkannt" 'jq -e ".rejected == [\"https://example.org/fremd\"] and (.duplicate | length) == 1 and (.failed | length) == 1" <<<"$OUT" >/dev/null'
+check "urls.txt ergänzt" 'grep -qx "http://127.0.0.1:$PORT/leistungen/" "$S/urls.txt"'
+check "Link auf neue Seite lokal umgeschrieben" 'grep -q "href=\"leistungen/index.html\"" "$P"'
+check "Bisherige Änderungen an vorhandenen Seiten erhalten" '[[ "$(sed "s#href=\"leistungen/index.html\"#X#; s#href=\"http://127.0.0.1:$PORT/leistungen/\"#X#" "$P")" == "$(sed "s#href=\"leistungen/index.html\"#X#; s#href=\"http://127.0.0.1:$PORT/leistungen/\"#X#" "$S/../pa-before.html")" ]]'
+check "Schritte bleiben im Verlauf" '[[ "$(./scripts/history.sh "$SLUG" 2>/dev/null | jq "[.steps[] | select(.kind == \"annotation\")] | length")" -ge 3 ]] && ./scripts/history.sh "$SLUG" 2>/dev/null | jq -e ".steps[-1].kind == \"pages\"" >/dev/null'
+rm -f "$PA" "$S/../pa-before.html"
 
 echo "Kontext (context.sh)"
 OUT="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null)"
@@ -195,6 +208,7 @@ echo "Report und Liste"
 OUT="$(./scripts/report.sh "$SLUG" 2>/dev/null)"
 check "CHANGES.md erzeugt" '[[ -f "$S/CHANGES.md" ]] && grep -q "## A-001" "$S/CHANGES.md" && ! grep -q "## A-003" "$S/CHANGES.md"'
 check "Override-Block im Report" 'grep -q "font-size: 48px" "$S/CHANGES.md"'
+check "Hinzugefügte Seiten im Report" 'grep -q "^## Seiten: 1 Seite(n) hinzugefügt" "$S/CHANGES.md" && grep -q "leistungen/>" "$S/CHANGES.md"'
 check "Report beginnt mit Design-Vorgaben" 'grep -q "^## Design-Vorgaben" "$S/CHANGES.md" && grep -q "| \`color.primary\` | \`#0B5FA5\`" "$S/CHANGES.md"'
 OUT="$(./scripts/site-list.sh 2>/dev/null)"
 check "site-list.sh enthält Website" 'jq -e --arg s "$SLUG" ".sites | map(.slug) | index(\$s)" <<<"$OUT" >/dev/null'

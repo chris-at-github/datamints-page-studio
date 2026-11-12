@@ -351,7 +351,7 @@ async function handleApi(req, res, url) {
     if (!validHttpUrl(body.url)) return sendError(res, 400, 'Bitte eine gültige http- oder https-URL angeben');
     const slug = body.slug ? String(body.slug).trim() : slugFromUrl(body.url);
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Kurzname (a-z, 0-9, Bindestrich)');
-    if (siteExists(slug)) return sendError(res, 409, `Website ${slug} existiert bereits`);
+    if (siteExists(slug)) return sendError(res, 409, `Website ${slug} existiert bereits. Weitere Seiten dieser Website über „Seiten hinzufügen“ in der Websiteliste ergänzen.`);
     const pending = await listJobs((j) => j.type === 'site-new' && j.slug === slug);
     if (pending.some((j) => ACTIVE.includes(j.status))) return sendError(res, 409, `Website ${slug} wird bereits angelegt`);
     const urls = (Array.isArray(body.urls) ? body.urls : []).map((u) => String(u).trim()).filter(Boolean);
@@ -382,7 +382,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, { jobs: [...finished, ...active].map(slimJob) });
   }
 
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -442,6 +442,16 @@ async function handleApi(req, res, url) {
       const body = await readBody(req);
       if (await busyCheck(res, slug, 'Neu einlesen')) return;
       return send(res, 202, { job: await createJob('site-recrawl', slug, { keepDesign: body.keepDesign !== false }) });
+    }
+    if (action === 'pages') {
+      const body = await readBody(req);
+      const urls = [...new Set((Array.isArray(body.urls) ? body.urls : []).map((u) => String(u).trim()).filter(Boolean))];
+      if (!urls.length) return sendError(res, 400, 'Mindestens eine URL angeben');
+      if (urls.length > 100) return sendError(res, 400, 'Höchstens 100 Seiten auf einmal');
+      const bad = urls.find((u) => !validHttpUrl(u));
+      if (bad) return sendError(res, 400, `Ungültige URL: ${bad}`);
+      if (await busyCheck(res, slug, 'Das Hinzufügen von Seiten')) return;
+      return send(res, 202, { job: await createJob('pages-add', slug, { urls }) });
     }
     if (action === 'rollback') {
       const body = await readBody(req);

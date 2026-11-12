@@ -86,8 +86,19 @@ for (const line of log) {
     try { ann = JSON.parse(git('show', `${commit}:annotations/${id}.json`)); } catch { /* manuelle Änderung */ }
   }
   const isDesign = !id && subject.startsWith('[design]');
-  out.push(`## ${id || (isDesign ? 'Design' : commit.slice(0, 10))}${ann.prompt ? '' : ': ' + subject.replace(/^\[design\]\s*/, '')}`, '');
+  const isPages = !id && subject.startsWith('[seiten]');
+  out.push(`## ${id || (isDesign ? 'Design' : isPages ? 'Seiten' : commit.slice(0, 10))}${ann.prompt ? '' : ': ' + subject.replace(/^\[(design|seiten)\]\s*/, '')}`, '');
   out.push(`- Datum: ${dateDe(date)}`, `- Commit: \`${commit.slice(0, 10)}\``);
+  if (isPages) {
+    // Neue Seiten: URLs aus der Commit-Nachricht statt eines riesigen Diffs
+    const urls = git('show', '-s', '--format=%b', commit).split('\n').map((l) => l.trim()).filter((l) => /^https?:\/\//.test(l));
+    const changed = git('show', '--format=', '--name-status', commit).split('\n').filter(Boolean);
+    const added = changed.filter((l) => l.startsWith('A')).length;
+    const modified = changed.filter((l) => l.startsWith('M') && /\.html?$/i.test(l)).length;
+    out.push('', '**Hinzugefügte Seiten**', '', ...urls.map((u) => `- <${u}>`), '');
+    out.push(`${added} Datei(en) neu im Abzug, Links in ${modified} vorhandenen Seite(n) auf lokale Seiten umgeschrieben.`, '');
+    continue;
+  }
   if (ann.page) out.push(`- Seite: \`${ann.page}\``);
   if (ann.selector) out.push(`- Selektor: \`${ann.selector.replace(/`/g, "'")}\``);
   if (ann.thorough) out.push('- Modus: gründlich');

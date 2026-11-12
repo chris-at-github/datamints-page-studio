@@ -37,7 +37,16 @@ export function readConfig(text) {
 }
 
 // Normalisiert ein Element: ignorierte Attribute und Klassen entfernen, Attribute sortieren, Leerraum zusammenfassen
-export function normalize($, node, ignore) {
+// Relative Links seitenunabhängig machen: auf den Pfad im Abzug auflösen (index.html entfällt)
+function resolveLink(v, page) {
+  if (!page || !v || /^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(v)) return v;
+  try {
+    const u = new URL(v, 'http://modio.local/' + page);
+    return u.pathname.replace(/(^|\/)index\.html?$/i, '$1') + u.search + u.hash;
+  } catch { return v; }
+}
+
+export function normalize($, node, ignore, page = '') {
   const ignClasses = new Set(ignore.filter((x) => x.startsWith('class:')).map((x) => x.slice(6)));
   const ignAttrs = new Set(ignore.filter((x) => !x.startsWith('class:')).map((x) => x.replace(/^attr:/, '').toLowerCase()));
   const ser = (n) => {
@@ -47,6 +56,7 @@ export function normalize($, node, ignore) {
       .filter(([k]) => !ignAttrs.has(k.toLowerCase()))
       .map(([k, v]) => {
         if (k.toLowerCase() === 'class') v = v.split(/\s+/).filter((c) => c && !ignClasses.has(c)).sort().join(' ');
+        if (/^(href|src|action|poster)$/i.test(k)) v = resolveLink(v.trim(), page);
         return [k.toLowerCase(), v.replace(/\s+/g, ' ').trim()];
       })
       .filter(([k, v]) => !(k === 'class' && !v))
@@ -59,12 +69,12 @@ export function normalize($, node, ignore) {
 }
 
 // Normalisierte Fassung je Bereich für eine Seite; null, wenn der Bereich fehlt
-function extract(html, shared, ignore) {
+function extract(html, shared, ignore, page) {
   const $ = cheerio.load(html);
   return shared.map((s) => {
     try {
       const n = $(s.selector).first();
-      return n.length ? normalize($, n[0], ignore) : null;
+      return n.length ? normalize($, n[0], ignore, page) : null;
     } catch { return undefined; } // ungültiger Selektor
   });
 }
@@ -121,7 +131,7 @@ export function check(site, { changedOnly = false } = {}) {
   const pages = fs.existsSync(www) ? walk(scope ? path.join(www, scope) : www).map((p) => (scope ? scope + '/' : '') + p).sort() : [];
   const inScope = (s, p) => s.pages === 'all' || s.pages.some((pre) => ('/' + p).startsWith(pre.startsWith('/') ? pre : '/' + pre));
   const now = new Map(); // page -> [werte je Bereich]
-  for (const p of pages) now.set(p, extract(fs.readFileSync(path.join(www, p), 'utf8'), shared, ignore));
+  for (const p of pages) now.set(p, extract(fs.readFileSync(path.join(www, p), 'utf8'), shared, ignore, p));
 
   let before = null;
   let changed = [];
@@ -132,7 +142,7 @@ export function check(site, { changedOnly = false } = {}) {
     for (const p of changed) {
       const old = headVersion(site, p);
       if (old === null) before.delete(p);
-      else before.set(p, extract(old, shared, ignore));
+      else before.set(p, extract(old, shared, ignore, p));
     }
   }
 

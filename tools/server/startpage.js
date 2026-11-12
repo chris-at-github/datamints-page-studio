@@ -12,6 +12,7 @@ function siteRow(s) {
     <td>${esc(dateDe(s.lastChange))}</td>
     <td class="actions">
       <a class="btn primary" href="/s/${esc(s.slug)}/">Öffnen</a>
+      <button class="btn" data-action="pages">Seiten hinzufügen</button>
       <button class="btn" data-action="recrawl">Neu einlesen</button>
       <button class="btn" data-action="report">Report erzeugen</button>
       ${s.hasReport ? `<a class="btn" href="/report/${esc(s.slug)}" target="_blank">Report ansehen</a>` : ''}
@@ -64,6 +65,11 @@ export function renderStartPage({ sites, token }) {
   .st { display:inline-block; min-width:110px; font-weight:600; }
   .st-pending { color:var(--muted); } .st-running { color:var(--accent); } .st-review { color:var(--warn); }
   .st-done { color:var(--ok); } .st-failed { color:var(--err); }
+  dialog { border:1px solid var(--line); border-radius:10px; padding:20px 24px; width:min(640px, calc(100vw - 32px)); box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  dialog::backdrop { background:rgba(16,24,40,.35); }
+  dialog h2 { margin-bottom:4px; }
+  dialog p.muted { word-break:normal; overflow-wrap:anywhere; }
+  dialog .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
   details summary { cursor:pointer; color:var(--muted); }
   label.inline { display:flex; gap:8px; align-items:center; font-weight:400; font-size:14px; margin:0 0 8px; }
 </style>
@@ -102,10 +108,24 @@ export function renderStartPage({ sites, token }) {
     </table>
   </section>
 </main>
+<dialog id="pages-dialog" aria-labelledby="pages-title">
+  <form id="pages-form" method="dialog">
+    <h2 id="pages-title">Seiten hinzufügen</h2>
+    <p class="muted" id="pages-site"></p>
+    <label for="pages-urls">Weitere Seiten derselben Website, eine URL pro Zeile</label>
+    <textarea id="pages-urls" required></textarea>
+    <p class="muted">Bisherige Schritte und Design-Vorgaben bleiben erhalten. Neue Seiten kommen im Originalzustand dazu, die Regeln aus overrides.css und die Tokens gelten auch für sie. Direkte HTML-Änderungen früherer Schritte (z. B. am Header) haben die neuen Seiten noch nicht.</p>
+    <div id="pages-msg" class="err" role="alert"></div>
+    <div class="actions">
+      <button class="btn" type="button" id="pages-cancel">Abbrechen</button>
+      <button class="btn primary" type="submit">Seiten laden</button>
+    </div>
+  </form>
+</dialog>
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge' };
+  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');
@@ -136,6 +156,7 @@ export function renderStartPage({ sites, token }) {
     if (!btn) return;
     const slug = btn.closest('tr').dataset.slug;
     const action = btn.dataset.action;
+    if (action === 'pages') { openPages(slug); return; }
     const keepDesign = document.getElementById('keep-design').checked;
     if (action === 'recrawl' && !confirm('Website „' + slug + '“ neu einlesen?\\n\\nDer bisherige Stand wird mit Report archiviert, alle Änderungen sind danach nicht mehr aktiv.\\n' +
       (keepDesign ? 'Tokens und Regeln werden übernommen.' : 'Tokens und Regeln werden NICHT übernommen.'))) return;
@@ -149,6 +170,47 @@ export function renderStartPage({ sites, token }) {
     catch (err) { alert(err.message); }
     finally { btn.disabled = false; }
   });
+
+  // Seiten hinzufügen
+  const pagesDialog = document.getElementById('pages-dialog');
+  const pagesForm = document.getElementById('pages-form');
+  const pagesUrls = document.getElementById('pages-urls');
+  const pagesMsg = document.getElementById('pages-msg');
+  let pagesSlug = null;
+  function openPages(slug) {
+    pagesSlug = slug;
+    const row = document.querySelector('tr[data-slug="' + CSS.escape(slug) + '"] a.muted');
+    document.getElementById('pages-site').textContent = slug + (row ? ' · ' + row.textContent : '');
+    pagesUrls.placeholder = row ? new URL('weitere-seite/', row.textContent).href + '\\n' + new URL('kontakt/', row.textContent).href : '';
+    pagesMsg.textContent = '';
+    pagesDialog.showModal();
+    pagesUrls.focus();
+  }
+  document.getElementById('pages-cancel').addEventListener('click', () => pagesDialog.close());
+  pagesForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const urls = pagesUrls.value.split(/\\s+/).map((s) => s.trim()).filter(Boolean);
+    if (!urls.length) { pagesMsg.textContent = 'Bitte mindestens eine URL eintragen.'; return; }
+    const btn = pagesForm.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const { job } = await api('/api/sites/' + pagesSlug + '/pages', { method: 'POST', body: JSON.stringify({ urls }) });
+      upsert(job);
+      pagesUrls.value = '';
+      pagesDialog.close();
+    } catch (err) { pagesMsg.textContent = err.message; }
+    finally { btn.disabled = false; }
+  });
+
+  function pagesDetails(r) {
+    const parts = [];
+    if (r.added?.length) parts.push(r.added.length + ' Seite(n) neu');
+    if (r.present?.length) parts.push(r.present.length + ' schon im Abzug');
+    if (r.duplicate?.length) parts.push(r.duplicate.length + ' schon in der Liste');
+    if (r.failed?.length) parts.push('nicht geladen: ' + r.failed.join(', '));
+    if (r.rejected?.length) parts.push('andere Website, ignoriert: ' + r.rejected.join(', '));
+    return parts.join(' · ') || 'keine neuen Seiten';
+  }
 
   const MAX_JOBS = 10;
   function cell(text, cls) { const td = document.createElement('td'); if (cls) td.className = cls; if (text != null) td.textContent = text; return td; }
@@ -164,6 +226,7 @@ export function renderStartPage({ sites, token }) {
       status.append(st);
       const details = cell();
       if (j.type === 'annotate' && j.params?.prompt) details.append('„' + j.params.prompt.slice(0, 80) + (j.params.prompt.length > 80 ? '…' : '') + '“');
+      if (j.type === 'pages-add' && j.status === 'done' && j.result) details.append(pagesDetails(j.result));
       if (j.type === 'report' && j.status === 'done') { const a = document.createElement('a'); a.href = '/report/' + j.slug; a.target = '_blank'; a.textContent = 'Report ansehen'; details.append(a); }
       if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; details.append(e); }
       const when = new Date(j.created).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
@@ -177,7 +240,7 @@ export function renderStartPage({ sites, token }) {
   const es = new EventSource('/api/events?token=' + encodeURIComponent(TOKEN));
   es.addEventListener('job', (e) => upsert(JSON.parse(e.data)));
   // Liste neu laden, aber keine laufende Eingabe verwerfen
-  es.addEventListener('sites', () => { if (!document.getElementById('url').value && !document.getElementById('urls').value) location.reload(); });
+  es.addEventListener('sites', () => { if (!document.getElementById('url').value && !document.getElementById('urls').value && !pagesDialog.open) location.reload(); });
 })();
 </script>
 </body>

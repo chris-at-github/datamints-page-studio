@@ -112,6 +112,12 @@ async function handle(job, logFile) {
       if (!/^jobs\/assets\/job-\d{14}-[0-9a-f]{6}-design\.json$/.test(file)) return { code: 1, result: { status: 'error', error: 'Ungültige Datei' } };
       return runScript('design-save.sh', [slug, path.join(ROOT, file)], logFile);
     }
+    case 'pages-add': {
+      const urls = (job.params?.urls || []).map(String).filter((u) => /^https?:\/\/\S+$/.test(u));
+      const f = path.join(JOBS_DIR, 'assets', `${job.id}-urls.txt`);
+      await fsp.writeFile(f, urls.join('\n') + '\n');
+      return runScript('pages-add.sh', [slug, f], logFile);
+    }
     case 'tokens-propose':
       return runScript('tokens-propose.sh', [slug], logFile);
     case 'annotate':
@@ -185,7 +191,7 @@ async function processJob(id) {
       if (ref.type === 'upload' && /^jobs\/assets\/[^/]+$/.test(ref.file)) await fsp.rm(path.join(ROOT, ref.file), { force: true });
     }
   }
-  if (job.type === 'site-new') await fsp.rm(path.join(JOBS_DIR, 'assets', `${id}-urls.txt`), { force: true });
+  if (job.type === 'site-new' || job.type === 'pages-add') await fsp.rm(path.join(JOBS_DIR, 'assets', `${id}-urls.txt`), { force: true });
   if (job.type === 'design-save') await fsp.rm(path.join(JOBS_DIR, 'assets', `${id}-design.json`), { force: true });
 
   await refreshState(job.slug, logFile).catch((e) => log(`Status-Aktualisierung fehlgeschlagen: ${e.message}`));

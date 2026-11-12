@@ -23,6 +23,8 @@ for (const c of candidates) {
     process.exit(0);
   }
 }
+// Mit ENTRY_STRICT=1 kein Fallback (pages-add.sh: jede Seite muss selbst gefunden werden)
+if (process.env.ENTRY_STRICT === '1') process.exit(1);
 // Fallback: erste HTML-Datei im Host-Ordner
 const hostDir = path.join(wwwDir, host);
 if (fs.existsSync(path.join(hostDir, 'index.html'))) {

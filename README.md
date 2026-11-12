@@ -18,7 +18,7 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 
 ## Bedienung
 
-1. `https://modio.ddev.site:3443` öffnen, URL eintragen (optional Seitenliste) → Abzug wird erstellt.
+1. `https://modio.ddev.site:3443` öffnen, URL eintragen (optional Seitenliste) → Abzug wird erstellt. Weitere Seiten einer bestehenden Website später über „Seiten hinzufügen“ in der Websiteliste: Die bisherigen Schritte bleiben erhalten, nur fehlende Dateien kommen dazu, Links auf die neuen Seiten zeigen danach auf den Abzug.
 2. „Öffnen“ → Website mit Overlay. **Alt+A** schaltet den Auswahlmodus, **Pfeil hoch** wählt das Elternelement, Klick oder Enter bestätigt.
 3. Prompt eingeben, optional Referenzbilder (Drag-and-drop, Strg+V, Datei, Bild-URL), „gründlich“ = Opus statt Sonnet → Absenden.
 4. Claude setzt um, der Snapshot entsteht, die Seite lädt neu. Bei auffälligen Änderungen erscheint der Prüfdialog.

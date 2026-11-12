@@ -19,9 +19,9 @@
   var IMAGE_MAX_MB = Number(CFG.imageMaxMb) || 10;
   var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1 };
+  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1 };
+  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -629,6 +629,7 @@
     'site-new': 'Abzug',
     'design-save': 'Design-Vorgaben',
     'tokens-propose': 'Token-Vorschläge',
+    'pages-add': 'Seiten hinzufügen',
   };
 
   var followupJob = null; // Annotation, die gerade nachgebessert wird
@@ -1231,6 +1232,8 @@
       msg = 'Report erzeugt (CHANGES.md).';
     } else if (job.type === 'design-save') {
       msg = r.status === 'nochange' ? 'Design-Vorgaben unverändert.' : 'Design-Vorgaben gespeichert.';
+    } else if (job.type === 'pages-add') {
+      msg = (r.added && r.added.length ? r.added.length + ' Seite(n) hinzugefügt.' : 'Keine neuen Seiten.') + (r.failed && r.failed.length ? '\nNicht geladen: ' + r.failed.join(', ') : '');
     } else if (job.type === 'tokens-propose') {
       var added = r.added || [];
       msg = added.length ? added.length + ' Token(s) aus dem Abzug übernommen (ungesperrt): ' + added.join(', ') : 'Keine neuen Tokens aus dem Abzug.';
