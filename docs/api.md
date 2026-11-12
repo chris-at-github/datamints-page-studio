@@ -65,6 +65,23 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `tokens-css-manual` | block | `design/tokens.css` weicht vom Ergebnis von `tokens-build.sh` ab |
 | `token-literal` | warn | Literalwert in `overrides.css` entspricht einem Farb- oder Schrift-Token |
 | `token-new` | warn | neuer, nicht gesperrter Token |
+| `consistency-changed` | block | `design/consistency.json` geändert ohne `remember` |
+| `consistency` | warn | Bereich aus `consistency.json` weicht auf einzelnen Seiten ab oder fehlt (`check-consistency.sh`, nur durch den Schritt neu entstandene Abweichungen) |
+| `consistency-config` | warn | `consistency.json` ungültig oder Selektor nicht auswertbar |
+
+`design/consistency.json`:
+
+```json
+{
+  "shared": [
+    { "name": "Header", "selector": "header.site-header", "pages": "all" },
+    { "name": "Footer", "selector": "footer.site-footer", "pages": ["/www.example.de/leistungen/"] }
+  ],
+  "ignore": ["class:active", "class:current", "aria-current"]
+}
+```
+
+`pages`: `"all"` oder Liste von Seitenpfad-Präfixen (wie `page` in der Annotation). `ignore`: Klassen (`class:<name>`) und Attribute, die beim Vergleich entfallen.
 
 ## Exit-Codes der Skripte
 

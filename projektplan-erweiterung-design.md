@@ -292,7 +292,7 @@ Neue Skripte: `context.sh`, `tokens-build.sh`, `tokens-scan.sh`, `tokens-propose
 
 ## 17. Umsetzungsstand und Abweichungen (12.11.2026)
 
-**Umgesetzt:** E1 bis E4 vollständig, aus E5 noch nichts (Design-Panel, `check-consistency.sh`, Token-Übernahme per Elementklick).
+**Umgesetzt:** E1 bis E5 vollständig (E5: Design-Panel im Overlay, `check-consistency.sh`, Token-Übernahme per Elementklick).
 
 **Abweichungen vom Plan:**
 
@@ -306,3 +306,8 @@ Neue Skripte: `context.sh`, `tokens-build.sh`, `tokens-scan.sh`, `tokens-propose
 - **Startkontext bei Anmeldung per Claude-Konto (Abschnitt 16):** `--setting-sources project,local` (keine Benutzereinstellungen, damit keine Plugins und Hooks aus `~/.claude/settings.json`), `--strict-mcp-config` (keine MCP-Server) und `--disable-slash-commands` (keine Skills). Mit `CLAUDE_BARE=true` zusätzlich `--bare` und `--append-system-prompt-file sites/<slug>/CLAUDE.md`; ohne `ANTHROPIC_API_KEY` und ohne `apiKeyHelper` bricht der Schritt mit einer klaren Meldung ab.
 - **`rollback.sh`:** Doch eine Änderung: Zwei Rücksprünge in derselben Sekunde erzeugten denselben Tag-Namen `verworfen/<datum>`, der zweite brach ab. Jetzt wird ein Zähler angehängt.
 - **`.env.example`:** Die neuen Schlüssel stehen im README, die Vorlage selbst ist noch zu ergänzen.
+- **`check-consistency.sh` (E5):** Parser ist `cheerio` (neue Abhängigkeit). Verglichen werden nur Seiten der Website selbst (Ordner der Einstiegsseite unter `www/`), keine mitgeladenen fremden Dokumente. Referenz ist die Mehrheitsfassung, bei Gleichstand die der unveränderten Seiten. `commit-step.sh` ruft das Skript mit `--changed-only` auf: Gemeldet wird nur, was der Schritt neu verursacht oder verändert hat, damit eine schon im Original vorhandene Abweichung nicht bei jedem Schritt erneut auftaucht. Bei einer Seitenliste in `pages` wird auch ein fehlender Bereich gemeldet. Ungültige Selektoren oder ein defektes `consistency.json` ergeben den Hinweis `consistency-config`. `ignore` versteht `class:<name>` sowie Attributnamen (optional als `attr:<name>`).
+- **`consistency.json` geschützt:** Ändert Claude die Datei ohne `remember`, meldet `check-diff.sh` `consistency-changed` (block), sonst könnte ein Schritt die eigene Prüfung abschalten.
+- **Gleiche Bereiche im Kontext:** `context.sh` nennt die Bereiche aus `consistency.json` im Block `<gleiche-bereiche>`, `templates/CLAUDE.md` verlangt, sie auf allen betroffenen Seiten gleich zu ändern. `run-annotation.sh` ruft `design-init.sh` jetzt auch auf, wenn `CLAUDE.md` von der Vorlage abweicht (Commit `[design] Vorlagen aktualisiert`).
+- **Design-Panel (E5):** Als Seitenleiste wie der Verlauf statt als Tab, Knopf „Design“ in der Leiste. Speichern schickt nur Tokens oder Regeln, die sich geändert haben. Ungespeicherte Änderungen bleiben beim Schließen erhalten. Nach Speichern oder Ableiten lädt die Seite neu und das Panel öffnet sich wieder. Zusätzlich zeigt das Panel die häufigsten Werte aus `.scan.json` zum Übernehmen.
+- **Token per Elementklick (E5):** Liest Textfarbe, Hintergrund, Rahmenfarbe, Schrift, Schriftgröße, Eckenradius, Schatten und Innenabstand aus `getComputedStyle` (Farben als Hex) und füllt damit die Zeile „Token hinzufügen“ samt Namensvorschlag vor. Werte, für die es schon einen Token gibt, werden als „= key“ angezeigt.

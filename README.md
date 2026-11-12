@@ -24,7 +24,9 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 4. Claude setzt um, der Snapshot entsteht, die Seite lädt neu. Bei auffälligen Änderungen erscheint der Prüfdialog.
 5. „Verlauf“ → zu jedem Stand zurückspringen. „Nachbessern“ korrigiert den letzten Schritt in derselben Claude-Session.
 6. „Als Regel merken“ speichert Werte als gesperrte Tokens (`design/tokens.json`) und Regeln (`design/notes.md`), die in jedem folgenden Schritt verbindlich sind. Details: [projektplan-erweiterung-design.md](projektplan-erweiterung-design.md).
-7. Startseite → „Report erzeugen“ → `sites/<slug>/CHANGES.md`.
+7. Der Knopf „Design“ im Overlay öffnet die Design-Vorgaben: Tokens bearbeiten und sperren, Regeln pflegen, Werte per Klick auf ein Element übernehmen oder aus dem Abzug ableiten lassen.
+8. In `sites/<slug>/design/consistency.json` lassen sich Bereiche eintragen, die auf allen Seiten gleich sein müssen (z. B. Header). Weicht ein Schritt davon ab, erscheint ein Hinweis.
+9. Startseite → „Report erzeugen“ → `sites/<slug>/CHANGES.md`.
 
 Neue Einstellungen in der `.env` (alle optional):
 
