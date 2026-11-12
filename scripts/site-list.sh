@@ -11,8 +11,9 @@ for dir in "$SITES_DIR"/*/; do
   steps="$(git -C "$dir" rev-list --count baseline..HEAD 2>/dev/null || echo 0)"
   last="$(git -C "$dir" log -1 --format=%aI 2>/dev/null || echo "")"
   report="false"; [[ -f "$dir/CHANGES.md" ]] && report="true"
-  entry="$(jq -c --argjson steps "$steps" --arg last "$last" --argjson report "$report" \
-    '{slug, url, host, entry, crawledAt, steps:$steps, lastChange:$last, hasReport:$report}' "$dir/site.json")"
+  pages=0; [[ -f "$dir/urls.txt" ]] && pages="$(grep -c . "$dir/urls.txt" || true)"
+  entry="$(jq -c --argjson steps "$steps" --arg last "$last" --argjson report "$report" --argjson pages "${pages:-0}" \
+    '{slug, url, host, entry, crawledAt, steps:$steps, pages:$pages, lastChange:$last, hasReport:$report}' "$dir/site.json")"
   SITES="$(jq -c --argjson e "$entry" '. + [$e]' <<<"$SITES")"
 done
 OUT="$(jq -c '{sites: (. | sort_by(.slug)), updated: (now | todate)}' <<<"$SITES")"

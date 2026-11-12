@@ -4,18 +4,26 @@ const esc = (s) =>
 
 const dateDe = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '–');
 
+const domainOf = (u) => { try { return new URL(u).host; } catch { return u; } };
+
 function siteRow(s) {
   return `<tr data-slug="${esc(s.slug)}">
-    <td><strong>${esc(s.slug)}</strong><br><a class="muted" href="${esc(s.url)}" rel="noreferrer noopener" target="_blank">${esc(s.url)}</a></td>
+    <td><strong>${esc(s.slug)}</strong><br><a class="muted site-url" href="${esc(s.url)}" title="${esc(s.url)}" rel="noreferrer noopener" target="_blank">${esc(s.host || domainOf(s.url))}</a></td>
+    <td class="num">${esc(s.pages ?? '–')}</td>
     <td class="num">${esc(s.steps)}</td>
     <td>${esc(dateDe(s.crawledAt))}</td>
     <td>${esc(dateDe(s.lastChange))}</td>
     <td class="actions">
       <a class="btn primary" href="/s/${esc(s.slug)}/">Öffnen</a>
-      <button class="btn" data-action="pages">Seiten hinzufügen</button>
-      <button class="btn" data-action="recrawl">Neu einlesen</button>
-      <button class="btn" data-action="report">Report erzeugen</button>
-      ${s.hasReport ? `<a class="btn" href="/report/${esc(s.slug)}" target="_blank">Report ansehen</a>` : ''}
+      <span class="menu-wrap">
+        <button class="btn menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-${esc(s.slug)}" aria-label="Weitere Aktionen für ${esc(s.slug)}">Aktionen <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <span class="menu" id="menu-${esc(s.slug)}" role="menu" hidden>
+          <button type="button" role="menuitem" data-action="pages">Seiten hinzufügen</button>
+          <button type="button" role="menuitem" data-action="recrawl">Neu einlesen</button>
+          <button type="button" role="menuitem" data-action="report">Report erzeugen</button>
+          ${s.hasReport ? `<a role="menuitem" href="/report/${esc(s.slug)}" target="_blank">Report ansehen</a>` : ''}
+        </span>
+      </span>
     </td>
   </tr>`;
 }
@@ -23,7 +31,7 @@ function siteRow(s) {
 export function renderStartPage({ sites, token }) {
   const rows = sites.length
     ? sites.map(siteRow).join('')
-    : '<tr><td colspan="5" class="muted">Noch keine Websites. Lege oben die erste an.</td></tr>';
+    : '<tr><td colspan="6" class="muted">Noch keine Websites. Lege oben die erste an.</td></tr>';
   return `<!doctype html>
 <html lang="de">
 <head>
@@ -55,7 +63,16 @@ export function renderStartPage({ sites, token }) {
   th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { font-size:13px; color:var(--muted); font-weight:600; }
   td.num { text-align:right; }
-  td.actions { white-space:nowrap; }
+  td.actions { white-space:nowrap; text-align:right; }
+  th.actions { text-align:right; }
+  .menu-wrap { position:relative; display:inline-block; }
+  .menu-btn { display:inline-flex; align-items:center; gap:4px; }
+  .menu { position:absolute; right:0; top:calc(100% + 4px); z-index:10; min-width:190px; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px rgba(16,24,40,.14); padding:4px; display:flex; flex-direction:column; text-align:left; }
+  .menu[hidden] { display:none; }
+  .menu > * { display:block; width:100%; text-align:left; padding:7px 10px; border:0; border-radius:5px; background:none; font:inherit; font-size:14px; color:var(--fg); text-decoration:none; cursor:pointer; }
+  .menu > *:hover, .menu > *:focus-visible { background:#f2f4f7; outline:none; }
+  .menu > *:focus-visible { box-shadow:inset 0 0 0 2px #91a7ff; }
+  .muted.site-url { word-break:normal; }
   .muted { color:var(--muted); font-size:13px; word-break:break-all; }
   #msg { min-height:1.5em; margin-top:10px; }
   .err { color:var(--err); } .ok { color:var(--ok); }
@@ -102,7 +119,7 @@ export function renderStartPage({ sites, token }) {
   <section>
     <h2>Websites</h2>
     <table>
-      <thead><tr><th>Website</th><th class="num">Schritte</th><th>Abzug</th><th>Letzte Änderung</th><th>Aktionen</th></tr></thead>
+      <thead><tr><th>Website</th><th class="num">Seiten</th><th class="num">Schritte</th><th>Abzug</th><th>Letzte Änderung</th><th class="actions">Aktionen</th></tr></thead>
       <tbody id="sites">${rows}</tbody>
     </table>
     <label class="inline below"><input type="checkbox" id="keep-design" checked> Beim Neu einlesen Design-Vorgaben (Tokens und Regeln) behalten</label>
@@ -158,11 +175,49 @@ export function renderStartPage({ sites, token }) {
     } catch (err) { say(err.message, 'err'); }
   });
 
+  // Aktionsmenü je Website
+  let openMenu = null;
+  function closeMenu(focusBtn) {
+    if (!openMenu) return;
+    openMenu.menu.hidden = true;
+    openMenu.btn.setAttribute('aria-expanded', 'false');
+    if (focusBtn) openMenu.btn.focus();
+    openMenu = null;
+  }
+  function showMenu(btn, focusFirst) {
+    closeMenu();
+    const menu = document.getElementById(btn.getAttribute('aria-controls'));
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    openMenu = { btn, menu };
+    if (focusFirst) menu.querySelector('[role=menuitem]').focus();
+  }
+  document.getElementById('sites').addEventListener('click', (e) => {
+    const mb = e.target.closest('.menu-btn');
+    if (!mb) return;
+    if (openMenu && openMenu.btn === mb) closeMenu(); else showMenu(mb, e.detail === 0);
+  });
+  document.addEventListener('click', (e) => { if (openMenu && !e.target.closest('.menu-wrap')) closeMenu(); });
+  document.addEventListener('keydown', (e) => {
+    const mb = e.target.closest && e.target.closest('.menu-btn');
+    if (mb && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); showMenu(mb, true); return; }
+    if (!openMenu) return;
+    const items = [...openMenu.menu.querySelectorAll('[role=menuitem]')];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'Tab') closeMenu();
+  });
+
   document.getElementById('sites').addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
     const slug = btn.closest('tr').dataset.slug;
     const action = btn.dataset.action;
+    closeMenu();
     if (action === 'pages') { openPages(slug); return; }
     const keepDesign = document.getElementById('keep-design').checked;
     if (action === 'recrawl' && !confirm('Website „' + slug + '“ neu einlesen?\\n\\nDer bisherige Stand wird mit Report archiviert, alle Änderungen sind danach nicht mehr aktiv.\\n' +
@@ -186,9 +241,9 @@ export function renderStartPage({ sites, token }) {
   let pagesSlug = null;
   function openPages(slug) {
     pagesSlug = slug;
-    const row = document.querySelector('tr[data-slug="' + CSS.escape(slug) + '"] a.muted');
-    document.getElementById('pages-site').textContent = slug + (row ? ' · ' + row.textContent : '');
-    pagesUrls.placeholder = row ? new URL('weitere-seite/', row.textContent).href + '\\n' + new URL('kontakt/', row.textContent).href : '';
+    const row = document.querySelector('tr[data-slug="' + CSS.escape(slug) + '"] a.site-url');
+    document.getElementById('pages-site').textContent = slug + (row ? ' · ' + row.href : '');
+    pagesUrls.placeholder = row ? new URL('weitere-seite/', row.href).href + '\\n' + new URL('kontakt/', row.href).href : '';
     pagesMsg.textContent = '';
     pagesDialog.showModal();
     pagesUrls.focus();
