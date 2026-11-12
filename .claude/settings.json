@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(./scripts/*)",
-      "Bash(scripts/*)"
+      "Bash(scripts/*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [
       "Read(./.env)",
@@ -17,8 +22,7 @@
       "Read(~/.claude.json)",
       "Read(~/.claude/.credentials.json)",
       "Bash(wget:*)",
-      "Bash(curl:*)",
-      "Bash(git:*)"
+      "Bash(curl:*)"
     ]
   }
 }
