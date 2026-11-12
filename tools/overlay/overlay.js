@@ -74,6 +74,8 @@
       'path:m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z'],
     plus: ['path:M5 12h14', 'path:M12 5v14'],
     chevron: ['path:m9 18 6-6-6-6'],
+    layers: ['path:m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z',
+      'path:m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65', 'path:m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65'],
     files: ['path:M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'path:M14 2v4a2 2 0 0 0 2 2h4', 'path:M10 13H8', 'path:M16 17H8'],
     pencil: ['path:M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'path:m15 5 4 4'],
   };
@@ -479,6 +481,8 @@
     'a.pglink.current{background:#dbeafe}' +
     '.pgtitle{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.pgpath{display:block;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    'button.icon-only{position:relative}' +
+    'button .cnt{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#dc2626;color:#fff;font:700 10px/16px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;text-align:center;box-shadow:0 0 0 2px #fff}' +
     'button.queue{background:#2563eb;border-color:#2563eb;color:#fff}' +
     'button.queue:hover:not([disabled]){background:#1d4ed8}' +
     'ul.qlist{list-style:none;margin:0 0 6px;padding:0;max-height:45vh;overflow:auto}' +
@@ -515,12 +519,15 @@
 
   // Leiste
   var btnSelect = iconButton('click', 'Auswählen', { title: 'Element auswählen (Alt+A)', 'aria-pressed': 'false' });
-  var btnHistory = iconButton('history', 'Verlauf', { title: 'Verlauf und Rücksprung', 'aria-expanded': 'false', 'aria-controls': 'modio-history' });
-  var btnPages = iconButton('files', 'Seiten', { title: 'Alle Seiten dieses Abzugs', 'aria-expanded': 'false', 'aria-controls': 'modio-pages' });
-  var btnDesign = iconButton('palette', 'Design', { title: 'Design-Vorgaben: Tokens und Regeln', 'aria-expanded': 'false', 'aria-controls': 'modio-design' });
-  var btnChanges = iconButton('check', 'Änderungen übernehmen', { class: 'changes', title: 'Im Inspektor, im Styles-Panel oder in Dateien gemachte Änderungen übernehmen' });
+  // Außer „Auswählen“ nur Icons; das Label erscheint als Tooltip (title) und für Screenreader
+  var btnHistory = iconButton('history', 'Verlauf', { 'aria-expanded': 'false', 'aria-controls': 'modio-history' }, true);
+  var btnPages = iconButton('files', 'Seiten', { 'aria-expanded': 'false', 'aria-controls': 'modio-pages' }, true);
+  var btnDesign = iconButton('palette', 'Design', { 'aria-expanded': 'false', 'aria-controls': 'modio-design' }, true);
+  var btnChanges = iconButton('check', 'Änderungen übernehmen', { class: 'changes' }, true);
+  btnChanges.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
+  btnChanges.appendChild(btnChanges.modioCount);
   btnChanges.style.display = 'none';
-  var btnFollowup = iconButton('refresh', 'Nachbessern', { title: 'Den letzten Schritt in derselben Claude-Session korrigieren' });
+  var btnFollowup = iconButton('refresh', 'Nachbessern', {}, true);
   btnFollowup.style.display = 'none';
   var lnkHome = el('a', { class: 'btn icon-only ghost', href: '/', title: 'Zur Übersicht aller Websites', 'aria-label': 'Zur Übersicht' }, [icon('grid')]);
   var statusEl = el('span', { class: 'status', role: 'status', 'aria-live': 'polite' });
@@ -831,7 +838,7 @@
     var fj = followupCandidate();
     btnFollowup.style.display = fj ? '' : 'none';
     btnFollowup.disabled = busy;
-    if (fj) btnFollowup.title = 'Schritt ' + fj.result.annotationId + ' in derselben Claude-Session korrigieren';
+    if (fj) btnFollowup.title = btnFollowup.modioLabel.textContent = 'Nachbessern (' + fj.result.annotationId + ')';
     renderHistoryButtons();
     renderDesignButtons();
     if (typeof renderChangesButton === 'function' && btnChanges) renderChangesButton();
@@ -1701,7 +1708,9 @@
   // ------------------------------------------------------------- Queue
 
   var queueItems = [];
-  var btnQueue = iconButton('sparkles', 'Queue umsetzen', { class: 'queue', title: 'Gesammelte Annotationen ansehen und in einem Schritt umsetzen' });
+  var btnQueue = iconButton('layers', 'Queue umsetzen', { class: 'queue' }, true);
+  btnQueue.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
+  btnQueue.appendChild(btnQueue.modioCount);
   btnQueue.style.display = 'none';
   bar.insertBefore(btnQueue, statusEl);
   var qList = el('ul', { class: 'qlist' });
@@ -1722,7 +1731,8 @@
   function renderQueueButton() {
     var n = queueItems.length;
     btnQueue.style.display = n ? '' : 'none';
-    btnQueue.modioLabel.textContent = 'Queue umsetzen (' + n + ')';
+    btnQueue.title = btnQueue.modioLabel.textContent = 'Queue umsetzen (' + n + ')';
+    btnQueue.modioCount.textContent = String(n);
     btnQueue.disabled = false;
     qRun.disabled = isBusy() || !n;
     qRun.title = isBusy() ? 'Es läuft noch ein Schritt – danach umsetzen' : '';
@@ -2761,7 +2771,8 @@
   function renderChangesButton() {
     var n = chDom.length + chCss.length + chFiles.changed;
     btnChanges.style.display = n && !isBusy() ? '' : 'none';
-    btnChanges.modioLabel.textContent = 'Änderungen übernehmen (' + n + ')';
+    btnChanges.title = btnChanges.modioLabel.textContent = 'Änderungen übernehmen (' + n + ')';
+    btnChanges.modioCount.textContent = String(n);
   }
 
   // Grundzustand: Datei laden, Unterschiede und CSS kurz nach dem Laden als „Scripts der Website“ merken
