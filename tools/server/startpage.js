@@ -70,7 +70,13 @@ export function renderStartPage({ sites, token }) {
   dialog h2 { margin-bottom:4px; }
   dialog p.muted { word-break:normal; overflow-wrap:anywhere; }
   dialog .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
-  details summary { cursor:pointer; color:var(--muted); }
+  details { margin:14px 0 6px; }
+  details summary { cursor:pointer; color:var(--muted); list-style:none; display:inline-flex; align-items:center; gap:6px; }
+  details summary::-webkit-details-marker { display:none; }
+  details summary .chev { transition:transform .15s ease; }
+  details[open] summary .chev { transform:rotate(90deg); }
+  details[open] summary { margin-bottom:4px; }
+  @media (prefers-reduced-motion:reduce) { details summary .chev { transition:none; } }
   label.inline { display:flex; gap:8px; align-items:center; font-weight:400; font-size:14px; margin:0 0 8px; }
   label.inline.below { margin:12px 0 0; }
 </style>
@@ -85,7 +91,7 @@ export function renderStartPage({ sites, token }) {
         <div><label for="url">URL der Startseite</label><input id="url" name="url" type="url" required placeholder="https://www.example.de/"></div>
         <div><label for="slug">Kurzname (optional)</label><input id="slug" name="slug" type="text" pattern="[a-z0-9][a-z0-9-]{0,62}" placeholder="aus der URL"></div>
       </div>
-      <details><summary>Weitere Seiten abziehen (optional)</summary>
+      <details><summary><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>Weitere Seiten abziehen (optional)</summary>
         <label for="urls">Seitenliste, eine URL pro Zeile</label>
         <textarea id="urls" name="urls" placeholder="https://www.example.de/leistungen/&#10;https://www.example.de/kontakt/"></textarea>
       </details>
