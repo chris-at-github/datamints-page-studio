@@ -73,6 +73,7 @@
     pipette: ['path:m2 22 1-1h3l9-9', 'path:M3 21v-3l9-9',
       'path:m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z'],
     plus: ['path:M5 12h14', 'path:M12 5v14'],
+    chevron: ['path:m9 18 6-6-6-6'],
   };
   var SVGNS = 'http://www.w3.org/2000/svg';
   function icon(name, size) {
@@ -258,7 +259,8 @@
     '.crumbs button{flex:none;font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:1px 4px;border-radius:5px;border-color:transparent;background:transparent;color:#374151}' +
     '.crumbs button:hover,.crumbs button:focus-visible{background:#ede9fe;border-color:#c4b5fd}' +
     '.crumbs button[aria-current=true]{background:#fef3c7;border-color:#d97706;color:#92400e;font-weight:600}' +
-    '.sel-full{color:#6b7280;font-size:11px;margin-top:2px}' +
+    '.sel-full{color:#374151;font-size:11px;margin-top:6px;padding-top:6px;border-top:1px dashed #c4c9d2;word-break:break-all}' +
+    '.sel-lbl{display:inline-block;font:600 10px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:#6b7280;border-radius:3px;padding:0 5px;margin-right:6px}' +
     '.hl-label{position:absolute;left:-2px;top:-24px;background:#2563eb;color:#fff;font:12px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:4px 6px;border-radius:3px;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}' +
     '.hl.sel .hl-label{background:#d97706}' +
     '.hl.below .hl-label{top:auto;bottom:-24px}' +
@@ -319,6 +321,11 @@
     '.step-prompt{margin:4px 0;white-space:pre-wrap;word-break:break-word}' +
     '.step-sel{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b7280;word-break:break-all}' +
     'details{margin-top:4px;font-size:13px}' +
+    'details>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px;color:#4b5563}' +
+    'details>summary::-webkit-details-marker{display:none}' +
+    'details>summary .ic{transition:transform .15s ease}' +
+    'details[open]>summary .ic{transform:rotate(90deg)}' +
+    '@media (prefers-reduced-motion:reduce){details>summary .ic{transition:none}}' +
     'details p{white-space:pre-wrap;margin:4px 0 0;color:#374151}' +
     '.toast{position:fixed;right:16px;bottom:72px;max-width:440px;pointer-events:auto;background:#1d2330;color:#fff;border-radius:10px;padding:10px 36px 10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.3);display:none;white-space:pre-wrap;font-size:13px}' +
     '.toast.open{display:block}' +
@@ -329,6 +336,18 @@
     '.adv summary{color:#4b5563;cursor:pointer}' +
     '.adv .switch{margin-top:6px}' +
     '.checks{display:flex;flex-direction:column;gap:4px;margin-top:10px}' +
+    '.hintrow{margin-top:2px}' +
+    '.hintrow .hint{margin:0}' +
+    'button.tokbtn{font-size:12px;padding:3px 8px;color:#374151}' +
+    '.tokpop{border:1px solid #cfd5df;border-radius:8px;padding:6px;margin-top:4px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.12)}' +
+    '.tokpop[hidden]{display:none}' +
+    '.tokpop input{width:100%;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:5px 7px;border:1px solid #cfd5df;border-radius:6px}' +
+    '.tokpop ul{list-style:none;margin:6px 0 0;padding:0;max-height:180px;overflow:auto}' +
+    '.tokpop li{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;cursor:pointer;font-size:12px}' +
+    '.tokpop li[aria-selected=true],.tokpop li:hover{background:#eef2ff}' +
+    '.tokpop li code{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}' +
+    '.tokpop li .v{margin-left:auto;color:#6b7280;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.tokpop .empty{color:#6b7280;font-size:12px;padding:4px 6px}' +
     '.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}' +
     '.ic{flex:none;display:block}' +
     'button.has-icon,a.btn{display:inline-flex;align-items:center;gap:6px}' +
@@ -472,26 +491,27 @@
   var pUrlAdd = el('button', { type: 'button', text: 'URL hinzufügen' });
   var pThumbs = el('div', { class: 'thumbs' });
   var pThorough = el('input', { type: 'checkbox' });
-  var pRemember = el('input', { type: 'checkbox' });
-  var pAllowTokens = el('input', { type: 'checkbox' });
   var pTitle = el('h2', { id: 'modio-ph', text: 'Annotation' });
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var pSend = el('button', { type: 'button', class: 'primary', text: 'Absenden' });
+  var pTokBtn = iconButton('palette', 'Token einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token in den Prompt einfügen (Strg+Leertaste)' });
+  var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
+  var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
+  var pTokPop = el('div', { id: 'modio-tokpop', class: 'tokpop', hidden: '' }, [pTokFilter, pTokList]);
   var promptPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
     pTitle,
     pMeta,
     el('label', { for: 'modio-prompt', class: 'sr', text: 'Prompt' }),
     pText,
-    el('div', { class: 'hint', text: 'Strg+Enter sendet ab · Esc schließt' }),
+    el('div', { class: 'row hintrow' }, [el('span', { class: 'hint', text: 'Strg+Enter sendet ab · Esc schließt' }), el('span', { class: 'spacer' }), pTokBtn]),
+    pTokPop,
     pDrop,
     pFile,
     el('div', { class: 'row' }, [pUrl, pUrlAdd]),
     pThumbs,
     el('div', { class: 'checks' }, [
       el('label', { class: 'switch', title: 'Schritt mit dem gründlicheren Modell ausführen' }, [pThorough, 'gründlich']),
-      el('label', { class: 'switch', title: 'Genannte Werte als gesperrte Tokens und die Regel in design/notes.md speichern' }, [pRemember, 'Als Regel merken']),
-      el('label', { class: 'switch', title: 'Ohne diesen Haken stoppt die Prüfung jede Änderung an gesperrten Tokens' }, [pAllowTokens, 'Gesperrte Tokens dürfen geändert werden']),
     ]),
     pErr,
     el('div', { class: 'row end' }, [pCancel, pSend]),
@@ -876,7 +896,8 @@
         return;
       }
       if (e.key === 'Escape' && isOwn(e)) {
-        if (promptPanel.classList.contains('open')) closePrompt();
+        if (!pTokPop.hidden) { e.preventDefault(); closeTokPop(true); }
+        else if (promptPanel.classList.contains('open')) closePrompt();
         else if (historyPanel.classList.contains('open')) closeHistory();
         else if (designPanel.classList.contains('open')) closeDesign();
         else if (reviewPanel.classList.contains('open')) reviewPanel.classList.remove('open');
@@ -906,7 +927,6 @@
     pathLeaf = target;
     followupJob = null;
     pTitle.textContent = 'Annotation';
-    pRemember.checked = false;
     renderMeta();
     pErr.textContent = '';
     promptPanel.classList.add('open');
@@ -915,6 +935,7 @@
   }
 
   function closePrompt() {
+    closeTokPop(false);
     promptPanel.classList.remove('open');
     selected = null;
     pathLeaf = null;
@@ -948,8 +969,7 @@
     followupJob = job;
     pTitle.textContent = 'Nachbessern ' + job.result.annotationId;
     clear(pMeta);
-    pMeta.appendChild(document.createTextNode(prm.page || ''));
-    pMeta.appendChild(el('div', { class: 'sel-full', text: prm.selector || '' }));
+    pMeta.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), prm.selector || '']));
     pMeta.appendChild(el('div', { class: 'hint', text: 'Bisheriger Auftrag: ' + truncate(prm.prompt || '', 200) }));
     pErr.textContent = '';
     pText.placeholder = 'Was soll am Ergebnis korrigiert werden?';
@@ -977,7 +997,6 @@
     var old = pMeta.querySelector('.crumbs');
     var oldScroll = old && old.modioLeaf === pathLeaf ? old.scrollLeft : null;
     clear(pMeta);
-    pMeta.appendChild(document.createTextNode(currentPage()));
     var chain = [];
     for (var n = pathLeaf; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) chain.unshift(n);
     var nav = el('div', { class: 'crumbs', role: 'group', 'aria-label': 'Element-Pfad' });
@@ -999,7 +1018,7 @@
       nav.appendChild(b);
     });
     pMeta.appendChild(nav);
-    pMeta.appendChild(el('div', { class: 'sel-full', text: selectorFor(selected) }));
+    pMeta.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), selectorFor(selected)]));
     nav.addEventListener('scroll', function () { crumbFade(nav); });
     nav.addEventListener('wheel', function (e) {
       var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -1035,8 +1054,6 @@
     pText.value = '';
     pUrl.value = '';
     pThorough.checked = false;
-    pRemember.checked = false;
-    pAllowTokens.checked = false;
     pText.placeholder = 'Was soll an diesem Element geändert werden?';
     refs.forEach(function (r) { if (r.kind === 'file' && r.url) URL.revokeObjectURL(r.url); });
     refs = [];
@@ -1179,6 +1196,80 @@
   });
   pSend.addEventListener('click', submit);
 
+  // ---- Design-Tokens in den Prompt einfügen
+  var tokCache = null;
+  var tokItems = [];
+  var tokActive = 0;
+  var tokCaret = 0;
+  function loadTokens() {
+    if (tokCache) return Promise.resolve(tokCache);
+    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/design').then(function (d) {
+      var t = (d && d.tokens) || {};
+      tokCache = Object.keys(t).sort().map(function (k) { return { key: k, value: String((t[k] || {}).value || ''), locked: (t[k] || {}).locked === true }; });
+      return tokCache;
+    });
+  }
+  function renderTokList() {
+    clear(pTokList);
+    var q = pTokFilter.value.trim().toLowerCase();
+    tokItems = (tokCache || []).filter(function (t) { return !q || t.key.indexOf(q) !== -1 || t.value.toLowerCase().indexOf(q) !== -1; });
+    if (tokActive >= tokItems.length) tokActive = 0;
+    if (!tokItems.length) {
+      pTokList.appendChild(el('li', { class: 'empty', text: (tokCache || []).length ? 'Kein passender Token.' : 'Noch keine Tokens. Im Design-Panel anlegen.' }));
+      return;
+    }
+    tokItems.forEach(function (t, i) {
+      var li = el('li', { role: 'option', 'aria-selected': i === tokActive ? 'true' : 'false', title: t.value + (t.locked ? ' (gesperrt)' : '') }, [
+        t.key.indexOf('color.') === 0 ? swatch(t.value) : null,
+        el('code', { text: t.key }),
+        el('span', { class: 'v', text: t.value }),
+      ]);
+      li.addEventListener('mousedown', function (e) { e.preventDefault(); insertToken(t.key); });
+      pTokList.appendChild(li);
+    });
+    var act = pTokList.children[tokActive];
+    if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest' });
+  }
+  function openTokPop() {
+    tokCaret = pText.selectionStart || pText.value.length;
+    pTokPop.hidden = false;
+    pTokBtn.setAttribute('aria-expanded', 'true');
+    pTokFilter.value = '';
+    tokActive = 0;
+    clear(pTokList);
+    pTokList.appendChild(el('li', { class: 'empty', text: 'Lade …' }));
+    loadTokens().then(renderTokList).catch(function (err) { clear(pTokList); pTokList.appendChild(el('li', { class: 'empty', text: 'Fehler: ' + err.message })); });
+    setTimeout(function () { pTokFilter.focus(); }, 0);
+  }
+  function closeTokPop(focusText) {
+    if (pTokPop.hidden) return;
+    pTokPop.hidden = true;
+    pTokBtn.setAttribute('aria-expanded', 'false');
+    if (focusText) pText.focus();
+  }
+  function insertToken(key) {
+    var v = pText.value, pos = Math.min(tokCaret, v.length);
+    var before = v.slice(0, pos), after = v.slice(pos);
+    var ins = (before && !/\s$/.test(before) ? ' ' : '') + key + (after && !/^\s/.test(after) ? ' ' : '');
+    pText.value = before + ins + after;
+    closeTokPop(false);
+    pText.focus();
+    var c = (before + ins).length;
+    pText.setSelectionRange(c, c);
+  }
+  pTokBtn.addEventListener('click', function () { if (pTokPop.hidden) openTokPop(); else closeTokPop(true); });
+  pTokFilter.addEventListener('input', function () { tokActive = 0; renderTokList(); });
+  pTokFilter.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (tokItems.length) { tokActive = (tokActive + 1) % tokItems.length; renderTokList(); } }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (tokItems.length) { tokActive = (tokActive - 1 + tokItems.length) % tokItems.length; renderTokList(); } }
+    else if (e.key === 'Enter') { e.preventDefault(); if (tokItems[tokActive]) insertToken(tokItems[tokActive].key); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTokPop(true); }
+  });
+  pTokFilter.addEventListener('blur', function () { setTimeout(function () { if (!pTokPop.contains(root.activeElement)) closeTokPop(false); }, 100); });
+  pText.addEventListener('keydown', function (e) {
+    if (e.key === ' ' && e.ctrlKey) { e.preventDefault(); openTokPop(); }
+  });
+
   // Vorschlag für den Namen eines Bereichs
   function areaName(node) {
     var id = (node.id || '').toLowerCase(), tag = node.tagName.toLowerCase();
@@ -1243,8 +1334,8 @@
       viewport: { width: window.innerWidth, height: window.innerHeight },
       prompt: prompt,
       thorough: !!pThorough.checked,
-      remember: !!pRemember.checked,
-      allow_token_change: !!pAllowTokens.checked,
+      remember: false,
+      allow_token_change: false,
       followup: !!fp,
       followup_of: fp ? followupJob.result.annotationId : null,
       references: refs.filter(function (r) { return r.kind === 'url'; }).map(function (r) {
@@ -1422,7 +1513,7 @@
           'Die automatische Prüfung hat auffällige Änderungen gefunden. Bitte Diff ansehen und entscheiden.',
       })
     );
-    if (r.summary) rInfo.appendChild(el('details', {}, [el('summary', { text: 'Zusammenfassung von Claude' }), el('p', { text: r.summary })]));
+    if (r.summary) rInfo.appendChild(el('details', {}, [el('summary', {}, [icon('chevron', 14), 'Rückmeldung von Claude']), el('p', { text: r.summary })]));
     clear(rHits);
     (r.hits || []).forEach(function (h) {
       rHits.appendChild(
@@ -1489,7 +1580,7 @@
     var children = [el('span', { class: 'step-dot', 'aria-hidden': 'true' }), head];
     if (opts.prompt) children.push(el('div', { class: 'step-prompt', text: opts.prompt }));
     if (opts.page || opts.selector) children.push(el('div', { class: 'step-sel', text: [opts.page, opts.selector].filter(Boolean).join(' · ') }));
-    if (opts.summary) children.push(el('details', {}, [el('summary', { text: 'Zusammenfassung' }), el('p', { text: opts.summary })]));
+    if (opts.summary) children.push(el('details', {}, [el('summary', {}, [icon('chevron', 14), 'Rückmeldung von Claude']), el('p', { text: opts.summary })]));
     children.push(el('div', { class: 'row end' }, [btn]));
     if (opts.current) btn.style.display = 'none';
     return el('li', { class: 'step' + (opts.current ? ' current' : '') + (opts.base ? ' base' : '') }, children);
@@ -1767,7 +1858,7 @@
       { label: 'Schriften', cat: 'font', list: sc.fonts || [] },
     ].filter(function (g) { return g.list.length; });
     if (!groups.length) return;
-    var body = [el('summary', { text: 'Häufige Werte im Abzug' })];
+    var body = [el('summary', {}, [icon('chevron', 14), 'Häufige Werte im Abzug'])];
     groups.forEach(function (g) {
       body.push(el('div', { class: 'chips-label', text: g.label }));
       var chips = el('div', { class: 'chips' });

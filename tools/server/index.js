@@ -331,8 +331,13 @@ async function readDesign(slug) {
     .sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
   if (ids.length) {
     annotationId = ids.at(-1);
-    const ann = await readJson(path.join(dir, 'annotations', `${annotationId}.json`), {});
-    warnings = ann.check?.warnings || [];
+    // Hinweise nur, solange dieser Schritt der aktuelle Stand ist (danach z. B. angeglichen oder überholt)
+    const history = await readJson(path.join(dir, '.history.json'), null);
+    const last = history?.steps?.at(-1);
+    if (!history || (last && last.id === annotationId && last.commit === history.head)) {
+      const ann = await readJson(path.join(dir, 'annotations', `${annotationId}.json`), {});
+      warnings = ann.check?.warnings || [];
+    }
   }
   return { slug, initialized: !!tokensFile, tokens: tokensFile?.tokens || {}, notes: notes ?? '', scan, consistency, warnings, annotationId };
 }
