@@ -65,6 +65,14 @@
     check: ['circle:12,12,10', 'path:m9 12 2 2 4-4'],
     sparkles: ['path:M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z',
       'path:M20 3v4', 'path:M22 5h-4'],
+    palette: ['circle:13.5,6.5,.5', 'circle:17.5,10.5,.5', 'circle:8.5,7.5,.5', 'circle:6.5,12.5,.5',
+      'path:M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z'],
+    lock: ['rect:3,11,18,11', 'path:M7 11V7a5 5 0 0 1 10 0v4'],
+    unlock: ['rect:3,11,18,11', 'path:M7 11V7a5 5 0 0 1 9.9-1'],
+    trash: ['path:M3 6h18', 'path:M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6', 'path:M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2'],
+    pipette: ['path:m2 22 1-1h3l9-9', 'path:M3 21v-3l9-9',
+      'path:m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z'],
+    plus: ['path:M5 12h14', 'path:M12 5v14'],
   };
   var SVGNS = 'http://www.w3.org/2000/svg';
   function icon(name, size) {
@@ -355,7 +363,39 @@
     /* Leiste und Hinweise neben die offene Sidebar schieben */
     '.bar,.toast{transition:right .2s ease}' +
     '.ui.sb-open .bar,.ui.sb-open .toast{right:416px}' +
-    '@media (max-width:860px){.ui.sb-open .bar{right:16px;bottom:auto;top:16px;left:16px;right:auto}}';
+    '@media (max-width:860px){.ui.sb-open .bar{right:16px;bottom:auto;top:16px;left:16px;right:auto}}' +
+    /* Design-Panel */
+    '.sidebar.design{width:460px}' +
+    '.ui.sb-design .bar,.ui.sb-design .toast{right:476px}' +
+    '@media (max-width:940px){.ui.sb-design .bar{right:16px;bottom:auto;top:16px;left:16px;right:auto}}' +
+    '.hl.pick{border-color:#059669;background:rgba(5,150,105,.10)}' +
+    '.hl.pick .hl-label{background:#059669}' +
+    '.dsec{margin-bottom:18px}' +
+    '.dsec h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin:0 0 6px;display:flex;align-items:center;gap:6px}' +
+    'table.tok{width:100%;border-collapse:collapse;font-size:13px}' +
+    'table.tok td{padding:3px 2px;vertical-align:middle;border-bottom:1px solid #f1f2f4}' +
+    'table.tok td.k{font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;width:40%}' +
+    'table.tok td.k .sw{margin-right:6px}' +
+    'table.tok td.b{width:30px;text-align:center}' +
+    'table.tok input,.addrow input,.addrow select{width:100%;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:4px 6px;border:1px solid #cfd5df;border-radius:6px;min-width:0;background:#fff}' +
+    'table.tok input.bad,.addrow input.bad{border-color:#dc2626;background:#fef2f2}' +
+    'table.tok button,.pick-row button{padding:3px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center}' +
+    'button.lock[aria-pressed=true]{color:#b45309;background:#fef3c7;border-color:#f59e0b}' +
+    '.sw{display:inline-block;width:14px;height:14px;border-radius:4px;border:1px solid rgba(0,0,0,.25);vertical-align:-2px;flex:none}' +
+    '.addrow{display:grid;grid-template-columns:96px 1fr 1fr 32px;gap:4px;margin-top:8px}' +
+    '.addrow button{padding:0;display:inline-flex;align-items:center;justify-content:center}' +
+    '.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}' +
+    '.chips button{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:2px 7px;border-radius:10px;display:inline-flex;align-items:center;gap:4px}' +
+    '.chips-label{font-size:12px;color:#6b7280;margin-top:8px}' +
+    '.pick{border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;margin-top:8px;background:#ecfdf5}' +
+    '.pick-head{display:flex;align-items:center;gap:6px;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#065f46;margin-bottom:4px;word-break:break-all}' +
+    '.pick-row{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0}' +
+    '.pick-row .lbl2{width:92px;flex:none;color:#374151}' +
+    '.pick-row code{flex:1;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}' +
+    '.pick-row .is{font-size:11px;color:#065f46;background:#d1fae5;border-radius:10px;padding:1px 6px;white-space:nowrap}' +
+    'textarea.notes{min-height:170px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}' +
+    '.dirty{font-size:12px;color:#b45309;align-self:center}' +
+    'select:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}';
 
   root.appendChild(el('style', { text: STYLE }));
   var ui = el('div', { class: 'ui' });
@@ -373,6 +413,7 @@
   // Leiste
   var btnSelect = iconButton('click', 'Auswählen', { title: 'Element auswählen (Alt+A)', 'aria-pressed': 'false' });
   var btnHistory = iconButton('history', 'Verlauf', { title: 'Verlauf und Rücksprung', 'aria-expanded': 'false', 'aria-controls': 'modio-history' });
+  var btnDesign = iconButton('palette', 'Design', { title: 'Design-Vorgaben: Tokens und Regeln', 'aria-expanded': 'false', 'aria-controls': 'modio-design' });
   var btnFollowup = iconButton('refresh', 'Nachbessern', { title: 'Den letzten Schritt in derselben Claude-Session korrigieren' });
   btnFollowup.style.display = 'none';
   var lnkHome = el('a', { class: 'btn icon-only ghost', href: '/', title: 'Zur Übersicht aller Websites', 'aria-label': 'Zur Übersicht' }, [icon('grid')]);
@@ -383,6 +424,7 @@
     el('span', { class: 'sep', 'aria-hidden': 'true' }),
     btnSelect,
     btnHistory,
+    btnDesign,
     btnFollowup,
     statusEl,
   ]);
@@ -489,6 +531,59 @@
   ]);
   ui.appendChild(historyPanel);
 
+  // ---------------------------------------------------- Design-Vorgaben
+
+  var CAT_LABEL = { color: 'Farbe', font: 'Schrift', size: 'Größe', radius: 'Radius', space: 'Abstand', shadow: 'Schatten', breakpoint: 'Breakpoint' };
+  var CATS = Object.keys(CAT_LABEL);
+  var dErr = el('div', { class: 'err', role: 'alert' });
+  var dInfo = el('div');
+  var dWarn = el('div');
+  var dTokBody = el('tbody');
+  var dTable = el('table', { class: 'tok' }, [dTokBody]);
+  var dAddCat = el('select', { 'aria-label': 'Kategorie' }, CATS.map(function (c) { return el('option', { value: c, text: CAT_LABEL[c] }); }));
+  var dAddName = el('input', { type: 'text', placeholder: 'name', 'aria-label': 'Token-Name', spellcheck: 'false' });
+  var dAddVal = el('input', { type: 'text', placeholder: 'Wert', 'aria-label': 'Token-Wert', spellcheck: 'false' });
+  var dAddBtn = iconButton('plus', 'Token hinzufügen', {}, true);
+  var dPick = iconButton('pipette', 'Aus Element übernehmen', { title: 'Element anklicken und dessen Farbe, Schrift oder Radius als Token übernehmen', 'aria-pressed': 'false' });
+  var dPropose = iconButton('sparkles', 'Aus Abzug ableiten', { title: 'Claude schlägt Tokens aus den häufigsten Werten im Abzug vor (ungesperrt)' });
+  var dPickBox = el('div');
+  var dScan = el('div');
+  var dNotes = el('textarea', { id: 'modio-notes', class: 'notes', spellcheck: 'true' });
+  var dDirty = el('span', { class: 'dirty', 'aria-live': 'polite' });
+  var dReset = el('button', { type: 'button', text: 'Zurücksetzen' });
+  var dSave = el('button', { type: 'button', class: 'primary', text: 'Speichern' });
+  var dClose = iconButton('x', 'Design schließen', { class: 'ghost' }, true);
+  var dReload = iconButton('refresh', 'Neu laden', { class: 'ghost' }, true);
+  var designPanel = el('aside', { id: 'modio-design', class: 'sidebar design', role: 'complementary', 'aria-labelledby': 'modio-dh' }, [
+    el('div', { class: 'sb-head' }, [
+      el('h2', { id: 'modio-dh' }, [icon('palette', 18), 'Design-Vorgaben']),
+      el('span', { class: 'spacer' }),
+      dReload,
+      dClose,
+    ]),
+    el('div', { class: 'sb-sub', text: SLUG }),
+    el('div', { class: 'sb-body' }, [
+      dErr,
+      dInfo,
+      dWarn,
+      el('section', { class: 'dsec', 'aria-labelledby': 'modio-dt' }, [
+        el('h3', { id: 'modio-dt', text: 'Tokens' }),
+        dTable,
+        el('div', { class: 'addrow' }, [dAddCat, dAddName, dAddVal, dAddBtn]),
+        el('div', { class: 'row' }, [dPick, dPropose]),
+        dPickBox,
+        dScan,
+      ]),
+      el('section', { class: 'dsec' }, [
+        el('h3', {}, [el('label', { for: 'modio-notes', text: 'Regeln (notes.md)' })]),
+        dNotes,
+        el('div', { class: 'hint', text: 'Regeln in Prosa, keine URLs, kein HTML, kein Code. Claude hält sich bei jedem Schritt daran.' }),
+      ]),
+    ]),
+    el('div', { class: 'sb-foot' }, [dDirty, el('span', { class: 'spacer' }), dReset, dSave]),
+  ]);
+  ui.appendChild(designPanel);
+
   function mount() {
     (document.documentElement || document.body).appendChild(host);
   }
@@ -498,6 +593,7 @@
   // ------------------------------------------------------------ Zustand
 
   var selecting = false;
+  var selectMode = 'annotate'; // 'annotate' öffnet den Prompt, 'token' liest Werte für das Design-Panel
   var hovered = null;
   var selected = null;
   var childStack = [];
@@ -587,8 +683,9 @@
     btnFollowup.style.display = fj ? '' : 'none';
     btnFollowup.disabled = busy;
     if (fj) btnFollowup.title = 'Schritt ' + fj.result.annotationId + ' in derselben Claude-Session korrigieren';
-    if (busy && selecting) stopSelecting();
+    if (busy && selecting && selectMode === 'annotate') stopSelecting();
     renderHistoryButtons();
+    renderDesignButtons();
   }
 
   // --------------------------------------------------------- Auswahlmodus
@@ -661,23 +758,37 @@
     e.stopImmediatePropagation();
     var target = hovered || e.target;
     if (!target || target.nodeType !== 1) return;
+    finishSelecting(target);
+  }
+
+  function finishSelecting(target) {
+    var mode = selectMode;
     stopSelecting();
-    openPrompt(target);
+    if (mode === 'token') showPick(target);
+    else openPrompt(target);
   }
 
   var BLOCK_EVENTS = ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'auxclick', 'touchstart', 'touchend', 'submit'];
 
-  function startSelecting() {
-    if (isBusy()) {
-      showToast('Es läuft noch ein Schritt. Neue Annotationen sind erst danach möglich.', false);
-      return;
+  function startSelecting(mode) {
+    selectMode = mode === 'token' ? 'token' : 'annotate';
+    if (selectMode === 'annotate') {
+      if (isBusy()) {
+        showToast('Es läuft noch ein Schritt. Neue Annotationen sind erst danach möglich.', false);
+        return;
+      }
+      closePanels();
+      btnSelect.classList.add('on');
+      btnSelect.setAttribute('aria-pressed', 'true');
+      btnSelect.modioLabel.textContent = 'Auswahl beenden';
+    } else {
+      dPick.classList.add('on');
+      dPick.setAttribute('aria-pressed', 'true');
+      dPick.modioLabel.textContent = 'Element anklicken … (Esc)';
     }
-    closePanels();
     selecting = true;
     hovered = null;
-    btnSelect.classList.add('on');
-    btnSelect.setAttribute('aria-pressed', 'true');
-    btnSelect.modioLabel.textContent = 'Auswahl beenden';
+    hl.classList.toggle('pick', selectMode === 'token');
     document.documentElement.style.cursor = 'crosshair';
   }
 
@@ -688,6 +799,11 @@
     btnSelect.classList.remove('on');
     btnSelect.setAttribute('aria-pressed', 'false');
     btnSelect.modioLabel.textContent = 'Auswählen';
+    dPick.classList.remove('on');
+    dPick.setAttribute('aria-pressed', 'false');
+    dPick.modioLabel.textContent = 'Aus Element übernehmen';
+    hl.classList.remove('pick');
+    selectMode = 'annotate';
     document.documentElement.style.cursor = '';
     refreshHighlight();
   }
@@ -707,7 +823,7 @@
         e.preventDefault();
         e.stopPropagation();
         if (selecting) stopSelecting();
-        else startSelecting();
+        else startSelecting('annotate');
         return;
       }
       if (selecting) {
@@ -732,15 +848,14 @@
         } else if (e.key === 'Enter' && hovered) {
           e.preventDefault();
           e.stopPropagation();
-          var t = hovered;
-          stopSelecting();
-          openPrompt(t);
+          finishSelecting(hovered);
         }
         return;
       }
       if (e.key === 'Escape' && isOwn(e)) {
         if (promptPanel.classList.contains('open')) closePrompt();
         else if (historyPanel.classList.contains('open')) closeHistory();
+        else if (designPanel.classList.contains('open')) closeDesign();
         else if (reviewPanel.classList.contains('open')) reviewPanel.classList.remove('open');
       }
     },
@@ -749,7 +864,7 @@
 
   btnSelect.addEventListener('click', function () {
     if (selecting) stopSelecting();
-    else startSelecting();
+    else startSelecting('annotate');
   });
 
   // --------------------------------------------------------- Prompt-Dialog
@@ -757,6 +872,7 @@
   function closePanels() {
     closePrompt();
     closeHistory();
+    closeDesign();
     reviewPanel.classList.remove('open');
   }
 
@@ -801,6 +917,7 @@
     }
     if (selecting) stopSelecting();
     closeHistory();
+    closeDesign();
     reviewPanel.classList.remove('open');
     var prm = job.params || {};
     selected = null;
@@ -1091,6 +1208,9 @@
     delete seenActive[job.id];
     if (job.status === 'failed') {
       lastFailed = job;
+      if (job.type === 'design-save' || job.type === 'tokens-propose') {
+        try { sessionStorage.removeItem(DESIGN_OPEN_KEY); } catch (e) { /* ignorieren */ }
+      }
       showToast((TYPE_LABEL[job.type] || job.type) + ' fehlgeschlagen: ' + (job.error || (job.result && job.result.error) || 'unbekannter Fehler'), true, true);
       return;
     }
@@ -1109,6 +1229,11 @@
       msg = job.params && job.params.action === 'discard' ? 'Schritt verworfen.' : 'Schritt übernommen.';
     } else if (job.type === 'report') {
       msg = 'Report erzeugt (CHANGES.md).';
+    } else if (job.type === 'design-save') {
+      msg = r.status === 'nochange' ? 'Design-Vorgaben unverändert.' : 'Design-Vorgaben gespeichert.';
+    } else if (job.type === 'tokens-propose') {
+      var added = r.added || [];
+      msg = added.length ? added.length + ' Token(s) aus dem Abzug übernommen (ungesperrt): ' + added.join(', ') : 'Keine neuen Tokens aus dem Abzug.';
     } else {
       msg = (TYPE_LABEL[job.type] || job.type) + ' fertig.';
     }
@@ -1184,6 +1309,7 @@
     reviewJob = job;
     closePrompt();
     closeHistory();
+    closeDesign();
     var r = job.result || {};
     clear(rInfo);
     rInfo.appendChild(
@@ -1342,6 +1468,7 @@
     }
     if (selecting) stopSelecting();
     closePrompt();
+    closeDesign();
     reviewPanel.classList.remove('open');
     historyPanel.classList.add('open');
     ui.classList.add('sb-open');
@@ -1352,6 +1479,420 @@
   });
   hClose.addEventListener('click', function () { closeHistory(); });
   hReload.addEventListener('click', loadHistory);
+
+  // ------------------------------------------------------- Design-Vorgaben
+
+  var DESIGN_OPEN_KEY = 'modio-design-open-' + SLUG;
+  var NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  var FORBIDDEN = ['url(', '@', ';', '{', '}', '<', '>', '\\', '/*', '*/', '\n', '\r'];
+  var design = null; // Stand vom Server
+  var dTokens = {}; // Arbeitskopie: key -> { value, locked, note }
+  var dLoaded = false;
+
+  function cloneTokens(t) {
+    var out = {};
+    Object.keys(t || {}).forEach(function (k) {
+      var v = t[k] || {};
+      out[k] = { value: String(v.value == null ? '' : v.value), locked: v.locked === true };
+      if (v.note) out[k].note = String(v.note);
+    });
+    return out;
+  }
+
+  // Grobe Prüfung im Browser; die verbindliche Prüfung macht design-save.sh
+  function checkTokenValue(v) {
+    v = String(v || '').trim();
+    if (!v) return 'Wert fehlt';
+    if (v.length > 200) return 'Wert zu lang';
+    var low = v.toLowerCase();
+    for (var i = 0; i < FORBIDDEN.length; i++) if (low.indexOf(FORBIDDEN[i]) !== -1) return 'unzulässiges Zeichen „' + (FORBIDDEN[i].trim() || 'Zeilenumbruch') + '“';
+    var m, re = /([a-z-]+)\s*\(/gi;
+    while ((m = re.exec(v))) if (!/^(rgb|rgba|hsl|hsla)$/i.test(m[1])) return 'Funktion ' + m[1] + '() nicht erlaubt';
+    return '';
+  }
+
+  function isColorKey(k) { return k.indexOf('color.') === 0; }
+
+  function swatch(color) {
+    var s = el('span', { class: 'sw', 'aria-hidden': 'true' });
+    s.style.background = color;
+    return s;
+  }
+
+  // rgb(a) aus getComputedStyle in Hex (bei Deckkraft 1) umwandeln; null bei transparent
+  function cssColor(v) {
+    var m = String(v || '').match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i);
+    if (!m) return v || null;
+    var a = m[4] === undefined ? 1 : m[4].indexOf('%') !== -1 ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+    if (a === 0) return null;
+    if (a < 1) return 'rgba(' + m[1] + ', ' + m[2] + ', ' + m[3] + ', ' + a + ')';
+    return '#' + [m[1], m[2], m[3]].map(function (x) { return ('0' + Number(x).toString(16)).slice(-2); }).join('');
+  }
+
+  function normValue(k, v) {
+    v = String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (isColorKey(k)) {
+      var c = cssColor(v);
+      if (c && /^#[0-9a-f]{3}$/.test(c)) c = '#' + c.charAt(1) + c.charAt(1) + c.charAt(2) + c.charAt(2) + c.charAt(3) + c.charAt(3);
+      return c || v;
+    }
+    return v.replace(/\s*,\s*/g, ',').replace(/["']/g, '');
+  }
+
+  function tokenFor(cat, value) {
+    var n = normValue(cat + '.x', value);
+    var keys = Object.keys(dTokens);
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i].split('.')[0] === cat && normValue(keys[i], dTokens[keys[i]].value) === n) return keys[i];
+    }
+    return null;
+  }
+
+  function sortedKeys() {
+    return Object.keys(dTokens).sort(function (a, b) {
+      var ca = CATS.indexOf(a.split('.')[0]), cb = CATS.indexOf(b.split('.')[0]);
+      return ca - cb || (a < b ? -1 : a > b ? 1 : 0);
+    });
+  }
+
+  function isDirty() {
+    if (!design) return false;
+    return JSON.stringify(cloneTokens(dTokens)) !== JSON.stringify(cloneTokens(design.tokens)) || dNotes.value !== (design.notes || '');
+  }
+
+  function tokensChanged() {
+    return !!design && JSON.stringify(cloneTokens(dTokens)) !== JSON.stringify(cloneTokens(design.tokens));
+  }
+
+  function hasInvalid() {
+    return Object.keys(dTokens).some(function (k) { return !!checkTokenValue(dTokens[k].value); });
+  }
+
+  function renderDesignButtons() {
+    var busy = isBusy();
+    var dirty = isDirty();
+    dDirty.textContent = dirty ? 'Ungespeicherte Änderungen' : '';
+    dSave.disabled = busy || !dirty || hasInvalid();
+    dSave.title = busy ? 'Es läuft noch ein Schritt – bitte warten' : hasInvalid() ? 'Ungültige Werte korrigieren' : '';
+    dReset.disabled = !dirty;
+    dPropose.disabled = busy || !design;
+  }
+
+  function tokenRow(key) {
+    var t = dTokens[key];
+    var sw = isColorKey(key) ? swatch(t.value) : null;
+    var input = el('input', { type: 'text', value: t.value, 'aria-label': 'Wert für ' + key, spellcheck: 'false' });
+    input.value = t.value;
+    function validate() {
+      var err = checkTokenValue(input.value);
+      input.classList.toggle('bad', !!err);
+      input.title = err;
+    }
+    validate();
+    input.addEventListener('input', function () {
+      t.value = input.value;
+      if (sw) sw.style.background = input.value;
+      validate();
+      renderDesignButtons();
+    });
+    var lock = iconButton(t.locked ? 'lock' : 'unlock', t.locked ? 'Gesperrt – Claude darf den Wert nicht ändern' : 'Nicht gesperrt – Claude darf den Wert anpassen',
+      { class: 'lock', 'aria-pressed': t.locked ? 'true' : 'false' }, true);
+    lock.addEventListener('click', function () {
+      t.locked = !t.locked;
+      renderTokens();
+      renderDesignButtons();
+    });
+    var del = iconButton('trash', 'Token ' + key + ' löschen', { class: 'ghost' }, true);
+    del.addEventListener('click', function () {
+      if (t.locked && !window.confirm('Den gesperrten Token ' + key + ' löschen?')) return;
+      delete dTokens[key];
+      renderTokens();
+      renderDesignButtons();
+    });
+    return el('tr', {}, [
+      el('td', { class: 'k', title: t.note || '' }, [sw, key]),
+      el('td', {}, [input]),
+      el('td', { class: 'b' }, [lock]),
+      el('td', { class: 'b' }, [del]),
+    ]);
+  }
+
+  function renderTokens() {
+    clear(dTokBody);
+    var keys = sortedKeys();
+    if (!keys.length) dTokBody.appendChild(el('tr', {}, [el('td', { class: 'hint', colspan: '4', text: 'Noch keine Tokens. Unten hinzufügen, aus einem Element übernehmen oder aus dem Abzug ableiten.' })]));
+    keys.forEach(function (k) { dTokBody.appendChild(tokenRow(k)); });
+  }
+
+  function renderWarnings() {
+    clear(dWarn);
+    var w = (design && design.warnings) || [];
+    if (!w.length) return;
+    var list = el('ul', { class: 'hits' });
+    w.slice(0, 20).forEach(function (x) {
+      list.appendChild(el('li', { class: 'warn' }, [el('strong', { text: x.rule || 'Hinweis' }), ' – ', x.text || '']));
+    });
+    dWarn.appendChild(el('section', { class: 'dsec' }, [el('h3', { text: 'Hinweise aus ' + (design.annotationId || 'dem letzten Schritt') }), list]));
+  }
+
+  // Wert in die Zeile „Token hinzufügen“ übernehmen
+  function prefill(cat, value, name) {
+    dAddCat.value = cat;
+    dAddVal.value = value;
+    dAddVal.classList.toggle('bad', !!checkTokenValue(value));
+    var base = name || '';
+    if (base) {
+      var n = base, i = 2;
+      while (dTokens[cat + '.' + n]) n = base + '-' + i++;
+      dAddName.value = n;
+    }
+    dAddName.focus();
+    dAddName.select();
+  }
+
+  function renderScan() {
+    clear(dScan);
+    var sc = design && design.scan;
+    if (!sc) return;
+    var groups = [
+      { label: 'Farben', cat: 'color', list: sc.colors || [] },
+      { label: 'Radien', cat: 'radius', list: sc.radii || [] },
+      { label: 'Schriftgrößen', cat: 'size', list: sc.fontSizes || [] },
+      { label: 'Schriften', cat: 'font', list: sc.fonts || [] },
+    ].filter(function (g) { return g.list.length; });
+    if (!groups.length) return;
+    var body = [el('summary', { text: 'Häufige Werte im Abzug' })];
+    groups.forEach(function (g) {
+      body.push(el('div', { class: 'chips-label', text: g.label }));
+      var chips = el('div', { class: 'chips' });
+      g.list.slice(0, 16).forEach(function (it) {
+        var used = tokenFor(g.cat, it.value);
+        var b = el('button', { type: 'button', title: it.count + '× im Abzug' + (used ? ' · Token ' + used : ' · als Token übernehmen') },
+          [g.cat === 'color' ? swatch(it.value) : null, truncate(it.value, 40) + (used ? ' ✓' : '')]);
+        b.addEventListener('click', function () { prefill(g.cat, it.value, ''); });
+        chips.appendChild(b);
+      });
+      body.push(chips);
+    });
+    dScan.appendChild(el('details', { class: 'adv' }, body));
+  }
+
+  function renderDesign() {
+    clear(dInfo);
+    if (design && !design.initialized) {
+      dInfo.appendChild(el('p', { class: 'hint', text: 'Für diese Website gibt es noch keine Design-Vorgaben. Sie werden beim Speichern oder beim nächsten Schritt angelegt.' }));
+    }
+    renderWarnings();
+    renderTokens();
+    renderScan();
+    renderDesignButtons();
+  }
+
+  function loadDesign() {
+    dErr.textContent = '';
+    clear(dTokBody);
+    dTokBody.appendChild(el('tr', {}, [el('td', { class: 'hint', text: 'Lade …' })]));
+    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/design')
+      .then(function (d) {
+        design = d || { tokens: {}, notes: '' };
+        dTokens = cloneTokens(design.tokens);
+        dNotes.value = design.notes || '';
+        dLoaded = true;
+        clear(dPickBox);
+        renderDesign();
+      })
+      .catch(function (err) {
+        clear(dTokBody);
+        dErr.textContent = 'Design-Vorgaben konnten nicht geladen werden: ' + err.message;
+      });
+  }
+
+  function addToken() {
+    var cat = dAddCat.value;
+    var name = dAddName.value.trim().toLowerCase();
+    var value = dAddVal.value.trim();
+    var key = cat + '.' + name;
+    dErr.textContent = '';
+    if (!NAME_RE.test(name)) {
+      dErr.textContent = 'Name: nur Kleinbuchstaben, Ziffern und Bindestriche (z. B. primary, button-hover).';
+      dAddName.focus();
+      return;
+    }
+    if (dTokens[key]) {
+      dErr.textContent = 'Den Token ' + key + ' gibt es schon. Wert in der Tabelle ändern.';
+      return;
+    }
+    var err = checkTokenValue(value);
+    if (err) {
+      dErr.textContent = key + ': ' + err;
+      dAddVal.classList.add('bad');
+      dAddVal.focus();
+      return;
+    }
+    dTokens[key] = { value: value, locked: false };
+    dAddName.value = '';
+    dAddVal.value = '';
+    dAddVal.classList.remove('bad');
+    renderTokens();
+    renderScan();
+    renderDesignButtons();
+    dAddName.focus();
+  }
+
+  function saveDesign() {
+    if (!isDirty() || hasInvalid()) return;
+    var body = {};
+    if (tokensChanged()) body.tokens = cloneTokens(dTokens);
+    if (dNotes.value !== (design.notes || '')) body.notes = dNotes.value;
+    dSave.disabled = true;
+    dErr.textContent = '';
+    api('PUT', '/api/sites/' + encodeURIComponent(SLUG) + '/design', body)
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        try { sessionStorage.setItem(DESIGN_OPEN_KEY, '1'); } catch (e) { /* ignorieren */ }
+        showToast('Design-Vorgaben werden gespeichert …', false);
+      })
+      .catch(function (err) {
+        dErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Speichern fehlgeschlagen: ' + err.message;
+      })
+      .then(renderDesignButtons);
+  }
+
+  function proposeTokens() {
+    if (isDirty() && !window.confirm('Ungespeicherte Änderungen gehen dabei verloren. Trotzdem Tokens aus dem Abzug ableiten?')) return;
+    dPropose.disabled = true;
+    dErr.textContent = '';
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/tokens/propose')
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        try { sessionStorage.setItem(DESIGN_OPEN_KEY, '1'); } catch (e) { /* ignorieren */ }
+        showToast('Claude leitet Tokens aus dem Abzug ab …', false);
+      })
+      .catch(function (err) {
+        dErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message;
+      })
+      .then(renderDesignButtons);
+  }
+
+  // Berechnete Werte eines angeklickten Elements als Token-Vorschläge
+  function pickValues(node) {
+    var cs = window.getComputedStyle(node);
+    var tag = node.tagName.toLowerCase();
+    var heading = /^h[1-6]$/.test(tag);
+    var buttonish = tag === 'button' || (tag === 'a' && /btn|button/i.test(node.className || '')) || node.getAttribute('role') === 'button';
+    var items = [];
+    function add(cat, label, value, name) {
+      if (!value) return;
+      value = String(value).trim();
+      if (checkTokenValue(value)) return;
+      items.push({ cat: cat, label: label, value: value, name: name });
+    }
+    add('color', 'Textfarbe', cssColor(cs.color), heading ? 'heading' : buttonish ? 'button-text' : 'text');
+    add('color', 'Hintergrund', cssColor(cs.backgroundColor), buttonish ? 'button' : 'background');
+    if (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none') add('color', 'Rahmenfarbe', cssColor(cs.borderTopColor), 'border');
+    add('font', 'Schrift', cs.fontFamily, heading ? 'heading' : 'body');
+    add('size', 'Schriftgröße', cs.fontSize, heading ? tag : buttonish ? 'button' : 'body');
+    var radius = cs.borderRadius || cs.borderTopLeftRadius;
+    if (radius && !/^0(px)?$/.test(radius)) add('radius', 'Eckenradius', radius, buttonish ? 'button' : 'default');
+    if (cs.boxShadow && cs.boxShadow !== 'none') add('shadow', 'Schatten', cs.boxShadow, buttonish ? 'button' : 'default');
+    var pad = cs.padding || [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].join(' ');
+    if (pad && !/^(0px\s*)+$/.test(pad)) add('space', 'Innenabstand', pad, buttonish ? 'button' : tag);
+    return items;
+  }
+
+  function showPick(node) {
+    clear(dPickBox);
+    var items = pickValues(node);
+    var close = iconButton('x', 'Auswahl schließen', { class: 'ghost' }, true);
+    close.addEventListener('click', function () { clear(dPickBox); });
+    var box = el('div', { class: 'pick', role: 'group', 'aria-label': 'Werte des Elements' }, [
+      el('div', { class: 'pick-head' }, [icon('pipette', 14), el('span', { class: 'spacer', text: describe(node) }), close]),
+    ]);
+    if (!items.length) box.appendChild(el('div', { class: 'hint', text: 'Keine übernehmbaren Werte gefunden.' }));
+    items.forEach(function (it) {
+      var used = tokenFor(it.cat, it.value);
+      var right;
+      if (used) right = el('span', { class: 'is', text: '= ' + used });
+      else {
+        right = iconButton('plus', 'Als Token übernehmen (' + CAT_LABEL[it.cat] + ')', {}, true);
+        right.addEventListener('click', function () { prefill(it.cat, it.value, it.name); });
+      }
+      box.appendChild(el('div', { class: 'pick-row' }, [
+        el('span', { class: 'lbl2', text: it.label }),
+        it.cat === 'color' ? swatch(it.value) : null,
+        el('code', { text: it.value }),
+        right,
+      ]));
+    });
+    dPickBox.appendChild(box);
+    setTimeout(function () {
+      var b = dPickBox.querySelector('.pick-row button') || close;
+      b.focus();
+    }, 0);
+  }
+
+  function openDesign() {
+    if (selecting) stopSelecting();
+    closePrompt();
+    closeHistory();
+    reviewPanel.classList.remove('open');
+    designPanel.classList.add('open');
+    ui.classList.add('sb-open', 'sb-design');
+    btnDesign.classList.add('on');
+    btnDesign.setAttribute('aria-expanded', 'true');
+    // Ungespeicherte Änderungen beim erneuten Öffnen behalten
+    if (!dLoaded || !isDirty()) loadDesign();
+    setTimeout(function () { dClose.focus(); }, 0);
+  }
+
+  function closeDesign() {
+    if (!designPanel.classList.contains('open')) return;
+    if (selecting && selectMode === 'token') stopSelecting();
+    designPanel.classList.remove('open');
+    ui.classList.remove('sb-design');
+    if (!historyPanel.classList.contains('open')) ui.classList.remove('sb-open');
+    btnDesign.classList.remove('on');
+    btnDesign.setAttribute('aria-expanded', 'false');
+  }
+
+  btnDesign.addEventListener('click', function () {
+    if (designPanel.classList.contains('open')) closeDesign();
+    else openDesign();
+  });
+  dClose.addEventListener('click', closeDesign);
+  dReload.addEventListener('click', function () {
+    if (isDirty() && !window.confirm('Ungespeicherte Änderungen verwerfen und neu laden?')) return;
+    loadDesign();
+  });
+  dReset.addEventListener('click', function () {
+    if (!window.confirm('Alle ungespeicherten Änderungen zurücksetzen?')) return;
+    dTokens = cloneTokens(design.tokens);
+    dNotes.value = design.notes || '';
+    renderDesign();
+  });
+  dSave.addEventListener('click', saveDesign);
+  dPropose.addEventListener('click', proposeTokens);
+  dAddBtn.addEventListener('click', addToken);
+  [dAddName, dAddVal].forEach(function (inp) {
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addToken();
+      }
+    });
+  });
+  dAddVal.addEventListener('input', function () { dAddVal.classList.toggle('bad', !!dAddVal.value && !!checkTokenValue(dAddVal.value)); });
+  dNotes.addEventListener('input', renderDesignButtons);
+  dNotes.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      saveDesign();
+    }
+  });
+  dPick.addEventListener('click', function () {
+    if (selecting) stopSelecting();
+    else startSelecting('token');
+  });
 
   // ----------------------------------------------------------------- Start
 
@@ -1366,4 +1907,10 @@
   renderStatus();
   loadJobs();
   connectEvents();
+  try {
+    if (sessionStorage.getItem(DESIGN_OPEN_KEY)) {
+      sessionStorage.removeItem(DESIGN_OPEN_KEY);
+      openDesign();
+    }
+  } catch (e) { /* ignorieren */ }
 })();
