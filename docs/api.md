@@ -117,6 +117,7 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `PUT /api/sites/<slug>/design` | JSON `{ tokens?, notes?, consistency? }` | `202 { job }` (`design-save`) |
 | `POST /api/sites/<slug>/tokens/propose` | – | `202 { job }` (`tokens-propose`) |
 | `GET /api/sites/<slug>/history` | – | Inhalt von `.history.json` |
+| `GET /api/jobs/<job-id>/log` | – | `{ lines: [..] }` laufende Ausgabe (Skript-Log und Claude-Ereignisse aus `logs/claude-<job-id>.json`, stream-json), lesbar aufbereitet |
 | `GET /api/jobs?slug=<slug>` | – | `{ jobs: [..] }` aktive Jobs (pending, running, review) und die letzten 20 abgeschlossenen |
 | `GET /api/events` | – | SSE: `event: job` mit dem Job als JSON, `event: reload` mit `{ slug }` |
 
