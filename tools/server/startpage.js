@@ -62,7 +62,6 @@ export function renderStartPage({ sites, token }) {
   table { width:100%; border-collapse:collapse; }
   th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { font-size:13px; color:var(--muted); font-weight:600; }
-  td.num { text-align:right; }
   td.actions { white-space:nowrap; text-align:right; }
   th.actions { text-align:right; }
   .menu-wrap { position:relative; display:inline-block; }
