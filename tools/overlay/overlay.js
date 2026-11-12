@@ -74,6 +74,7 @@
       'path:m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z'],
     plus: ['path:M5 12h14', 'path:M12 5v14'],
     chevron: ['path:m9 18 6-6-6-6'],
+    pencil: ['path:M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'path:m15 5 4 4'],
   };
   var SVGNS = 'http://www.w3.org/2000/svg';
   function icon(name, size) {
@@ -284,6 +285,9 @@
     '.crumbs button[aria-current=true]{background:#fef3c7;border-color:#d97706;color:#92400e;font-weight:600}' +
     '.sel-full{color:#374151;font-size:11px;margin-top:6px;padding-top:6px;border-top:1px dashed #c4c9d2;word-break:break-all}' +
     '.sel-full.bad{color:#b91c1c}' +
+    '.sel-full.editable{cursor:text;display:flex;align-items:center}' +
+    '.sel-full.editable .sel-edit{margin-left:auto;width:22px;height:22px;padding:3px;flex:none}' +
+    '.sel-full .textin{margin-top:4px}' +
     '.sel-lbl{display:inline-block;font:600 10px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:#6b7280;border-radius:3px;padding:0 5px;margin-right:6px}' +
     '.hl-label{position:absolute;left:-2px;top:-24px;background:#2563eb;color:#fff;font:12px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:4px 6px;border-radius:3px;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}' +
     '.hl.sel .hl-label{background:#d97706}' +
@@ -953,6 +957,7 @@
       }
       if (e.key === 'Escape' && isOwn(e)) {
         if (!pTokPop.hidden) { e.preventDefault(); closeTokPop(true); }
+        else if (selEditing) { /* Esc bricht nur die Bearbeitung des Selektors ab (eigener Handler) */ }
         else if (areaPanel.classList.contains('open')) closeAreaDialog();
         else if (promptPanel.classList.contains('open')) closePrompt();
         else if (historyPanel.classList.contains('open')) closeHistory();
@@ -984,6 +989,7 @@
     reviewPanel.classList.remove('open');
     selected = target;
     pathLeaf = target;
+    customSel = null;
     followupJob = null;
     pTitle.textContent = 'Annotation';
     renderMeta();
@@ -1046,14 +1052,85 @@
 
   function selectCrumb(node) {
     selected = node;
+    customSel = null;
     hidePreview();
     renderMeta();
     placeHighlight(selected, true);
   }
 
   // Pfadleiste (body bis ursprünglich gewähltes Element) und Selektor der aktuellen Auswahl
+  var customSel = null; // von Hand angepasster Selektor (sonst automatisch aus der Auswahl)
+  var selEditing = false;
   function renderMeta() {
-    renderCrumbs(pMeta, pathLeaf, selected, selectCrumb, promptPanel, selectorFor);
+    selEditing = false;
+    renderCrumbs(pMeta, pathLeaf, selected, selectCrumb, promptPanel, function () { return customSel || selectorFor(selected); });
+    var line = pMeta.querySelector('.sel-full');
+    if (!line) return;
+    line.classList.add('editable');
+    line.title = 'Doppelklick zum Bearbeiten';
+    var pen = iconButton('pencil', 'Selektor bearbeiten', { class: 'ghost sel-edit' }, true);
+    pen.addEventListener('click', editSelector);
+    line.appendChild(pen);
+    line.addEventListener('dblclick', editSelector);
+  }
+
+  // Selektor im Annotationsdialog von Hand anpassen
+  function editSelector() {
+    if (selEditing) return;
+    selEditing = true;
+    var line = pMeta.querySelector('.sel-full');
+    var input = el('input', { type: 'text', class: 'textin mono', spellcheck: 'false', maxlength: '500', 'aria-label': 'Selektor' });
+    input.value = customSel || selectorFor(selected);
+    var info = el('div', { class: 'hint', 'aria-live': 'polite' });
+    clear(line);
+    line.classList.remove('editable');
+    line.appendChild(el('span', { class: 'sel-lbl', text: 'Selektor' }));
+    line.appendChild(input);
+    line.appendChild(info);
+    var found = null;
+    function check() {
+      var v = input.value.trim(), list = null;
+      found = null;
+      if (v) {
+        try { list = document.querySelectorAll(v); } catch (e) { list = null; }
+        list = list ? Array.prototype.filter.call(list, function (n) { return n !== host && !host.contains(n); }) : null;
+      }
+      if (!v) info.textContent = 'Leer: automatischer Selektor wird verwendet.';
+      else if (!list) info.textContent = 'Ungültiger Selektor.';
+      else if (!list.length) info.textContent = 'Trifft auf dieser Seite nichts.';
+      else {
+        found = list[0];
+        info.textContent = list.length === 1 ? 'Trifft genau ein Element. Enter übernimmt, Esc bricht ab.' : 'Trifft ' + list.length + ' Elemente, verwendet wird das erste (hervorgehoben). Enter übernimmt.';
+      }
+      var bad = !!v && !found;
+      info.classList.toggle('bad', bad);
+      input.classList.toggle('bad', bad);
+      placeHighlight(found || selected, true);
+      return !bad;
+    }
+    function apply() {
+      if (!check()) return false;
+      var v = input.value.trim();
+      if (!v) customSel = null;
+      else {
+        selected = found;
+        customSel = v === selectorFor(found) ? null : v;
+        var inChain = false;
+        for (var n = pathLeaf; n; n = n.parentElement) if (n === selected) inChain = true;
+        if (!inChain) pathLeaf = selected;
+      }
+      renderMeta();
+      placeHighlight(selected, true);
+      return true;
+    }
+    input.addEventListener('input', check);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); if (apply()) pText.focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); renderMeta(); placeHighlight(selected, true); pText.focus(); }
+    });
+    input.addEventListener('blur', function () { setTimeout(function () { if (selEditing && !apply()) { renderMeta(); placeHighlight(selected, true); } }, 120); });
+    check();
+    setTimeout(function () { input.focus(); input.select(); }, 0);
   }
 
   function renderCrumbs(box, leaf, current, onSelect, panel, selFn) {
@@ -1370,7 +1447,7 @@
     var fp = followupJob ? followupJob.params || {} : null;
     var annotation = {
       page: fp ? fp.page : currentPage(),
-      selector: fp ? fp.selector : selectorFor(selected),
+      selector: fp ? fp.selector : customSel || selectorFor(selected),
       html: fp ? fp.html || '' : truncate(selected.outerHTML, MAX_HTML),
       text: fp ? fp.text || '' : truncate((selected.innerText || selected.textContent || '').trim(), MAX_TEXT),
       viewport: { width: window.innerWidth, height: window.innerHeight },
