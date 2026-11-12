@@ -318,6 +318,35 @@ function validateDesign(body) {
   return null;
 }
 
+// Job-Parameter einer Annotation (direkt oder aus der Queue)
+function annotationParams(slug, annotation, files) {
+  return {
+    site: slug,
+    page: annotation.page,
+    selector: annotation.selector,
+    html: String(annotation.html || '').slice(0, 50000),
+    text: String(annotation.text || '').slice(0, 5000),
+    viewport: annotation.viewport && { width: Number(annotation.viewport.width) || null, height: Number(annotation.viewport.height) || null },
+    prompt: annotation.prompt.trim(),
+    thorough: annotation.thorough === true,
+    remember: annotation.remember === true,
+    followup: annotation.followup === true,
+    followup_of: annotation.followup === true && annotation.followup_of ? String(annotation.followup_of) : null,
+    allow_token_change: annotation.allow_token_change === true,
+    references: [...files.map((file) => ({ type: 'upload', file })), ...(annotation.references || []).map((r) => ({ type: 'url', url: r.url }))],
+  };
+}
+
+// Queue gesammelter Annotationen: jobs/queue/<slug>/<id>.json
+// Reihenfolge der Aufnahme (IDs sind nur sekundengenau)
+const byCreated = (a, b) => String(a.created).localeCompare(String(b.created)) || String(a.id).localeCompare(String(b.id));
+const queueSummary = (q) => ({ id: q.id, created: q.created, page: q.params.page, selector: q.params.selector, prompt: q.params.prompt, references: (q.params.references || []).length });
+async function readQueue(slug) {
+  const dir = path.join(JOBS_DIR, 'queue', slug);
+  const files = (await fsp.readdir(dir).catch(() => [])).filter((f) => /^job-\d{14}-[0-9a-f]{6}\.json$/.test(f)).sort();
+  return (await Promise.all(files.map((f) => readJson(path.join(dir, f), null)))).filter(Boolean).sort(byCreated).map(queueSummary);
+}
+
 // Tokens, Regeln, Scan und Hinweise des letzten Schritts für das Overlay
 async function readDesign(slug) {
   const dir = siteDir(slug);
@@ -390,7 +419,20 @@ async function handleApi(req, res, url) {
     return send(res, 200, { jobs: [...finished, ...active].map(slimJob) });
   }
 
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/queue\/(job-\d{14}-[0-9a-f]{6})$/)) && req.method === 'DELETE') {
+    const [, slug, qid] = m;
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
+    const file = path.join(JOBS_DIR, 'queue', slug, `${qid}.json`);
+    const item = await readJson(file, null);
+    if (!item) return sendError(res, 404, 'Nicht in der Queue');
+    for (const r of item.params?.references || []) {
+      if (r.type === 'upload' && /^jobs\/assets\/[^/]+$/.test(r.file)) await fsp.rm(path.join(ROOT, r.file), { force: true });
+    }
+    await fsp.rm(file, { force: true });
+    sse.emit('queue', { slug });
+    return send(res, 200, { items: await readQueue(slug) });
+  }
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -399,6 +441,7 @@ async function handleApi(req, res, url) {
       return send(res, 200, await readJson(path.join(siteDir(slug), '.history.json'), { slug, head: null, baseline: null, steps: [] }));
     }
     if (action === 'design' && req.method === 'GET') return send(res, 200, await readDesign(slug));
+    if (action === 'queue' && req.method === 'GET') return send(res, 200, { items: await readQueue(slug) });
     if (action === 'status' && req.method === 'GET') {
       // Nur lesend: ungespeicherte Änderungen im Abzug (für „Änderungen übernehmen“ im Overlay)
       const out = await new Promise((resolve) => execFile('git', ['-C', siteDir(slug), 'status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude)annotations/'],
@@ -436,22 +479,43 @@ async function handleApi(req, res, url) {
         await Promise.all(files.map((f) => fsp.rm(path.join(ROOT, f), { force: true })));
         return sendError(res, 400, err);
       }
-      const params = {
-        site: slug,
-        page: annotation.page,
-        selector: annotation.selector,
-        html: String(annotation.html || '').slice(0, 50000),
-        text: String(annotation.text || '').slice(0, 5000),
-        viewport: annotation.viewport && { width: Number(annotation.viewport.width) || null, height: Number(annotation.viewport.height) || null },
-        prompt: annotation.prompt.trim(),
-        thorough: annotation.thorough === true,
-        remember: annotation.remember === true,
-        followup: annotation.followup === true,
-        followup_of: annotation.followup === true && annotation.followup_of ? String(annotation.followup_of) : null,
-        allow_token_change: annotation.allow_token_change === true,
-        references: [...files.map((file) => ({ type: 'upload', file })), ...(annotation.references || []).map((r) => ({ type: 'url', url: r.url }))],
-      };
+      const params = annotationParams(slug, annotation, files);
       return send(res, 202, { job: await createJob('annotate', slug, params, id) });
+    }
+    if (action === 'queue') {
+      // Sammeln: kein Busy-Check, die Queue darf wachsen, während ein Schritt läuft
+      const id = newJobId();
+      const { annotation, files } = await parseAnnotationUpload(req, id);
+      let err = validateAnnotation(annotation, files.length);
+      if (!err && annotation.followup === true) err = 'Nachbessern kann nicht in die Queue';
+      if (!err && (await readQueue(slug)).length >= 20) err = 'Höchstens 20 Annotationen in der Queue';
+      if (err) {
+        await Promise.all(files.map((f) => fsp.rm(path.join(ROOT, f), { force: true })));
+        return sendError(res, 400, err);
+      }
+      const dir = path.join(JOBS_DIR, 'queue', slug);
+      await fsp.mkdir(dir, { recursive: true });
+      const item = { id, created: new Date().toISOString(), params: annotationParams(slug, annotation, files) };
+      await fsp.writeFile(path.join(dir, `${id}.json`), JSON.stringify(item, null, 2));
+      sse.emit('queue', { slug });
+      return send(res, 201, { item: queueSummary(item), items: await readQueue(slug) });
+    }
+    if (action === 'queue/run') {
+      const body = await readBody(req);
+      if (await busyCheck(res, slug, 'Das Umsetzen der Queue')) return;
+      const dir = path.join(JOBS_DIR, 'queue', slug);
+      const files = (await fsp.readdir(dir).catch(() => [])).filter((f) => /^job-\d{14}-[0-9a-f]{6}\.json$/.test(f)).sort();
+      const items = (await Promise.all(files.map((f) => readJson(path.join(dir, f), null)))).filter(Boolean).sort(byCreated).map((q) => q.params);
+      if (!items.length) return sendError(res, 400, 'Die Queue ist leer');
+      const prompt = items.length === 1 ? items[0].prompt
+        : `Sammelauftrag (${items.length} Annotationen)\n\n` + items.map((it, i) => `${i + 1}) ${it.prompt}`).join('\n');
+      const params = items.length === 1 ? { ...items[0], thorough: body.thorough !== false }
+        : { site: slug, batch: true, items, page: items[0].page, selector: items[0].selector, prompt, thorough: body.thorough !== false,
+            remember: false, followup: false, followup_of: null, allow_token_change: false, references: [] };
+      const job = await createJob('annotate', slug, params);
+      await Promise.all(files.map((f) => fsp.rm(path.join(dir, f), { force: true })));
+      sse.emit('queue', { slug });
+      return send(res, 202, { job });
     }
     if (action === 'recrawl') {
       const body = await readBody(req);

@@ -35,7 +35,7 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 |---|---|---|
 | `site-new` | `{ url, slug, urls: [..] }` | `site-new.sh <url> <slug> [urls.txt]` |
 | `site-recrawl` | `{}` | `site-recrawl.sh <slug>` |
-| `annotate` | Annotation (siehe unten) mit `references: [{type:"upload",file}|{type:"url",url}]` | `run-annotation.sh <slug> <job.json>` |
+| `annotate` | Annotation (siehe unten) mit `references: [{type:"upload",file}|{type:"url",url}]`; Sammelauftrag: zusätzlich `batch: true, items: [Annotation, …]` | `run-annotation.sh <slug> <job.json>` (ein Claude-Lauf, ein Schritt A-xxx) |
 | `decision` | `{ jobId, action: "accept"|"discard" }` | `commit-step.sh <slug> <id> --accept` bzw. `discard-step.sh <slug>` |
 | `rollback` | `{ target: "A-003"|"baseline"|<commit> }` | `rollback.sh <slug> <target>` |
 | `report` | `{}` | `report.sh <slug>` |
@@ -102,6 +102,10 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `POST /api/sites/<slug>/recrawl` | JSON `{ keepDesign?: true }` | `202 { job }` |
 | `POST /api/sites/<slug>/annotations` | `multipart/form-data`: Feld `annotation` (JSON), Dateien im Feld `images` | `202 { job }`, `409` wenn für die Website schon ein Job aktiv ist oder auf Prüfung wartet |
 | `POST /api/jobs/<job-id>/decision` | JSON `{ action: "accept"|"discard" }` | `202 { job }` |
+| `GET /api/sites/<slug>/queue` | – | `{ items: [{ id, created, page, selector, prompt, references }] }` gesammelte Annotationen |
+| `POST /api/sites/<slug>/queue` | wie `annotations` (multipart) | `201 { item, items }` – in die Queue aufnehmen (auch während ein Schritt läuft; kein Nachbessern; max. 20) |
+| `DELETE /api/sites/<slug>/queue/<id>` | – | `{ items }` – aus der Queue entfernen (mit hochgeladenen Bildern) |
+| `POST /api/sites/<slug>/queue/run` | JSON `{ thorough?: true }` | `202 { job }` – alle als **ein** `annotate`-Job (Sammelauftrag), Queue danach leer |
 | `POST /api/sites/<slug>/local-commit` | – | `202 { job }`: von Hand geänderte Dateien als Schritt übernehmen |
 | `POST /api/sites/<slug>/inspect` | JSON `{ page, items: [{ selector, html, css? }], rules: [{ selector, decls, media? }] }` | `202 { job }`: im Inspektor geänderte Elemente (`css`: Inline-Styles als Regel in `overrides.css`) und im Styles-Panel geänderte CSS-Regeln (als Regel in `overrides.css`) übernehmen |
 | `GET /api/sites/<slug>/status` | – | `{ changed, files }`: ungespeicherte Änderungen im Abzug (nur lesend) |

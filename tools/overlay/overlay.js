@@ -461,6 +461,14 @@
     '.dirty{font-size:12px;color:#b45309;align-self:center}' +
     'select:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}' +
     'ul.areas{list-style:none;margin:0;padding:0}' +
+    'button.queue{background:#2563eb;border-color:#2563eb;color:#fff}' +
+    'button.queue:hover:not([disabled]){background:#1d4ed8}' +
+    'ul.qlist{list-style:none;margin:0 0 6px;padding:0;max-height:45vh;overflow:auto}' +
+    'ul.qlist li{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #e5e7eb}' +
+    'ul.qlist .qn{flex:none;width:20px;height:20px;border-radius:50%;background:#e0e7ff;color:#3730a3;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}' +
+    'ul.qlist .qbody{flex:1;min-width:0}' +
+    'ul.qlist .qprompt{white-space:pre-wrap;word-break:break-word;font-size:13px}' +
+    'ul.qlist li > button{padding:3px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;flex:none}' +
     'button.changes{background:#fef3c7;border-color:#f59e0b;color:#92400e}' +
     'button.changes:hover:not([disabled]){background:#fde68a}' +
     'ul.chlist,ul.flist{list-style:none;margin:0;padding:0}' +
@@ -544,7 +552,8 @@
   var pTitle = el('h2', { id: 'modio-ph', text: 'Annotation' });
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
-  var pSend = el('button', { type: 'button', class: 'primary', text: 'Absenden' });
+  var pSend = el('button', { type: 'button', text: 'Direkt umsetzen', title: 'Sofort als eigenen Schritt mit Claude umsetzen (Strg+Umschalt+Enter)' });
+  var pQueue = el('button', { type: 'button', class: 'primary', text: 'In die Queue aufnehmen', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)' });
   var pTokBtn = iconButton('palette', 'Token einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
@@ -554,7 +563,7 @@
     pMeta,
     el('label', { for: 'modio-prompt', class: 'sr', text: 'Prompt' }),
     pText,
-    el('div', { class: 'row hintrow' }, [el('span', { class: 'hint', text: 'Strg+Enter sendet ab · Esc schließt' }), el('span', { class: 'spacer' }), pTokBtn]),
+    el('div', { class: 'row hintrow' }, [el('span', { class: 'hint', text: 'Strg+Enter: Queue · Strg+Umschalt+Enter: direkt · Esc schließt' }), el('span', { class: 'spacer' }), pTokBtn]),
     pTokPop,
     pDrop,
     pFile,
@@ -564,7 +573,7 @@
       el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet: besser bei kniffligen oder seitenübergreifenden Änderungen, aber langsamer und teurer' }, [pThorough, 'Stärkeres Modell für komplexe Änderungen']),
     ]),
     pErr,
-    el('div', { class: 'row end' }, [pCancel, pSend]),
+    el('div', { class: 'row end' }, [pCancel, pSend, pQueue]),
   ]);
   ui.appendChild(promptPanel);
 
@@ -785,14 +794,16 @@
       statusEl.appendChild(document.createTextNode('bereit'));
     }
     var busy = !!job;
-    btnSelect.disabled = busy;
-    btnSelect.title = busy ? 'Es läuft noch ein Schritt – bitte warten' : 'Element auswählen (Alt+A)';
+    btnSelect.disabled = false; // auch während eines Schritts: Annotationen können in die Queue
+    btnSelect.title = busy ? 'Element auswählen (Alt+A) – während der Schritt läuft nur in die Queue' : 'Element auswählen (Alt+A)';
     pSend.disabled = busy;
+    pQueue.style.display = followupJob ? 'none' : '';
+    pSend.classList.toggle('primary', !!followupJob);
+    if (typeof renderQueueButton === 'function' && qRun) renderQueueButton();
     var fj = followupCandidate();
     btnFollowup.style.display = fj ? '' : 'none';
     btnFollowup.disabled = busy;
     if (fj) btnFollowup.title = 'Schritt ' + fj.result.annotationId + ' in derselben Claude-Session korrigieren';
-    if (busy && selecting && selectMode === 'annotate') stopSelecting();
     renderHistoryButtons();
     renderDesignButtons();
     if (typeof renderChangesButton === 'function' && btnChanges) renderChangesButton();
@@ -885,10 +896,6 @@
   function startSelecting(mode) {
     selectMode = mode === 'token' || mode === 'area' ? mode : 'annotate';
     if (selectMode === 'annotate') {
-      if (isBusy()) {
-        showToast('Es läuft noch ein Schritt. Neue Annotationen sind erst danach möglich.', false);
-        return;
-      }
       closePanels();
       btnSelect.classList.add('on');
       btnSelect.setAttribute('aria-pressed', 'true');
@@ -973,6 +980,7 @@
         else if (selEditing) { /* Esc bricht nur die Bearbeitung des Selektors ab (eigener Handler) */ }
         else if (areaPanel.classList.contains('open')) closeAreaDialog();
         else if (changesPanel.classList.contains('open')) closeChanges();
+        else if (queuePanel.classList.contains('open')) closeQueue();
         else if (promptPanel.classList.contains('open')) closePrompt();
         else if (historyPanel.classList.contains('open')) closeHistory();
         else if (designPanel.classList.contains('open')) closeDesign();
@@ -990,6 +998,7 @@
   // --------------------------------------------------------- Prompt-Dialog
 
   function closePanels() {
+    if (typeof closeQueue === 'function' && queuePanel) closeQueue();
     if (typeof closeChanges === 'function') closeChanges();
     closePrompt();
     closeAreaDialog();
@@ -1375,10 +1384,11 @@
   pText.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      submit();
+      submit(e.shiftKey || followupJob ? 'direct' : 'queue');
     }
   });
-  pSend.addEventListener('click', submit);
+  pSend.addEventListener('click', function () { submit('direct'); });
+  pQueue.addEventListener('click', function () { submit('queue'); });
 
 
   // Zeilenweiser Unterschied (LCS) zweier HTML-Fassungen, Tags je Zeile
@@ -1499,10 +1509,11 @@
     closePrompt();
   });
 
-  function submit() {
+  function submit(mode) {
     if (!selected && !followupJob) return;
-    if (isBusy()) {
-      pErr.textContent = 'Es läuft noch ein Schritt. Bitte warten.';
+    var toQueue = mode === 'queue' && !followupJob;
+    if (!toQueue && isBusy()) {
+      pErr.textContent = 'Es läuft noch ein Schritt. Bitte warten oder in die Queue aufnehmen.';
       return;
     }
     var prompt = pText.value.trim();
@@ -1537,23 +1548,105 @@
     refs.forEach(function (r) {
       if (r.kind === 'file') fd.append('images', r.file, r.file.name || 'bild');
     });
-    pSend.disabled = true;
+    pSend.disabled = pQueue.disabled = true;
     pErr.textContent = '';
-    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/annotations', fd)
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + (toQueue ? '/queue' : '/annotations'), fd)
       .then(function (data) {
         if (data && data.job) trackJob(data.job);
+        if (data && data.items) { queueItems = data.items; renderQueueButton(); }
         resetPrompt();
         closePrompt();
-        showToast('Annotation gesendet.', false);
+        showToast(toQueue ? 'In die Queue aufgenommen (' + queueItems.length + ').' : 'Annotation gesendet.', false);
       })
       .catch(function (err) {
         pErr.textContent =
           err.status === 409 ? 'Für diese Website läuft bereits ein Schritt oder wartet auf Prüfung.' : 'Senden fehlgeschlagen: ' + err.message;
       })
       .then(function () {
+        pQueue.disabled = false;
         renderStatus();
       });
   }
+
+  // ------------------------------------------------------------- Queue
+
+  var queueItems = [];
+  var btnQueue = iconButton('sparkles', 'Queue umsetzen', { class: 'queue', title: 'Gesammelte Annotationen ansehen und in einem Schritt umsetzen' });
+  btnQueue.style.display = 'none';
+  bar.insertBefore(btnQueue, statusEl);
+  var qList = el('ul', { class: 'qlist' });
+  var qThorough = el('input', { type: 'checkbox' });
+  qThorough.checked = true;
+  var qErr = el('div', { class: 'err', role: 'alert' });
+  var qClose = el('button', { type: 'button', text: 'Schließen' });
+  var qRun = el('button', { type: 'button', class: 'primary', text: 'Alle in einem Schritt umsetzen' });
+  var queuePanel = el('div', { class: 'panel', role: 'dialog', 'aria-labelledby': 'modio-qh' }, [
+    el('h2', { id: 'modio-qh', text: 'Queue' }),
+    qList,
+    el('div', { class: 'checks' }, [el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet' }, [qThorough, 'Stärkeres Modell für komplexe Änderungen'])]),
+    qErr,
+    el('div', { class: 'row end' }, [qClose, qRun]),
+  ]);
+  ui.appendChild(queuePanel);
+
+  function renderQueueButton() {
+    var n = queueItems.length;
+    btnQueue.style.display = n ? '' : 'none';
+    btnQueue.modioLabel.textContent = 'Queue umsetzen (' + n + ')';
+    btnQueue.disabled = false;
+    qRun.disabled = isBusy() || !n;
+    qRun.title = isBusy() ? 'Es läuft noch ein Schritt – danach umsetzen' : '';
+    if (queuePanel.classList.contains('open')) renderQueue();
+  }
+  function renderQueue() {
+    clear(qList);
+    if (!queueItems.length) qList.appendChild(el('li', { class: 'hint', text: 'Die Queue ist leer.' }));
+    queueItems.forEach(function (q, i) {
+      var del = iconButton('trash', 'Aus der Queue entfernen', { class: 'ghost' }, true);
+      del.addEventListener('click', function () {
+        del.disabled = true;
+        api('DELETE', '/api/sites/' + encodeURIComponent(SLUG) + '/queue/' + encodeURIComponent(q.id))
+          .then(function (d) { queueItems = (d && d.items) || []; renderQueueButton(); })
+          .catch(function (err) { qErr.textContent = 'Entfernen fehlgeschlagen: ' + err.message; del.disabled = false; });
+      });
+      qList.appendChild(el('li', {}, [
+        el('span', { class: 'qn', text: String(i + 1) }),
+        el('div', { class: 'qbody' }, [
+          el('div', { class: 'qprompt', text: q.prompt }),
+          el('div', { class: 'step-sel', text: [q.page === currentPage() ? null : q.page, q.selector, q.references ? q.references + ' Bild(er)' : null].filter(Boolean).join(' · ') }),
+        ]),
+        del,
+      ]));
+    });
+  }
+  function loadQueue() {
+    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/queue')
+      .then(function (d) { queueItems = (d && d.items) || []; renderQueueButton(); })
+      .catch(function () { /* egal */ });
+  }
+  function openQueue() {
+    closePanels();
+    qErr.textContent = '';
+    renderQueue();
+    queuePanel.classList.add('open');
+    setTimeout(function () { qRun.focus(); }, 0);
+  }
+  function closeQueue() { queuePanel.classList.remove('open'); }
+  btnQueue.addEventListener('click', function () { if (queuePanel.classList.contains('open')) closeQueue(); else openQueue(); });
+  qClose.addEventListener('click', closeQueue);
+  qRun.addEventListener('click', function () {
+    if (isBusy()) { qErr.textContent = 'Es läuft noch ein Schritt. Bitte warten.'; return; }
+    qRun.disabled = true;
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/queue/run', { thorough: !!qThorough.checked })
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        queueItems = [];
+        renderQueueButton();
+        closeQueue();
+        showToast('Queue wird in einem Schritt umgesetzt …', false);
+      })
+      .catch(function (err) { qErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message; qRun.disabled = false; });
+  });
 
   // ------------------------------------------------------------- Jobs
 
@@ -1663,6 +1756,11 @@
       try { job = JSON.parse(e.data); } catch (err) { return; }
       if (job && job.job) job = job.job;
       trackJob(job);
+    });
+    es.addEventListener('queue', function (e) {
+      var d = {};
+      try { d = JSON.parse(e.data); } catch (err) { /* ignorieren */ }
+      if (d.slug === SLUG) loadQueue();
     });
     es.addEventListener('reload', function (e) {
       var d = {};
@@ -2719,6 +2817,7 @@
 
   renderStatus();
   loadJobs();
+  loadQueue();
   connectEvents();
   if (document.readyState === 'complete') initChanges();
   else window.addEventListener('load', initChanges);

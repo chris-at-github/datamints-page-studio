@@ -199,7 +199,7 @@ async function processJob(id) {
 
   // Hochgeladene Bilder werden nach Übernahme nicht mehr gebraucht
   if (job.type === 'annotate' && status !== 'review') {
-    for (const ref of job.params?.references || []) {
+    for (const ref of [...(job.params?.references || []), ...(job.params?.items || []).flatMap((it) => it.references || [])]) {
       if (ref.type === 'upload' && /^jobs\/assets\/[^/]+$/.test(ref.file)) await fsp.rm(path.join(ROOT, ref.file), { force: true });
     }
   }

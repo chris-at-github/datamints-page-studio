@@ -20,7 +20,7 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 
 1. `https://modio.ddev.site:3443` öffnen, URL eintragen (optional Seitenliste) → Abzug wird erstellt. Weitere Seiten einer bestehenden Website später über „Seiten hinzufügen“ in der Websiteliste: Die bisherigen Schritte bleiben erhalten, nur fehlende Dateien kommen dazu, Links auf die neuen Seiten zeigen danach auf den Abzug.
 2. „Öffnen“ → Website mit Overlay. **Alt+A** schaltet den Auswahlmodus, **Pfeil hoch** wählt das Elternelement, Klick oder Enter bestätigt.
-3. Prompt eingeben, optional Referenzbilder (Drag-and-drop, Strg+V, Datei, Bild-URL), „Stärkeres Modell für komplexe Änderungen“ = Opus statt Sonnet → Absenden.
+3. Prompt eingeben, optional Referenzbilder (Drag-and-drop, Strg+V, Datei, Bild-URL), „Stärkeres Modell für komplexe Änderungen“ = Opus statt Sonnet → „In die Queue aufnehmen“ (Strg+Enter) oder „Direkt umsetzen“ (Strg+Umschalt+Enter). Gesammelte Annotationen setzt „Queue umsetzen (n)“ in der Leiste als **einen** Schritt in einer Claude-Session um; sammeln geht auch, während ein Schritt läuft.
 4. Claude setzt um, der Snapshot entsteht, die Seite lädt neu. Bei auffälligen Änderungen erscheint der Prüfdialog.
 5. „Verlauf“ → zu jedem Stand zurückspringen. „Nachbessern“ korrigiert den letzten Schritt in derselben Claude-Session.
 6. Tokens und Regeln pflegst du im Design-Panel. Im Annotationsdialog fügt „Token einfügen“ (oder Strg+Leertaste) einen Token wie `color.primary` in den Prompt ein; Claude setzt ihn als `var(--modio-color-primary)` um. Details: [projektplan-erweiterung-design.md](projektplan-erweiterung-design.md).
