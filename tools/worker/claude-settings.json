@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Read(//home/**/.env)",
+      "Read(//home/**/.env.*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.git-credentials)",
+      "Read(~/.claude.json)",
+      "Read(~/.claude/**)",
+      "Read(./.git/**)",
+      "Edit(./.git/**)",
+      "Edit(./.gitignore)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./site.json)",
+      "Edit(./urls.txt)",
+      "Edit(./.state.json)",
+      "Edit(./annotations/**)"
+    ]
+  }
+}

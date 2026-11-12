@@ -1,0 +1,3 @@
+# Eigene Domains, deren Scripts im Abzug erhalten bleiben (eine pro Zeile).
+# Subdomains sind eingeschlossen (example.de erlaubt auch www.example.de).
+# Der Host der jeweiligen Website wird automatisch ergänzt.

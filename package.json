@@ -1,0 +1,23 @@
+{
+  "name": "modio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lokales Werkzeug zur Website-Optimierung per Element-Annotation und Claude Code",
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "server": "node --env-file=.env tools/server/index.js",
+    "worker": "node --env-file=.env tools/worker/index.js",
+    "test": "bash tests/run.sh"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "sharp": "^0.34.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.0",
+    "prettier": "^3.3.0"
+  }
+}

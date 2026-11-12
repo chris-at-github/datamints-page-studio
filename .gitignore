@@ -1,0 +1,7 @@
+sites/
+archive/
+jobs/
+state/
+logs/
+node_modules/
+.env

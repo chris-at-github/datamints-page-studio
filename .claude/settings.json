@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/*)",
+      "Bash(scripts/*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Edit(./.env)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.git-credentials)",
+      "Read(~/.claude.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Bash(wget:*)",
+      "Bash(curl:*)",
+      "Bash(git:*)"
+    ]
+  }
+}
