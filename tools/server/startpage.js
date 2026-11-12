@@ -29,6 +29,8 @@ export function renderStartPage({ sites, token }) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Modio</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
   :root { --fg:#1d2330; --muted:#667085; --line:#e4e7ec; --bg:#f6f7f9; --accent:#3b5bdb; --err:#c92a2a; --ok:#2b8a3e; --warn:#e67700; }
   * { box-sizing: border-box; }
@@ -56,7 +58,9 @@ export function renderStartPage({ sites, token }) {
   .muted { color:var(--muted); font-size:13px; word-break:break-all; }
   #msg { min-height:1.5em; margin-top:10px; }
   .err { color:var(--err); } .ok { color:var(--ok); }
-  #jobs li { margin:4px 0; font-size:14px; }
+  #jobs td { font-size:14px; }
+  #jobs td.when { white-space:nowrap; }
+  #jobs .err { font-size:13px; }
   .st { display:inline-block; min-width:110px; font-weight:600; }
   .st-pending { color:var(--muted); } .st-running { color:var(--accent); } .st-review { color:var(--warn); }
   .st-done { color:var(--ok); } .st-failed { color:var(--err); }
@@ -90,7 +94,10 @@ export function renderStartPage({ sites, token }) {
   </section>
   <section>
     <h2>Aufträge</h2>
-    <ul id="jobs"><li class="muted">Lade …</li></ul>
+    <table>
+      <thead><tr><th>Status</th><th>Auftrag</th><th>Website</th><th>Erstellt</th><th>Details</th></tr></thead>
+      <tbody id="jobs"><tr><td colspan="5" class="muted">Lade …</td></tr></tbody>
+    </table>
   </section>
 </main>
 <script>
@@ -134,19 +141,25 @@ export function renderStartPage({ sites, token }) {
     finally { btn.disabled = false; }
   });
 
+  const MAX_JOBS = 10;
+  function cell(text, cls) { const td = document.createElement('td'); if (cls) td.className = cls; if (text != null) td.textContent = text; return td; }
   function render() {
-    const list = [...jobs.values()].sort((a, b) => b.id.localeCompare(a.id)).slice(0, 25);
+    const list = [...jobs.values()].sort((a, b) => b.id.localeCompare(a.id)).slice(0, MAX_JOBS);
     jobsEl.textContent = '';
-    if (!list.length) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = 'Keine Aufträge.'; jobsEl.append(li); return; }
+    if (!list.length) { const tr = document.createElement('tr'); const td = cell('Keine Aufträge.', 'muted'); td.colSpan = 5; tr.append(td); jobsEl.append(tr); return; }
     for (const j of list) {
-      const li = document.createElement('li');
+      const tr = document.createElement('tr');
+      const status = cell();
       const st = document.createElement('span');
       st.className = 'st st-' + j.status; st.textContent = STATUS[j.status] || j.status;
-      li.append(st, ' ', (LABEL[j.type] || j.type) + ' · ' + j.slug + ' · ' + new Date(j.created).toLocaleTimeString('de-DE'));
-      if (j.type === 'annotate' && j.params?.prompt) li.append(' · „' + j.params.prompt.slice(0, 80) + '“');
-      if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; li.append(e); }
-      if (j.type === 'report' && j.status === 'done') { const a = document.createElement('a'); a.href = '/report/' + j.slug; a.target = '_blank'; a.textContent = ' Report ansehen'; li.append(a); }
-      jobsEl.append(li);
+      status.append(st);
+      const details = cell();
+      if (j.type === 'annotate' && j.params?.prompt) details.append('„' + j.params.prompt.slice(0, 80) + (j.params.prompt.length > 80 ? '…' : '') + '“');
+      if (j.type === 'report' && j.status === 'done') { const a = document.createElement('a'); a.href = '/report/' + j.slug; a.target = '_blank'; a.textContent = 'Report ansehen'; details.append(a); }
+      if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; details.append(e); }
+      const when = new Date(j.created).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+      tr.append(status, cell(LABEL[j.type] || j.type), cell(j.slug), cell(when, 'when'), details);
+      jobsEl.append(tr);
     }
   }
   function upsert(job) { jobs.set(job.id, job); render(); }
