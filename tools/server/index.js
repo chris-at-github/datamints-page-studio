@@ -16,6 +16,8 @@ const SITES_DIR = abs(env.SITES_DIR, './sites');
 const JOBS_DIR = abs(env.JOBS_DIR, './jobs');
 const STATE_DIR = abs(env.STATE_DIR, './state');
 const OVERLAY_FILE = path.join(ROOT, 'tools/overlay/overlay.js');
+const FAVICON_SVG = path.join(ROOT, 'tools/server/favicon.svg');
+const FAVICON_ICO = path.join(ROOT, 'tools/server/favicon.ico');
 const PORT = Number(env.BRIDGE_PORT || 3000);
 const TOKEN = env.MODIO_API_TOKEN || '';
 const IMAGE_MAX_COUNT = Number(env.IMAGE_MAX_COUNT || 3);
@@ -491,7 +493,14 @@ const server = http.createServer(async (req, res) => {
       if (m[2] === undefined) { res.writeHead(302, { Location: `/s/${m[1]}/` }); return res.end(); }
       return await serveSite(req, res, m[1], m[2], url.search);
     }
-    if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
+    if (p === '/favicon.svg') {
+      const svg = await fsp.readFile(FAVICON_SVG);
+      return send(res, 200, svg, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+    }
+    if (p === '/favicon.ico') {
+      const ico = await fsp.readFile(FAVICON_ICO);
+      return send(res, 200, ico, { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' });
+    }
     return sendError(res, 404, 'Nicht gefunden');
   } catch (e) {
     if (!res.headersSent) sendError(res, e.status || 500, e.status ? e.message : 'Interner Fehler');
