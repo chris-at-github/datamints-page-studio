@@ -376,6 +376,8 @@
     '.hl.pick{border-color:#059669;background:rgba(5,150,105,.10)}' +
     '.hl.pick .hl-label{background:#059669}' +
     '.dsec{margin-bottom:18px}' +
+    '.design .sb-body .dsec{border-top:1px solid #9ca3af;padding-top:14px}' +
+    '.design .sb-body > div:empty + section.dsec,.design .sb-body > div > .dsec:first-child{border-top:0;padding-top:0}' +
     '.dsec h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin:0 0 6px;display:flex;align-items:center;gap:6px}' +
     'table.tok{width:100%;border-collapse:collapse;font-size:13px}' +
     'table.tok td{padding:3px 2px;vertical-align:middle;border-bottom:1px solid #f1f2f4}' +
@@ -476,7 +478,6 @@
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var pSend = el('button', { type: 'button', class: 'primary', text: 'Absenden' });
-  var pSync = el('button', { type: 'button', text: 'Auf allen Seiten übernehmen', title: 'Dieses Element als gleichen Bereich merken (consistency.json) und von dieser Seite auf alle Seiten kopieren – ohne Claude' });
   var promptPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
     pTitle,
     pMeta,
@@ -493,7 +494,7 @@
       el('label', { class: 'switch', title: 'Ohne diesen Haken stoppt die Prüfung jede Änderung an gesperrten Tokens' }, [pAllowTokens, 'Gesperrte Tokens dürfen geändert werden']),
     ]),
     pErr,
-    el('div', { class: 'row end' }, [pSync, el('span', { class: 'spacer' }), pCancel, pSend]),
+    el('div', { class: 'row end' }, [pCancel, pSend]),
   ]);
   ui.appendChild(promptPanel);
 
@@ -554,8 +555,8 @@
   var dPropose = iconButton('sparkles', 'Aus Abzug ableiten', { title: 'Claude schlägt Tokens aus den häufigsten Werten im Abzug vor (ungesperrt)' });
   var dPickBox = el('div');
   var dAreas = el('ul', { class: 'areas' });
-  var dAreaPick = iconButton('click', 'Bereich auswählen', { title: 'Element auf der Seite anklicken (Pfeil hoch wählt das Elternelement); es wird als gleicher Bereich gemerkt und auf alle Seiten übertragen', 'aria-pressed': 'false' });
-  var dAreasSync = el('button', { type: 'button', text: 'Bereiche dieser Seite auf alle Seiten übernehmen', title: 'Kopiert alle gleichen Bereiche von der aktuell geöffneten Seite auf alle anderen Seiten (ohne Claude)' });
+  var dAreaPick = iconButton('click', 'Auswählen', { title: 'Element auf der Seite anklicken (Pfeil hoch wählt das Elternelement); es wird als gleicher Bereich gemerkt und auf alle Seiten übertragen', 'aria-pressed': 'false' });
+  var dAreasSync = el('button', { type: 'button', text: 'Für alle Seiten übernehmen', title: 'Kopiert alle gleichen Bereiche von der aktuell geöffneten Seite auf alle anderen Seiten (ohne Claude)' });
   var dScan = el('div');
   var dNotes = el('textarea', { id: 'modio-notes', class: 'notes', spellcheck: 'true' });
   var dDirty = el('span', { class: 'dirty', 'aria-live': 'polite' });
@@ -696,7 +697,6 @@
     btnSelect.disabled = busy;
     btnSelect.title = busy ? 'Es läuft noch ein Schritt – bitte warten' : 'Element auswählen (Alt+A)';
     pSend.disabled = busy;
-    pSync.disabled = busy || !!followupJob;
     var fj = followupCandidate();
     btnFollowup.style.display = fj ? '' : 'none';
     btnFollowup.disabled = busy;
@@ -824,7 +824,7 @@
     dPick.modioLabel.textContent = 'Aus Element übernehmen';
     dAreaPick.classList.remove('on');
     dAreaPick.setAttribute('aria-pressed', 'false');
-    dAreaPick.modioLabel.textContent = 'Bereich auswählen';
+    dAreaPick.modioLabel.textContent = 'Auswählen';
     hl.classList.remove('pick');
     selectMode = 'annotate';
     document.documentElement.style.cursor = '';
@@ -1178,7 +1178,6 @@
     }
   });
   pSend.addEventListener('click', submit);
-  pSync.addEventListener('click', syncSelected);
 
   // Vorschlag für den Namen eines Bereichs
   function areaName(node) {
@@ -1215,10 +1214,6 @@
       .then(renderStatus);
   }
 
-  function syncSelected() {
-    if (!selected || followupJob) return;
-    addArea(selected, function (msg) { pErr.textContent = msg; }, function () { resetPrompt(); closePrompt(); });
-  }
   pCancel.addEventListener('click', function () {
     closePrompt();
   });
