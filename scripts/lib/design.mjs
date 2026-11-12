@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { readConfig as readConsistency } from './consistency.mjs';
+import { readConfig as readConsistency, areaError } from './consistency.mjs';
 
 export const CATEGORIES = ['color', 'font', 'size', 'radius', 'space', 'shadow', 'breakpoint'];
 const KEY_RE = new RegExp(`^(${CATEGORIES.join('|')})\\.[a-z0-9]+(?:-[a-z0-9]+)*$`);
@@ -270,8 +270,8 @@ function save(site, payloadFile) {
     else {
       const r = readConsistency(JSON.stringify(c));
       errors.push(...r.errors.map((e) => 'consistency: ' + e));
-      const sel = r.shared.find((s) => /[<{};@\\]|\n/.test(s.selector) || s.selector.length > 200 || s.name.length > 60);
-      if (sel) errors.push(`consistency: ungültiger Eintrag „${sel.name.slice(0, 60)}“`);
+      const bad = r.shared.map((x) => areaError(x.name, x.selector)).find(Boolean);
+      if (bad) errors.push(`consistency: ${bad}`);
       if (r.ignore.some((x) => !/^(class:)?[A-Za-z0-9_:-]{1,60}$/.test(x))) errors.push('consistency: ignore enthält ungültige Einträge');
       consistency = { shared: r.shared, ignore: r.ignore };
     }

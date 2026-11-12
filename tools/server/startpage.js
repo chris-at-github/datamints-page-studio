@@ -148,7 +148,7 @@ export function renderStartPage({ sites, token }) {
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen' };
+  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'areas-sync': 'Bereiche angleichen' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');
@@ -270,6 +270,8 @@ export function renderStartPage({ sites, token }) {
     if (r.duplicate?.length) parts.push(r.duplicate.length + ' schon in der Liste');
     if (r.failed?.length) parts.push('nicht geladen: ' + r.failed.join(', '));
     if (r.rejected?.length) parts.push('andere Website, ignoriert: ' + r.rejected.join(', '));
+    if (r.areas?.changed?.length) parts.push('übernommen: ' + [...new Set(r.areas.changed.flatMap((c) => c.areas))].join(', '));
+    if (r.areas?.unclear?.length) parts.push('nicht übernommen (Seiten uneinheitlich): ' + r.areas.unclear.join(', '));
     return parts.join(' · ') || 'keine neuen Seiten';
   }
 
@@ -288,6 +290,7 @@ export function renderStartPage({ sites, token }) {
       const details = cell();
       if (j.type === 'annotate' && j.params?.prompt) details.append('„' + j.params.prompt.slice(0, 80) + (j.params.prompt.length > 80 ? '…' : '') + '“');
       if (j.type === 'pages-add' && j.status === 'done' && j.result) details.append(pagesDetails(j.result));
+      if (j.type === 'areas-sync' && j.status === 'done' && j.result) details.append((j.result.areas || []).join(', ') + ': ' + ((j.result.changed || []).length ? (j.result.changed || []).length + ' Seite(n) angeglichen' : 'schon gleich'));
       if (j.type === 'report' && j.status === 'done') { const a = document.createElement('a'); a.href = '/report/' + j.slug; a.target = '_blank'; a.textContent = 'Report ansehen'; details.append(a); }
       if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; details.append(e); }
       const when = new Date(j.created).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });

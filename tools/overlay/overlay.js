@@ -19,9 +19,9 @@
   var IMAGE_MAX_MB = Number(CFG.imageMaxMb) || 10;
   var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1 };
+  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1 };
+  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -400,7 +400,12 @@
     '.pick-row .is{font-size:11px;color:#065f46;background:#d1fae5;border-radius:10px;padding:1px 6px;white-space:nowrap}' +
     'textarea.notes{min-height:170px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}' +
     '.dirty{font-size:12px;color:#b45309;align-self:center}' +
-    'select:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}';
+    'select:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}' +
+    'ul.areas{list-style:none;margin:0;padding:0}' +
+    'ul.areas li{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f1f2f4;font-size:13px}' +
+    'ul.areas li strong{flex:none}' +
+    'ul.areas li code{flex:1;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b7280;word-break:break-all}' +
+    'ul.areas li button{padding:3px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center}';
 
   root.appendChild(el('style', { text: STYLE }));
   var ui = el('div', { class: 'ui' });
@@ -471,6 +476,7 @@
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var pSend = el('button', { type: 'button', class: 'primary', text: 'Absenden' });
+  var pSync = el('button', { type: 'button', text: 'Auf allen Seiten übernehmen', title: 'Dieses Element als gleichen Bereich merken (consistency.json) und von dieser Seite auf alle Seiten kopieren – ohne Claude' });
   var promptPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
     pTitle,
     pMeta,
@@ -487,7 +493,7 @@
       el('label', { class: 'switch', title: 'Ohne diesen Haken stoppt die Prüfung jede Änderung an gesperrten Tokens' }, [pAllowTokens, 'Gesperrte Tokens dürfen geändert werden']),
     ]),
     pErr,
-    el('div', { class: 'row end' }, [pCancel, pSend]),
+    el('div', { class: 'row end' }, [pSync, el('span', { class: 'spacer' }), pCancel, pSend]),
   ]);
   ui.appendChild(promptPanel);
 
@@ -547,6 +553,8 @@
   var dPick = iconButton('pipette', 'Aus Element übernehmen', { title: 'Element anklicken und dessen Farbe, Schrift oder Radius als Token übernehmen', 'aria-pressed': 'false' });
   var dPropose = iconButton('sparkles', 'Aus Abzug ableiten', { title: 'Claude schlägt Tokens aus den häufigsten Werten im Abzug vor (ungesperrt)' });
   var dPickBox = el('div');
+  var dAreas = el('ul', { class: 'areas' });
+  var dAreasSync = el('button', { type: 'button', text: 'Bereiche dieser Seite auf alle Seiten übernehmen', title: 'Kopiert alle gleichen Bereiche von der aktuell geöffneten Seite auf alle anderen Seiten (ohne Claude)' });
   var dScan = el('div');
   var dNotes = el('textarea', { id: 'modio-notes', class: 'notes', spellcheck: 'true' });
   var dDirty = el('span', { class: 'dirty', 'aria-live': 'polite' });
@@ -573,6 +581,12 @@
         el('div', { class: 'row' }, [dPick, dPropose]),
         dPickBox,
         dScan,
+      ]),
+      el('section', { class: 'dsec', 'aria-labelledby': 'modio-da' }, [
+        el('h3', { id: 'modio-da', text: 'Gleiche Bereiche' }),
+        dAreas,
+        el('div', { class: 'row' }, [dAreasSync]),
+        el('div', { class: 'hint', text: 'Bereiche, die auf allen Seiten gleich sein müssen. Neue Bereiche: Element auswählen und im Annotationsdialog „Auf allen Seiten übernehmen“ wählen.' }),
       ]),
       el('section', { class: 'dsec' }, [
         el('h3', {}, [el('label', { for: 'modio-notes', text: 'Regeln (notes.md)' })]),
@@ -630,6 +644,7 @@
     'design-save': 'Design-Vorgaben',
     'tokens-propose': 'Token-Vorschläge',
     'pages-add': 'Seiten hinzufügen',
+    'areas-sync': 'Bereiche angleichen',
   };
 
   var followupJob = null; // Annotation, die gerade nachgebessert wird
@@ -680,6 +695,7 @@
     btnSelect.disabled = busy;
     btnSelect.title = busy ? 'Es läuft noch ein Schritt – bitte warten' : 'Element auswählen (Alt+A)';
     pSend.disabled = busy;
+    pSync.disabled = busy || !!followupJob;
     var fj = followupCandidate();
     btnFollowup.style.display = fj ? '' : 'none';
     btnFollowup.disabled = busy;
@@ -1156,6 +1172,39 @@
     }
   });
   pSend.addEventListener('click', submit);
+  pSync.addEventListener('click', syncSelected);
+
+  // Vorschlag für den Namen eines Bereichs
+  function areaName(node) {
+    var id = (node.id || '').toLowerCase(), tag = node.tagName.toLowerCase();
+    if (/header|kopf/.test(id) || tag === 'header') return 'Header';
+    if (/footer|fuss/.test(id) || tag === 'footer') return 'Footer';
+    if (/nav/.test(id) || tag === 'nav') return 'Navigation';
+    return crumbLabel(node);
+  }
+
+  function syncSelected() {
+    if (!selected || followupJob) return;
+    if (isBusy()) { pErr.textContent = 'Es läuft noch ein Schritt. Bitte warten.'; return; }
+    var selector = selectorFor(selected);
+    var name = window.prompt('„' + selector + '“ wird als gleicher Bereich gemerkt und von dieser Seite auf alle anderen Seiten kopiert.\n\nName des Bereichs:', areaName(selected));
+    if (name === null) return;
+    name = name.trim();
+    if (!name) { pErr.textContent = 'Bitte einen Namen angeben.'; return; }
+    pSync.disabled = true;
+    pErr.textContent = '';
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/areas/sync', { page: currentPage(), add: { name: name, selector: selector } })
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        resetPrompt();
+        closePrompt();
+        showToast('„' + name + '“ wird auf alle Seiten übernommen …', false);
+      })
+      .catch(function (err) {
+        pErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message;
+      })
+      .then(renderStatus);
+  }
   pCancel.addEventListener('click', function () {
     closePrompt();
   });
@@ -1241,7 +1290,7 @@
     delete seenActive[job.id];
     if (job.status === 'failed') {
       lastFailed = job;
-      if (job.type === 'design-save' || job.type === 'tokens-propose') {
+      if (job.type === 'design-save' || job.type === 'tokens-propose' || job.type === 'areas-sync') {
         try { sessionStorage.removeItem(DESIGN_OPEN_KEY); } catch (e) { /* ignorieren */ }
       }
       showToast((TYPE_LABEL[job.type] || job.type) + ' fehlgeschlagen: ' + (job.error || (job.result && job.result.error) || 'unbekannter Fehler'), true, true);
@@ -1264,8 +1313,17 @@
       msg = 'Report erzeugt (CHANGES.md).';
     } else if (job.type === 'design-save') {
       msg = r.status === 'nochange' ? 'Design-Vorgaben unverändert.' : 'Design-Vorgaben gespeichert.';
+    } else if (job.type === 'areas-sync') {
+      var ch = r.changed || [];
+      msg = ch.length ? (r.areas || []).join(', ') + ' auf ' + ch.length + ' Seite(n) übernommen.' : 'Alle Seiten waren schon gleich.';
+      if (r.added) msg = 'Bereich „' + (r.areas || [])[0] + '“ aufgenommen. ' + msg;
+      var sk = (r.skipped || []).filter(function (x) { return x.reason !== 'schon gleich'; });
+      if (sk.length) msg += '\nNicht übernommen: ' + sk.slice(0, 5).map(function (x) { return x.page + ' (' + x.area + ': ' + x.reason + ')'; }).join(', ');
     } else if (job.type === 'pages-add') {
       msg = (r.added && r.added.length ? r.added.length + ' Seite(n) hinzugefügt.' : 'Keine neuen Seiten.') + (r.failed && r.failed.length ? '\nNicht geladen: ' + r.failed.join(', ') : '');
+      var ar = r.areas || {};
+      if (ar.changed && ar.changed.length) msg += '\nGleiche Bereiche übernommen: ' + ar.changed.map(function (c) { return c.areas.join(', '); }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join('; ');
+      if (ar.unclear && ar.unclear.length) msg += '\nNicht übernommen, weil die Seiten uneinheitlich sind: ' + ar.unclear.join(', ') + ' (im Design-Panel angleichen)';
     } else if (job.type === 'tokens-propose') {
       var added = r.added || [];
       msg = added.length ? added.length + ' Token(s) aus dem Abzug übernommen (ungesperrt): ' + added.join(', ') : 'Keine neuen Tokens aus dem Abzug.';
@@ -1611,6 +1669,8 @@
     dSave.title = busy ? 'Es läuft noch ein Schritt – bitte warten' : hasInvalid() ? 'Ungültige Werte korrigieren' : '';
     dReset.disabled = !dirty;
     dPropose.disabled = busy || !design;
+    var hasAreas = !!(design && design.consistency && (design.consistency.shared || []).length);
+    dAreasSync.disabled = busy || !hasAreas;
   }
 
   function tokenRow(key) {
@@ -1712,12 +1772,55 @@
     dScan.appendChild(el('details', { class: 'adv' }, body));
   }
 
+  function renderAreas() {
+    clear(dAreas);
+    var c = (design && design.consistency) || {};
+    var shared = c.shared || [];
+    if (!shared.length) dAreas.appendChild(el('li', { class: 'hint', text: 'Noch keine gleichen Bereiche.' }));
+    shared.forEach(function (a, i) {
+      var del = iconButton('trash', 'Bereich ' + (a.name || a.selector) + ' entfernen', { class: 'ghost' }, true);
+      del.addEventListener('click', function () { removeArea(i); });
+      dAreas.appendChild(el('li', {}, [el('strong', { text: a.name || a.selector }), el('code', { text: a.selector }), del]));
+    });
+  }
+
+  function removeArea(i) {
+    var c = design.consistency || {};
+    var a = (c.shared || [])[i];
+    if (!a) return;
+    if (!window.confirm('Bereich „' + (a.name || a.selector) + '“ nicht mehr auf Gleichheit prüfen?' + (isDirty() ? '\n\nUngespeicherte Änderungen an Tokens und Regeln gehen dabei verloren.' : ''))) return;
+    var shared = (c.shared || []).filter(function (_, j) { return j !== i; });
+    api('PUT', '/api/sites/' + encodeURIComponent(SLUG) + '/design', { consistency: { shared: shared, ignore: c.ignore || [] } })
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        try { sessionStorage.setItem(DESIGN_OPEN_KEY, '1'); } catch (e) { /* ignorieren */ }
+        showToast('Bereich wird entfernt …', false);
+      })
+      .catch(function (err) { dErr.textContent = 'Entfernen fehlgeschlagen: ' + err.message; });
+  }
+
+  function syncAreas() {
+    if (isDirty() && !window.confirm('Ungespeicherte Änderungen an Tokens und Regeln gehen dabei verloren. Trotzdem fortfahren?')) return;
+    if (!window.confirm('Alle gleichen Bereiche von dieser Seite (' + currentPage() + ') auf alle anderen Seiten übernehmen?')) return;
+    dAreasSync.disabled = true;
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/areas/sync', { page: currentPage() })
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        try { sessionStorage.setItem(DESIGN_OPEN_KEY, '1'); } catch (e) { /* ignorieren */ }
+        showToast('Bereiche werden angeglichen …', false);
+      })
+      .catch(function (err) { dErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message; })
+      .then(renderDesignButtons);
+  }
+  dAreasSync.addEventListener('click', syncAreas);
+
   function renderDesign() {
     clear(dInfo);
     if (design && !design.initialized) {
       dInfo.appendChild(el('p', { class: 'hint', text: 'Für diese Website gibt es noch keine Design-Vorgaben. Sie werden beim Speichern oder beim nächsten Schritt angelegt.' }));
     }
     renderWarnings();
+    renderAreas();
     renderTokens();
     renderScan();
     renderDesignButtons();

@@ -4,7 +4,8 @@
 # noch fehlen (vorhandene, evtl. schon geänderte Dateien bleiben unangetastet) -> urls.txt ergänzen ->
 # Links auf nun lokal vorhandene Seiten umschreiben -> Commit "[seiten] …".
 # Aufruf: pages-add.sh <slug> <urls.txt>    (eine URL pro Zeile, nur Seiten derselben Website)
-# Ausgabe: {status: committed|nochange, added, present, failed, rejected, duplicate, relinked, commit}
+# Gleiche Bereiche aus design/consistency.json übernehmen die neuen Seiten, wenn die übrigen Seiten sich einig sind.
+# Ausgabe: {status: committed|nochange, added, present, failed, rejected, duplicate, relinked, areas, commit}
 source "$(dirname "$0")/lib/common.sh"
 require_cmd git jq wget node
 source "$LIB_DIR/crawl.sh"
@@ -79,10 +80,24 @@ RELINK="$(node "$LIB_DIR/relink.mjs" "$SITE/www" "$HOSTDIR" "$HOST")" || die "Um
 RELINKED="$(jq .links <<<"$RELINK")"
 log "Links auf lokale Seiten umgeschrieben: $RELINKED in $(jq .files <<<"$RELINK") Datei(en)"
 
+# Gleiche Bereiche (consistency.json): neue Seiten übernehmen Header/Footer usw., wenn die übrigen Seiten sich einig sind
+AREAS='{"changed":[],"skipped":[],"unclear":[]}'
+if (( ${#ADDED[@]} )); then
+  rel_pages=(); for p in "${ADDED[@]}"; do rel_pages+=("${p#/}"); done
+  if A="$(node "$LIB_DIR/areas.mjs" after-add "$SITE" "${rel_pages[@]}" 2>>"$LOG_DIR/pages-add.log")" && jq -e '.changed' >/dev/null 2>&1 <<<"$A"; then
+    AREAS="$A"
+    (( $(jq '.changed | length' <<<"$AREAS") )) && log "Bereiche übernommen: $(jq -r '[.changed[] | "\(.page): \(.areas | join(", "))"] | join("; ")' <<<"$AREAS")"
+    (( $(jq '.unclear | length' <<<"$AREAS") )) && log "Nicht übernommen, Seiten uneinheitlich: $(jq -r '.unclear | join(", ")' <<<"$AREAS")"
+  else
+    log "Bereiche konnten nicht übernommen werden (wird ignoriert)"
+  fi
+fi
+
 MSG="$(mktemp)"; trap 'rm -rf "$TMP" "$MSG"' EXIT
 {
   printf '[seiten] %s Seite(n) hinzugefügt\n\n' "${#OK_URLS[@]}"
   printf '%s\n' "${OK_URLS[@]}"
+  jq -r 'if (.changed | length) > 0 then "\nBereiche übernommen:\n" + ([.changed[] | "\(.page): \(.areas | join(", "))"] | join("\n")) else empty end' <<<"$AREAS"
 } >"$MSG"
 git_site add -A
 git_site commit -q -F "$MSG"
@@ -91,4 +106,4 @@ log "$SLUG: Seiten hinzugefügt (${COMMIT:0:10})"
 "$SCRIPTS_DIR/tokens-scan.sh" "$SLUG" >/dev/null 2>&1 || log "Token-Scan fehlgeschlagen (wird ignoriert)"
 
 emit status committed slug "$SLUG" added "json:$(json_list "${ADDED[@]+"${ADDED[@]}"}")" present "json:$(json_list "${PRESENT[@]+"${PRESENT[@]}"}")" \
-  failed "json:$J_FAIL" rejected "json:$J_REJ" duplicate "json:$J_DUP" relinked "json:$RELINKED" commit "$COMMIT"
+  failed "json:$J_FAIL" rejected "json:$J_REJ" duplicate "json:$J_DUP" relinked "json:$RELINKED" areas "json:$AREAS" commit "$COMMIT"

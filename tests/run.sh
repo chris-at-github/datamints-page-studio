@@ -154,7 +154,7 @@ check "Ausgangsstand ohne Abweichung, nur eigene Seiten" '[[ "$(jq ".warnings | 
 ann A-014
 sed -i '0,/<header class="site-header">/s//<header class="site-header"><span>Neu<\/span>/' "$LP"
 set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-014 2>/dev/null)"; rc=$?; set -e
-check "Abweichender Header als Hinweis, Commit trotzdem" '(( rc == 0 )) && jq -e ".warnings | map(select(.rule == \"consistency\")) | .[0].text | test(\"Header weicht ab auf: .*kontakt\")" <<<"$OUT" >/dev/null'
+check "Abweichender Header als Hinweis, Commit trotzdem" '(( rc == 0 )) && jq -e ".warnings | map(select(.rule == \"consistency\")) | .[0].text | test(\"Header ist nicht auf allen Seiten gleich.*kontakt\")" <<<"$OUT" >/dev/null'
 ann A-015
 printf '<!-- x -->\n' >>"$LP"
 set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-015 2>/dev/null)"; rc=$?; set -e
@@ -179,6 +179,25 @@ check "Link auf neue Seite lokal umgeschrieben" 'grep -q "href=\"leistungen/inde
 check "Bisherige Änderungen an vorhandenen Seiten erhalten" '[[ "$(sed "s#href=\"leistungen/index.html\"#X#; s#href=\"http://127.0.0.1:$PORT/leistungen/\"#X#" "$P")" == "$(sed "s#href=\"leistungen/index.html\"#X#; s#href=\"http://127.0.0.1:$PORT/leistungen/\"#X#" "$S/../pa-before.html")" ]]'
 check "Schritte bleiben im Verlauf" '[[ "$(./scripts/history.sh "$SLUG" 2>/dev/null | jq "[.steps[] | select(.kind == \"annotation\")] | length")" -ge 3 ]] && ./scripts/history.sh "$SLUG" 2>/dev/null | jq -e ".steps[-1].kind == \"pages\"" >/dev/null'
 rm -f "$PA" "$S/../pa-before.html"
+check "Uneinheitlicher Header nicht automatisch übernommen" 'jq -e ".areas.unclear | index(\"Header\")" <<<"$OUT" >/dev/null'
+
+echo "Bereiche angleichen (areas-sync.sh)"
+LS="$(dirname "$P")/leistungen/index.html"
+sed -i 's#<a href="../index.html">Start</a>#<a href="../index.html" class="active">Start</a>#' "$LS"
+git -C "$S" commit -qam "Test: aktiver Menüpunkt"
+OUT="$(./scripts/areas-sync.sh "$SLUG" "/$(basename "$(dirname "$P")")/kontakt.html" 2>/dev/null)"
+check "Header von kontakt.html auf alle Seiten übernommen" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && grep -q "<span>Neu</span>" "$P" && grep -q "<span>Neu</span>" "$LS" && [[ "$(git -C "$S" log -1 --format=%s)" == "[angleichen] Header von "* ]]'
+check "Links an Ordnertiefe angepasst" 'grep -q "href=\"../leistungen/index.html\"" "$LS" || grep -q "href=\"index.html\">Leistungen" "$LS"'
+check "Aktiver Menüpunkt der Zielseite erhalten" 'grep -q "<a href=\"../index.html\" class=\"active\">Start</a>" "$LS" && ! grep -q "class=\"active\"" "$P"'
+check "Danach keine Header-Abweichung" '! ./scripts/check-consistency.sh "$SLUG" 2>/dev/null | jq -e ".warnings | map(select(.text | startswith(\"Header\"))) | length > 0" >/dev/null'
+OUT="$(./scripts/areas-sync.sh "$SLUG" "/$(basename "$(dirname "$P")")/index.html" --add Footer footer 2>/dev/null)"
+check "Neuer Bereich aufgenommen, fehlender Footer gemeldet" 'jq -e ".added == true and (.skipped | map(.reason) | index(\"fehlt auf der Seite\"))" <<<"$OUT" >/dev/null && jq -e ".shared | map(.name) | index(\"Footer\")" "$S/design/consistency.json" >/dev/null'
+set +e; OUT="$(./scripts/areas-sync.sh "$SLUG" "/$(basename "$(dirname "$P")")/index.html" --add X "<b>" 2>/dev/null)"; rc=$?; set -e
+check "Ungültiger Selektor abgelehnt, nichts geändert" '(( rc != 0 )) && [[ -z "$(git -C "$S" status --porcelain)" ]]'
+printf 'http://127.0.0.1:%s/team.html\n' "$PORT" >"$PA"
+OUT="$(./scripts/pages-add.sh "$SLUG" "$PA" 2>/dev/null)"; rm -f "$PA"
+TP="$(dirname "$P")/team.html"
+check "Neue Seite übernimmt einheitlichen Header automatisch" 'jq -e ".areas.changed[0].areas | index(\"Header\")" <<<"$OUT" >/dev/null && grep -q "<span>Neu</span>" "$TP" && grep -q "© Testfirma" "$TP"'
 
 echo "Kontext (context.sh)"
 OUT="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null)"

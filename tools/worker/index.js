@@ -112,6 +112,11 @@ async function handle(job, logFile) {
       if (!/^jobs\/assets\/job-\d{14}-[0-9a-f]{6}-design\.json$/.test(file)) return { code: 1, result: { status: 'error', error: 'Ungültige Datei' } };
       return runScript('design-save.sh', [slug, path.join(ROOT, file)], logFile);
     }
+    case 'areas-sync': {
+      const args = [slug, String(job.params?.page || '')];
+      if (job.params?.add) args.push('--add', String(job.params.add.name), String(job.params.add.selector));
+      return runScript('areas-sync.sh', args, logFile);
+    }
     case 'pages-add': {
       const urls = (job.params?.urls || []).map(String).filter((u) => /^https?:\/\/\S+$/.test(u));
       const f = path.join(JOBS_DIR, 'assets', `${job.id}-urls.txt`);

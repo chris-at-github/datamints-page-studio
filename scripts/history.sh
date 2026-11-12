@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Gibt den Verlauf seit baseline aus und schreibt ihn nach .history.json.
-# Schritte: Annotationen ([A-xxx]), Design-Änderungen ([design]), hinzugefügte Seiten ([seiten]) und sonstige Commits.
+# Schritte: Annotationen ([A-xxx]), Design-Änderungen ([design]), hinzugefügte Seiten ([seiten]), angeglichene Bereiche ([angleichen]) und sonstige Commits.
 # totals: Summe der erfassten Kosten und Token-Nutzung aller Annotationen im aktuellen Stand.
 # Aufruf: history.sh <slug>
 source "$(dirname "$0")/lib/common.sh"
@@ -18,7 +18,7 @@ while IFS=$'\t' read -r COMMIT DATE SUBJECT; do
   fi
   STEP="$(jq -c --arg id "$ID" --arg c "$COMMIT" --arg d "$DATE" --arg s "$SUBJECT" '{
       id: (if $id == "" then null else $id end), commit:$c, date:$d,
-      kind: (if $id != "" then "annotation" elif ($s | startswith("[design]")) then "design" elif ($s | startswith("[seiten]")) then "pages" else "manual" end),
+      kind: (if $id != "" then "annotation" elif ($s | startswith("[design]")) then "design" elif ($s | startswith("[seiten]")) then "pages" elif ($s | startswith("[angleichen]")) then "sync" else "manual" end),
       prompt: (.prompt // ($s | sub("^\\[A-[0-9]+\\] "; ""))),
       summary: (.result.summary // null), page: (.page // null), selector: (.selector // null),
       thorough: (.thorough // false), references: ((.references // []) | length),

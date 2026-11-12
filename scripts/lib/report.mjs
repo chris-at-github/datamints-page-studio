@@ -87,7 +87,8 @@ for (const line of log) {
   }
   const isDesign = !id && subject.startsWith('[design]');
   const isPages = !id && subject.startsWith('[seiten]');
-  out.push(`## ${id || (isDesign ? 'Design' : isPages ? 'Seiten' : commit.slice(0, 10))}${ann.prompt ? '' : ': ' + subject.replace(/^\[(design|seiten)\]\s*/, '')}`, '');
+  const isSync = !id && subject.startsWith('[angleichen]');
+  out.push(`## ${id || (isDesign ? 'Design' : isPages ? 'Seiten' : isSync ? 'Angleichen' : commit.slice(0, 10))}${ann.prompt ? '' : ': ' + subject.replace(/^\[(design|seiten|angleichen)\]\s*/, '')}`, '');
   out.push(`- Datum: ${dateDe(date)}`, `- Commit: \`${commit.slice(0, 10)}\``);
   if (isPages) {
     // Neue Seiten: URLs aus der Commit-Nachricht statt eines riesigen Diffs
@@ -97,6 +98,12 @@ for (const line of log) {
     const modified = changed.filter((l) => l.startsWith('M') && /\.html?$/i.test(l)).length;
     out.push('', '**Hinzugefügte Seiten**', '', ...urls.map((u) => `- <${u}>`), '');
     out.push(`${added} Datei(en) neu im Abzug, Links in ${modified} vorhandenen Seite(n) auf lokale Seiten umgeschrieben.`, '');
+    continue;
+  }
+  if (isSync) {
+    // Angleichen: betroffene Seiten aus der Commit-Nachricht, kein HTML-Diff (Bereiche sind kopiert)
+    const lines = git('show', '-s', '--format=%b', commit).split('\n').map((l) => l.trim()).filter((l) => /^\/.+: /.test(l) || l.startsWith('Neuer Bereich'));
+    out.push('', '**Angeglichene Seiten**', '', ...lines.map((l) => `- ${l}`), '');
     continue;
   }
   if (ann.page) out.push(`- Seite: \`${ann.page}\``);

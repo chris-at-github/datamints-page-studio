@@ -10,11 +10,12 @@ import { execFileSync } from 'node:child_process';
 
 // cheerio erst bei Bedarf laden: design.mjs nutzt nur readConfig und soll auch ohne cheerio laufen
 let cheerio = null;
-async function loadCheerio() {
-  if (cheerio) return;
+export async function loadCheerio() {
+  if (cheerio) return cheerio;
   try { cheerio = await import('cheerio'); } catch (e) {
     throw new Error(`cheerio nicht ladbar (Node ${process.version}, benötigt >= 20.18): ${e.message}`);
   }
+  return cheerio;
 }
 
 const MAX_LIST = 8;
@@ -44,9 +45,16 @@ export function readConfig(text) {
   return { shared, ignore, errors };
 }
 
+// Prüft Name und Selektor eines Bereichs (landen im Prompt-Kontext): Meldung oder null
+export function areaError(name, selector) {
+  if (typeof name !== 'string' || !name.trim() || name.length > 60 || /[<{};@\\\n]/.test(name)) return 'Name des Bereichs: 1–60 Zeichen, ohne < { } ; @ \\';
+  if (typeof selector !== 'string' || !selector.trim() || selector.length > 200 || /[<{};@\\\n]/.test(selector)) return 'Selektor ungültig (max. 200 Zeichen, ohne < { } ; @ \\)';
+  return null;
+}
+
 // Normalisiert ein Element: ignorierte Attribute und Klassen entfernen, Attribute sortieren, Leerraum zusammenfassen
 // Relative Links seitenunabhängig machen: auf den Pfad im Abzug auflösen (index.html entfällt)
-function resolveLink(v, page) {
+export function resolveLink(v, page) {
   if (!page || !v || /^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(v)) return v;
   try {
     const u = new URL(v, 'http://modio.local/' + page);
@@ -123,6 +131,17 @@ function headVersion(site, page) {
   try { return execFileSync('git', ['-C', site, 'show', `HEAD:www/${page}`], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
 }
 
+// Seiten der Website selbst (Ordner der Einstiegsseite), keine mitgeladenen fremden Dokumente; Pfade relativ zu www/
+export function sitePages(site) {
+  const www = path.join(site, 'www');
+  let scope = '';
+  try { scope = String(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).entry || '').split('/')[1] || ''; } catch { /* ohne site.json alles */ }
+  if (scope && (scope.includes('..') || !fs.existsSync(path.join(www, scope)))) scope = '';
+  return fs.existsSync(www) ? walk(scope ? path.join(www, scope) : www).map((p) => (scope ? scope + '/' : '') + p).sort() : [];
+}
+
+export const inScope = (s, p) => s.pages === 'all' || s.pages.some((pre) => ('/' + p).startsWith(pre.startsWith('/') ? pre : '/' + pre));
+
 export async function check(site, { changedOnly = false } = {}) {
   const cfgFile = path.join(site, 'design', 'consistency.json');
   const warnings = [];
@@ -132,13 +151,8 @@ export async function check(site, { changedOnly = false } = {}) {
   if (!shared.length) return { pages: 0, entries: 0, warnings };
   await loadCheerio();
 
-  // Nur Seiten der Website selbst (Ordner der Einstiegsseite), keine mitgeladenen fremden Dokumente
   const www = path.join(site, 'www');
-  let scope = '';
-  try { scope = String(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).entry || '').split('/')[1] || ''; } catch { /* ohne site.json alles */ }
-  if (scope && (scope.includes('..') || !fs.existsSync(path.join(www, scope)))) scope = '';
-  const pages = fs.existsSync(www) ? walk(scope ? path.join(www, scope) : www).map((p) => (scope ? scope + '/' : '') + p).sort() : [];
-  const inScope = (s, p) => s.pages === 'all' || s.pages.some((pre) => ('/' + p).startsWith(pre.startsWith('/') ? pre : '/' + pre));
+  const pages = sitePages(site);
   const now = new Map(); // page -> [werte je Bereich]
   for (const p of pages) now.set(p, extract(fs.readFileSync(path.join(www, p), 'utf8'), shared, ignore, p));
 
@@ -171,7 +185,8 @@ export async function check(site, { changedOnly = false } = {}) {
       if (d.differ.join('\n') === pd.differ.join('\n') && missing.join('\n') === pMissing.join('\n')) return;
     }
     if (d.differ.length) {
-      warnings.push({ rule: 'consistency', file: 'www/' + d.differ[0], line: 0, text: `${s.name} weicht ab auf: ${fmt(d.differ)}` });
+      const others = [...cur.values()].filter((v) => v && v === d.ref).length;
+      warnings.push({ rule: 'consistency', file: 'www/' + d.differ[0], line: 0, text: `${s.name} ist nicht auf allen Seiten gleich, anders als auf ${others} weiteren Seite(n): ${fmt(d.differ)}. Angleichen im Design-Panel unter „Gleiche Bereiche“.` });
     }
     if (missing.length) {
       warnings.push({ rule: 'consistency', file: 'www/' + missing[0], line: 0, text: `${s.name} fehlt auf: ${fmt(missing)}` });

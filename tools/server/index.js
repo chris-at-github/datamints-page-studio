@@ -322,6 +322,7 @@ async function readDesign(slug) {
   const tokensFile = await readJson(path.join(dir, 'design', 'tokens.json'), null);
   const notes = await fsp.readFile(path.join(dir, 'design', 'notes.md'), 'utf8').catch(() => null);
   const scan = await readJson(path.join(dir, '.scan.json'), null);
+  const consistency = await readJson(path.join(dir, 'design', 'consistency.json'), null);
   let warnings = [];
   let annotationId = null;
   const ids = (await fsp.readdir(path.join(dir, 'annotations')).catch(() => []))
@@ -333,7 +334,7 @@ async function readDesign(slug) {
     const ann = await readJson(path.join(dir, 'annotations', `${annotationId}.json`), {});
     warnings = ann.check?.warnings || [];
   }
-  return { slug, initialized: !!tokensFile, tokens: tokensFile?.tokens || {}, notes: notes ?? '', scan, warnings, annotationId };
+  return { slug, initialized: !!tokensFile, tokens: tokensFile?.tokens || {}, notes: notes ?? '', scan, consistency, warnings, annotationId };
 }
 
 async function handleApi(req, res, url) {
@@ -382,7 +383,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, { jobs: [...finished, ...active].map(slimJob) });
   }
 
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -442,6 +443,19 @@ async function handleApi(req, res, url) {
       const body = await readBody(req);
       if (await busyCheck(res, slug, 'Neu einlesen')) return;
       return send(res, 202, { job: await createJob('site-recrawl', slug, { keepDesign: body.keepDesign !== false }) });
+    }
+    if (action === 'areas/sync') {
+      const body = await readBody(req);
+      const page = String(body.page || '');
+      if (!/^\/[^\0\n]{1,500}$/.test(page) || page.split('/').includes('..')) return sendError(res, 400, 'Ungültige Seite');
+      let add = null;
+      if (body.add !== undefined && body.add !== null) {
+        const name = String(body.add.name || '').trim(), selector = String(body.add.selector || '').trim();
+        if (!name || name.length > 60 || !selector || selector.length > 200 || /[<{};@\\\n]/.test(name + selector)) return sendError(res, 400, 'Ungültiger Bereich');
+        add = { name, selector };
+      }
+      if (await busyCheck(res, slug, 'Das Angleichen der Bereiche')) return;
+      return send(res, 202, { job: await createJob('areas-sync', slug, add ? { page, add } : { page }) });
     }
     if (action === 'pages') {
       const body = await readBody(req);

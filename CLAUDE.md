@@ -14,6 +14,7 @@ Modio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne Element-
 | `crawl.sh` | `crawl.sh <slug>` |
 | `clean.sh` | `clean.sh <slug>` |
 | `pages-add.sh` | `pages-add.sh <slug> <urls.txt>` |
+| `areas-sync.sh` | `areas-sync.sh <slug> <seite> [--add <name> <selektor>]` |
 | `site-recrawl.sh` | `site-recrawl.sh <slug> [--keep-design\|--no-keep-design]` |
 | `run-annotation.sh` | `run-annotation.sh <slug> <job.json>` |
 | `add-reference.sh` | `add-reference.sh <slug> <annotation-id> <url\|datei>` |
