@@ -214,12 +214,43 @@ sed -i 's#<em>Schritt</em>#<em>Zwei</em>#' "$LP"
 OUT="$(./scripts/commit-step.sh "$SLUG" A-018 2>/dev/null)"
 check "Unterschiedlich geändert: nicht übertragen, Hinweis" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e ".warnings | map(.rule) | index(\"areas-unclear\")" <<<"$OUT" >/dev/null && grep -q "<em>Schritt</em>" "$TP"'
 
+echo "Lokale Änderungen und Inspektor (local-commit.sh, inspect-apply.sh)"
+OUT="$(./scripts/local-commit.sh "$SLUG" 2>/dev/null)"
+check "Ohne Änderungen: nochange" '[[ "$(jq -r .status <<<"$OUT")" == nochange ]]'
+printf '\n.lokal { color: red; }\n' >>"$S/overrides.css"
+OUT="$(./scripts/local-commit.sh "$SLUG" 2>/dev/null)"
+LID="$(jq -r .annotationId <<<"$OUT")"
+check "Lokale Änderung als Schritt übernommen" '[[ "$(jq -r .status <<<"$OUT")" == committed && "$LID" == A-* ]] && [[ "$(git -C "$S" log -1 --format=%s)" == "[$LID] Lokale Änderung übernommen" ]]'
+printf '<script>alert(1)</script>\n' >>"$P"
+set +e; OUT="$(./scripts/local-commit.sh "$SLUG" 2>/dev/null)"; rc=$?; set -e
+check "Lokales Script: Prüfung nötig" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"script-tag\")" <<<"$OUT" >/dev/null'
+./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+printf '<div class="mini">alt</div><script src="js/app.js"></script>\n' >>"$P"
+git -C "$S" commit -qam "Test: minifizierte Zeile mit Script"
+sed -i 's#<div class="mini">alt</div>#<div class="mini">neu</div>#' "$P"
+set +e; OUT="$(./scripts/check-diff.sh "$SLUG" 2>/dev/null)"; rc=$?; set -e
+check "Minifizierte Zeile: vorhandenes Script kein Treffer" '(( rc == 0 ))'
+sed -i 's#<div class="mini">neu</div>#<div class="mini">neu</div><script>x()</script>#' "$P"
+set +e; OUT="$(./scripts/check-diff.sh "$SLUG" 2>/dev/null)"; rc=$?; set -e
+check "Minifizierte Zeile: neues Script erkannt" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"script-tag\")" <<<"$OUT" >/dev/null'
+./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+IP="$(mktemp)"
+jq -n --arg page "/$(basename "$(dirname "$P")")/index.html" '{page:$page, selector:"h1.hero__title", html:"<h1 class=\"hero__title\">Aus dem Inspektor</h1>", css:"color: rgb(1, 2, 3); font-size: 20px"}' >"$IP"
+OUT="$(./scripts/inspect-apply.sh "$SLUG" "$IP" 2>/dev/null)"
+IID="$(jq -r .annotationId <<<"$OUT")"
+check "Inspektor-Änderung übernommen" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && grep -q "<h1 class=\"hero__title\">Aus dem Inspektor</h1>" "$P" && grep -q "Änderung aus dem Inspektor: h1.hero__title" <<<"$(git -C "$S" log -1 --format=%s)"'
+check "Inline-Styles als Regel in overrides.css" 'grep -q "/\* $IID: Inline-Styles aus dem Inspektor \*/" "$S/overrides.css" && grep -q "color: rgb(1, 2, 3) !important;" "$S/overrides.css"'
+jq '.html = "<p>falsch</p>" | del(.css)' "$IP" >"$IP.2"
+set +e; OUT="$(./scripts/inspect-apply.sh "$SLUG" "$IP.2" 2>/dev/null)"; rc=$?; set -e
+check "Anderes Tag abgelehnt, nichts geändert" '(( rc != 0 )) && [[ -z "$(git -C "$S" status --porcelain)" ]]'
+rm -f "$IP" "$IP.2"
+
 echo "Kontext (context.sh)"
 OUT="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null)"
 CTX="$(jq -r .context <<<"$OUT")"
 check "Vorgaben mit gesperrtem Token" 'grep -q "<vorgaben" <<<"$CTX" && grep -q "color.primary = #0B5FA5 → var(--modio-color-primary) \[gesperrt\]" <<<"$CTX"'
 check "Regeln eingebettet" 'grep -q "Du-Ansprache" <<<"$CTX"'
-check "Bisherige Schritte" 'grep -q "^A-015 | Prompt:" <<<"$CTX" && grep -q "^A-018 | Prompt:" <<<"$CTX"'
+check "Bisherige Schritte" 'grep -q "^A-018 | Prompt:" <<<"$CTX" && grep -q "| Prompt: Änderung aus dem Inspektor" <<<"$CTX"'
 HEAD_A013="$(git -C "$S" rev-parse HEAD)"
 ./scripts/rollback.sh "$SLUG" A-001 >/dev/null 2>&1
 CTX="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null | jq -r .context)"

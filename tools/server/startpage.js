@@ -19,6 +19,7 @@ function siteRow(s) {
         <button class="btn menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-${esc(s.slug)}" aria-label="Weitere Aktionen für ${esc(s.slug)}">Aktionen <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
         <span class="menu" id="menu-${esc(s.slug)}" role="menu" hidden>
           <button type="button" role="menuitem" data-action="pages">Seiten hinzufügen</button>
+          <button type="button" role="menuitem" data-action="local-commit">Lokale Änderungen übernehmen</button>
           <button type="button" role="menuitem" data-action="recrawl">Neu einlesen</button>
           <button type="button" role="menuitem" data-action="report">Report erzeugen</button>
           ${s.hasReport ? `<a role="menuitem" href="/report/${esc(s.slug)}" target="_blank">Report ansehen</a>` : ''}
@@ -148,7 +149,7 @@ export function renderStartPage({ sites, token }) {
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'areas-sync': 'Bereiche angleichen' };
+  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');
@@ -290,6 +291,8 @@ export function renderStartPage({ sites, token }) {
       const details = cell();
       if (j.type === 'annotate' && j.params?.prompt) details.append('„' + j.params.prompt.slice(0, 80) + (j.params.prompt.length > 80 ? '…' : '') + '“');
       if (j.type === 'pages-add' && j.status === 'done' && j.result) details.append(pagesDetails(j.result));
+      if ((j.type === 'local-commit' || j.type === 'inspect-apply') && j.status === 'done' && j.result) details.append(j.result.status === 'nochange' ? 'keine Änderungen' : 'übernommen als ' + (j.result.annotationId || ''));
+      if ((j.type === 'local-commit' || j.type === 'inspect-apply') && j.status === 'review') details.append('Prüfung nötig – im Overlay entscheiden');
       if (j.type === 'areas-sync' && j.status === 'done' && j.result) details.append((j.result.areas || []).join(', ') + ': ' + ((j.result.changed || []).length ? (j.result.changed || []).length + ' Seite(n) angeglichen' : 'schon gleich'));
       if (j.type === 'report' && j.status === 'done') { const a = document.createElement('a'); a.href = '/report/' + j.slug; a.target = '_blank'; a.textContent = 'Report ansehen'; details.append(a); }
       if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; details.append(e); }

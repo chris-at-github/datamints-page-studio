@@ -42,6 +42,8 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `design-save` | `{ file: "jobs/assets/<job-id>-design.json" }` | `design-save.sh <slug> <datei>` |
 | `tokens-propose` | `{}` | `tokens-propose.sh <slug>` |
 | `pages-add` | `{ urls: [..] }` | `pages-add.sh <slug> <urls.txt>` |
+| `local-commit` | `{}` | `local-commit.sh <slug>` (Exit 3 → `review` wie bei Annotationen) |
+| `inspect-apply` | `{ file: "jobs/assets/<job-id>-inspect.json", page, selector }` | `inspect-apply.sh <slug> <datei>` (Exit 3 → `review`) |
 | `areas-sync` | `{ page, add?: { name, selector } }` | `areas-sync.sh <slug> <page> [--add <name> <selector>]` |
 
 `site-recrawl` hat `params.keepDesign` (Standard `true`) und ruft `site-recrawl.sh <slug> --keep-design|--no-keep-design` auf.
@@ -100,6 +102,8 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `POST /api/sites/<slug>/recrawl` | JSON `{ keepDesign?: true }` | `202 { job }` |
 | `POST /api/sites/<slug>/annotations` | `multipart/form-data`: Feld `annotation` (JSON), Dateien im Feld `images` | `202 { job }`, `409` wenn für die Website schon ein Job aktiv ist oder auf Prüfung wartet |
 | `POST /api/jobs/<job-id>/decision` | JSON `{ action: "accept"|"discard" }` | `202 { job }` |
+| `POST /api/sites/<slug>/local-commit` | – | `202 { job }`: von Hand geänderte Dateien als Schritt übernehmen |
+| `POST /api/sites/<slug>/inspect` | JSON `{ page, selector, html, css? }` | `202 { job }`: im Inspektor geändertes Element übernehmen (`css`: Inline-Styles als Regel in `overrides.css`) |
 | `POST /api/sites/<slug>/areas/sync` | JSON `{ page: "/www.example.de/index.html", add?: { name, selector } }` | `202 { job }` (`areas-sync`): Bereiche der Seite auf alle Seiten übernehmen, mit `add` vorher als Bereich aufnehmen |
 | `POST /api/sites/<slug>/pages` | JSON `{ urls: [..] }` (max. 100, nur Seiten derselben Website) | `202 { job }` (`pages-add`) |
 | `POST /api/sites/<slug>/rollback` | JSON `{ target }` | `202 { job }` |

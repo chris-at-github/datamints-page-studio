@@ -388,7 +388,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, { jobs: [...finished, ...active].map(slimJob) });
   }
 
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -448,6 +448,26 @@ async function handleApi(req, res, url) {
       const body = await readBody(req);
       if (await busyCheck(res, slug, 'Neu einlesen')) return;
       return send(res, 202, { job: await createJob('site-recrawl', slug, { keepDesign: body.keepDesign !== false }) });
+    }
+    if (action === 'local-commit') {
+      if (await busyCheck(res, slug, 'Das Übernehmen lokaler Änderungen')) return;
+      return send(res, 202, { job: await createJob('local-commit', slug, {}) });
+    }
+    if (action === 'inspect') {
+      const body = await readBody(req, 1024 * 1024);
+      const page = String(body.page || '');
+      const selector = String(body.selector || '').trim();
+      const html = String(body.html || '');
+      const css = body.css ? String(body.css) : '';
+      if (!/^\/[^\0\n]{1,500}$/.test(page) || page.split('/').includes('..')) return sendError(res, 400, 'Ungültige Seite');
+      if (!selector || selector.length > 500 || /[\0\n]/.test(selector)) return sendError(res, 400, 'Ungültiger Selektor');
+      if (!html.trim() || html.length > 500000) return sendError(res, 400, 'HTML fehlt oder ist zu groß');
+      if (css.length > 5000) return sendError(res, 400, 'CSS zu lang');
+      if (await busyCheck(res, slug, 'Das Übernehmen aus dem Inspektor')) return;
+      const id = newJobId();
+      const file = `jobs/assets/${id}-inspect.json`;
+      await fsp.writeFile(path.join(ROOT, file), JSON.stringify({ page, selector, html, css }));
+      return send(res, 202, { job: await createJob('inspect-apply', slug, { file, page, selector }, id) });
     }
     if (action === 'areas/sync') {
       const body = await readBody(req);

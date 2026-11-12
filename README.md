@@ -26,6 +26,10 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 6. Tokens und Regeln pflegst du im Design-Panel. Im Annotationsdialog fügt „Token einfügen“ (oder Strg+Leertaste) einen Token wie `color.primary` in den Prompt ein; Claude setzt ihn als `var(--modio-color-primary)` um. Details: [projektplan-erweiterung-design.md](projektplan-erweiterung-design.md).
 7. Der Knopf „Design“ im Overlay öffnet die Design-Vorgaben: Tokens bearbeiten und sperren, Regeln pflegen, Werte per Klick auf ein Element übernehmen oder aus dem Abzug ableiten lassen.
 8. Gleiche Bereiche (z. B. Header, Footer): Im Design-Panel unter „Gleiche Bereiche“ → „Auswählen“, Element bzw. Elternelement in der Pfadleiste wählen, „Übernehmen“. Der Bereich landet mit einem Selektor ohne Positionsangaben in `design/consistency.json`; die Seiten bleiben dabei unverändert. „Für alle Seiten übernehmen“ kopiert die Bereiche der geöffneten Seite ohne Claude auf alle Seiten (relative Links und aktiver Menüpunkt werden je Seite angepasst). Ändert danach ein Schritt einen gleichen Bereich auf einer Seite, überträgt `commit-step.sh` die Änderung automatisch auf alle Seiten (im selben Commit). Haben mehrere Seiten ihn unterschiedlich geändert, erscheint nur ein Hinweis. Neue Seiten („Seiten hinzufügen“) übernehmen die Bereiche automatisch, wenn die vorhandenen Seiten sich einig sind.
+10. Eigene Änderungen ohne Claude:
+    - Im Browser-Inspektor ein Element ändern, mit „Auswählen“ wählen und im Annotationsdialog „Inspektor-Änderungen übernehmen“: Modio zeigt den Unterschied zur Datei und schreibt ihn nach Bestätigung hinein (geänderte Inline-Styles wahlweise als Regel in `overrides.css`).
+    - Dateien direkt ändern (Editor oder Chrome-DevTools-Workspaces mit `sites/<slug>/www` verknüpft) und im Verlauf bzw. im Aktionsmenü der Startseite „Lokale Änderungen übernehmen“.
+    Beides läuft durch dieselbe Prüfung wie Claude-Schritte und wird ein Schritt A-xxx im Verlauf.
 9. Startseite → „Report erzeugen“ → `sites/<slug>/CHANGES.md`.
 
 Neue Einstellungen in der `.env` (alle optional):

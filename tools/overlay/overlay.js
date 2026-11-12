@@ -19,9 +19,9 @@
   var IMAGE_MAX_MB = Number(CFG.imageMaxMb) || 10;
   var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1 };
+  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1 };
+  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -406,7 +406,7 @@
     '.sb-sub{padding:8px 16px;font-size:12px;color:#6b7280;border-bottom:1px solid #f1f2f4;word-break:break-all}' +
     '.sb-body{flex:1;overflow:auto;padding:14px 16px 24px}' +
     '.sb-foot{border-top:1px solid #e5e7eb;padding:10px 16px;display:flex;gap:8px}' +
-    '.sb-foot a.btn{flex:1;justify-content:center}' +
+    '.sb-foot a.btn,.sb-foot button{flex:1;justify-content:center}' +
     /* Zeitleiste */
     '.steps{position:relative}' +
     '.steps .step{position:relative;margin-left:22px}' +
@@ -533,6 +533,7 @@
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var pSend = el('button', { type: 'button', class: 'primary', text: 'Absenden' });
+  var pInspect = el('button', { type: 'button', text: 'Inspektor-Änderungen übernehmen', title: 'Änderungen, die du im Browser-Inspektor an diesem Element gemacht hast, ohne Claude in die Datei übernehmen' });
   var pTokBtn = iconButton('palette', 'Token einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
@@ -552,9 +553,28 @@
       el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet: besser bei kniffligen oder seitenübergreifenden Änderungen, aber langsamer und teurer' }, [pThorough, 'Stärkeres Modell für komplexe Änderungen']),
     ]),
     pErr,
-    el('div', { class: 'row end' }, [pCancel, pSend]),
+    el('div', { class: 'row end' }, [pInspect, el('span', { class: 'spacer' }), pCancel, pSend]),
   ]);
   ui.appendChild(promptPanel);
+
+  // ---------------------------------------------------- Inspektor-Änderungen
+
+  var iInfo = el('div', { class: 'hint' });
+  var iDiff = el('pre', { class: 'diff', tabindex: '0', 'aria-label': 'Unterschied' });
+  var iCss = el('input', { type: 'checkbox' });
+  var iCssRow = el('label', { class: 'switch', title: 'Geänderte Inline-Styles des Elements nicht ins HTML schreiben, sondern als Regel (mit !important) in overrides.css' }, [iCss, 'Inline-Styles als Regel in overrides.css übernehmen']);
+  var iErr = el('div', { class: 'err', role: 'alert' });
+  var iCancel = el('button', { type: 'button', text: 'Abbrechen' });
+  var iApply = el('button', { type: 'button', class: 'primary', text: 'Übernehmen' });
+  var inspectPanel = el('div', { class: 'panel wide', role: 'dialog', 'aria-labelledby': 'modio-ih' }, [
+    el('h2', { id: 'modio-ih', text: 'Änderungen aus dem Inspektor' }),
+    iInfo,
+    iDiff,
+    el('div', { class: 'checks' }, [iCssRow]),
+    iErr,
+    el('div', { class: 'row end' }, [iCancel, iApply]),
+  ]);
+  ui.appendChild(inspectPanel);
 
   // ---------------------------------------------------- Bereichsdialog (gleicher Bereich)
 
@@ -599,6 +619,7 @@
   var hErr = el('div', { class: 'err', role: 'alert' });
   var hClose = iconButton('x', 'Verlauf schließen', { class: 'ghost' }, true);
   var hReload = iconButton('refresh', 'Verlauf aktualisieren', { class: 'ghost' }, true);
+  var hLocal = iconButton('check', 'Lokale Änderungen übernehmen', { title: 'Von Hand geänderte Dateien (Editor, Chrome-Workspaces) prüfen und als Schritt speichern' });
   var historyPanel = el('aside', { id: 'modio-history', class: 'sidebar', role: 'complementary', 'aria-labelledby': 'modio-hh' }, [
     el('div', { class: 'sb-head' }, [
       el('h2', { id: 'modio-hh' }, [icon('history', 18), 'Verlauf']),
@@ -609,6 +630,7 @@
     el('div', { class: 'sb-sub', text: SLUG }),
     el('div', { class: 'sb-body' }, [hErr, hList]),
     el('div', { class: 'sb-foot' }, [
+      hLocal,
       el('a', { class: 'btn', href: '/' }, [icon('grid'), 'Zur Übersicht']),
     ]),
   ]);
@@ -723,6 +745,8 @@
     'tokens-propose': 'Token-Vorschläge',
     'pages-add': 'Seiten hinzufügen',
     'areas-sync': 'Bereiche angleichen',
+    'local-commit': 'Lokale Änderungen',
+    'inspect-apply': 'Inspektor-Änderung',
   };
 
   var followupJob = null; // Annotation, die gerade nachgebessert wird
@@ -773,6 +797,7 @@
     btnSelect.disabled = busy;
     btnSelect.title = busy ? 'Es läuft noch ein Schritt – bitte warten' : 'Element auswählen (Alt+A)';
     pSend.disabled = busy;
+    pInspect.disabled = busy || !!followupJob;
     var fj = followupCandidate();
     btnFollowup.style.display = fj ? '' : 'none';
     btnFollowup.disabled = busy;
@@ -824,6 +849,7 @@
     if (selecting && hovered) placeHighlight(hovered, false);
     else if (selected && promptPanel.classList.contains('open')) placeHighlight(selected, true);
     else if (areaSel && areaPanel.classList.contains('open')) placeHighlight(areaSel, true);
+    else if (selected && inspectPanel.classList.contains('open')) placeHighlight(selected, true);
     else hl.style.display = 'none';
     if (previewed && (promptPanel.classList.contains('open') || areaPanel.classList.contains('open'))) placeBox(pv, pvLabel, previewed);
     else hidePreview();
@@ -956,6 +982,7 @@
         if (!pTokPop.hidden) { e.preventDefault(); closeTokPop(true); }
         else if (selEditing) { /* Esc bricht nur die Bearbeitung des Selektors ab (eigener Handler) */ }
         else if (areaPanel.classList.contains('open')) closeAreaDialog();
+        else if (inspectPanel.classList.contains('open')) closeInspect(true);
         else if (promptPanel.classList.contains('open')) closePrompt();
         else if (historyPanel.classList.contains('open')) closeHistory();
         else if (designPanel.classList.contains('open')) closeDesign();
@@ -973,6 +1000,7 @@
   // --------------------------------------------------------- Prompt-Dialog
 
   function closePanels() {
+    if (inspectPanel.classList.contains('open')) closeInspect(false);
     closePrompt();
     closeAreaDialog();
     closeHistory();
@@ -989,6 +1017,7 @@
     customSel = null;
     followupJob = null;
     pTitle.textContent = 'Annotation';
+    pInspect.style.display = '';
     renderMeta();
     pErr.textContent = '';
     promptPanel.classList.add('open');
@@ -1030,6 +1059,7 @@
     pathLeaf = null;
     followupJob = job;
     pTitle.textContent = 'Nachbessern ' + job.result.annotationId;
+    pInspect.style.display = 'none';
     clear(pMeta);
     pMeta.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), prm.selector || '']));
     pMeta.appendChild(el('div', { class: 'hint', text: 'Bisheriger Auftrag: ' + truncate(prm.prompt || '', 200) }));
@@ -1361,6 +1391,107 @@
     }
   });
   pSend.addEventListener('click', submit);
+  pInspect.addEventListener('click', openInspect);
+
+  var inspectData = null;
+
+  // Zeilenweiser Unterschied (LCS) zweier HTML-Fassungen, Tags je Zeile
+  function htmlLines(h) { return String(h).replace(/>\s*</g, '>\n<').split('\n'); }
+  function lineDiff(a, b) {
+    a = a.slice(0, 1500); b = b.slice(0, 1500);
+    var n = a.length, m = b.length, i, j, dp = [];
+    for (i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][m] = 0; }
+    for (j = 0; j <= m; j++) dp[n][j] = 0;
+    for (i = n - 1; i >= 0; i--) for (j = m - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    var out = [];
+    i = 0; j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) { out.push(' ' + a[i]); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push('-' + a[i]); i++; }
+      else { out.push('+' + b[j]); j++; }
+    }
+    while (i < n) out.push('-' + a[i++]);
+    while (j < m) out.push('+' + b[j++]);
+    return out.join('\n');
+  }
+  function styleMap(s) {
+    var m = {};
+    String(s || '').split(';').forEach(function (d) {
+      var k = d.indexOf(':');
+      if (k > 0) m[d.slice(0, k).trim().toLowerCase()] = d.slice(k + 1).trim();
+    });
+    return m;
+  }
+
+  function openInspect() {
+    if (!selected || followupJob) return;
+    var tag = selected.tagName.toLowerCase();
+    if (tag === 'body' || tag === 'html' || tag === 'head') { pErr.textContent = 'Bitte ein Element innerhalb der Seite wählen.'; return; }
+    if (isBusy()) { pErr.textContent = 'Es läuft noch ein Schritt. Bitte warten.'; return; }
+    var selector = customSel || selectorFor(selected);
+    var node = selected;
+    pErr.textContent = '';
+    pInspect.disabled = true;
+    fetch(location.pathname + location.search, { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (res) { return res.text(); })
+      .then(function (text) {
+        var doc = new DOMParser().parseFromString(text, 'text/html');
+        var orig;
+        try { orig = doc.querySelector(selector); } catch (e) { orig = null; }
+        if (!orig) { pErr.textContent = 'Das Element ist in der Datei nicht zu finden (' + selector + '). Selektor anpassen.'; return; }
+        var clone = node.cloneNode(true);
+        Array.prototype.forEach.call(clone.querySelectorAll('[data-modio]'), function (x) { x.remove(); });
+        var before = orig.outerHTML, after = clone.outerHTML;
+        if (before === after) { pErr.textContent = 'Keine Änderungen an diesem Element gefunden.'; return; }
+        var so = styleMap(orig.getAttribute('style')), sn = styleMap(clone.getAttribute('style'));
+        var changed = Object.keys(sn).filter(function (k) { return sn[k] !== so[k]; });
+        inspectData = { page: currentPage(), selector: selector, after: after, origStyle: orig.getAttribute('style'), css: changed.map(function (k) { return k + ': ' + sn[k]; }).join('; ') };
+        iInfo.textContent = 'Element: ' + selector + ' auf ' + currentPage() + '. Achtung: Auch Änderungen, die Scripts der Website zur Laufzeit gemacht haben (z. B. Klassen von Slidern), erscheinen hier.';
+        renderDiffInto(iDiff, lineDiff(htmlLines(before), htmlLines(after)));
+        iCssRow.style.display = changed.length ? '' : 'none';
+        iCss.checked = changed.length > 0;
+        iErr.textContent = '';
+        iApply.disabled = false;
+        promptPanel.classList.remove('open');
+        inspectPanel.classList.add('open');
+        placeHighlight(node, true);
+        setTimeout(function () { iDiff.focus(); }, 0);
+      })
+      .catch(function (err) { pErr.textContent = 'Datei konnte nicht geladen werden: ' + err.message; })
+      .then(function () { pInspect.disabled = false; });
+  }
+  function closeInspect(backToPrompt) {
+    inspectPanel.classList.remove('open');
+    inspectData = null;
+    if (backToPrompt && selected) { promptPanel.classList.add('open'); placeHighlight(selected, true); }
+    else refreshHighlight();
+  }
+  iCancel.addEventListener('click', function () { closeInspect(true); });
+  iApply.addEventListener('click', function () {
+    if (!inspectData) return;
+    var html = inspectData.after, css = '';
+    if (iCss.checked && inspectData.css) {
+      var tmp = document.createElement('template');
+      tmp.innerHTML = html;
+      var root0 = tmp.content.firstElementChild;
+      if (inspectData.origStyle === null) root0.removeAttribute('style'); else root0.setAttribute('style', inspectData.origStyle);
+      html = root0.outerHTML;
+      css = inspectData.css;
+    }
+    iApply.disabled = true;
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/inspect', { page: inspectData.page, selector: inspectData.selector, html: html, css: css })
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        closeInspect(false);
+        resetPrompt();
+        closePrompt();
+        showToast('Inspektor-Änderung wird übernommen …', false);
+      })
+      .catch(function (err) {
+        iErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message;
+        iApply.disabled = false;
+      });
+  });
 
   // ---- Design-Tokens in den Prompt einfügen
   var tokCache = null;
@@ -1541,8 +1672,8 @@
     lastFailed = null;
     var r = job.result || {};
     var msg = '';
-    if (job.type === 'annotate') {
-      msg = r.status === 'nochange' ? 'Keine Änderung (' + (r.annotationId || '') + ').' : 'Fertig: ' + (r.annotationId || '');
+    if (job.type === 'annotate' || job.type === 'local-commit' || job.type === 'inspect-apply') {
+      msg = r.status === 'nochange' && job.type !== 'annotate' ? (r.summary || 'Keine Änderungen.') : r.status === 'nochange' ? 'Keine Änderung (' + (r.annotationId || '') + ').' : 'Fertig: ' + (r.annotationId || '');
       if (r.summary) msg += '\n' + truncate(r.summary, 600);
       if (r.synced && r.synced.changed && r.synced.changed.length) msg += '\n\n' + (r.synced.areas || []).join(', ') + ' auf ' + r.synced.changed.length + ' weitere Seite(n) übertragen.';
       if (r.warnings && r.warnings.length) {
@@ -1629,7 +1760,8 @@
 
   // ------------------------------------------------------------ Prüfdialog
 
-  function renderDiff(text) {
+  function renderDiff(text) { renderDiffInto(rDiff, text); }
+  function renderDiffInto(rDiff, text) {
     clear(rDiff);
     String(text || '').split('\n').forEach(function (line) {
       var cls = 'ctx';
@@ -1815,6 +1947,14 @@
   });
   hClose.addEventListener('click', function () { closeHistory(); });
   hReload.addEventListener('click', loadHistory);
+  hLocal.addEventListener('click', function () {
+    if (isBusy()) { showToast('Es läuft noch ein Schritt. Bitte warten.', false); return; }
+    hLocal.disabled = true;
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/local-commit')
+      .then(function (data) { if (data && data.job) trackJob(data.job); showToast('Lokale Änderungen werden geprüft …', false); })
+      .catch(function (err) { hErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message; })
+      .then(function () { hLocal.disabled = false; });
+  });
 
   // ------------------------------------------------------- Design-Vorgaben
 

@@ -12,7 +12,7 @@ source "$LIB_DIR/crawl.sh"
 require_site "${1:-}"
 URLS_FILE="${2:-}"
 [[ -f "$URLS_FILE" ]] || usage "pages-add.sh <slug> <urls.txt>"
-[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen oder verwerfen."
+[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Lokale Änderungen übernehmen“ im Verlauf) oder verwerfen."
 
 HOST="$(jq -r '.host // empty' "$SITE/site.json")"
 ENTRY="$(jq -r '.entry // empty' "$SITE/site.json")"

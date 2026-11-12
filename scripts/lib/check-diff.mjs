@@ -49,29 +49,49 @@ for (const f of fs.readFileSync(namesFile, 'utf8').split('\0').filter(Boolean)) 
   if (!allowedPath(f)) hits.push({ rule: 'path-outside', file: f, line: 0, text: 'Änderung außerhalb von www/, overrides.css, design/ und annotations/' });
 }
 
-let file = null;
-let line = 0;
-for (const raw of diff.split('\n')) {
-  const fm = raw.match(/^\+\+\+ b\/(.*)$/);
-  if (fm) { file = fm[1]; continue; }
-  if (raw.startsWith('--- ')) continue;
-  const hm = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
-  if (hm) { line = Number(hm[1]); continue; }
-  if (!file || !raw.startsWith('+')) continue;
-  if (file.startsWith('annotations/')) { line++; continue; } // Metadaten des Skripts
-  const text = raw.slice(1);
-  const isHtml = /\.(html?|svg|xml)$/i.test(file);
-  const isCss = /\.css$/i.test(file);
+// Hunks sammeln: entfernte und hinzugefügte Zeilen je Abschnitt. Gemeldet wird nur, was eine Änderung neu
+// hinzufügt (in den neuen Zeilen häufiger als in den entfernten). Wichtig bei minifizierten Seiten, auf denen
+// die ganze Seite in einer Zeile steht und vorhandene Scripts sonst bei jeder Änderung auffallen würden.
+const hunks = [];
+{
+  let file = null, cur = null, line = 0;
+  for (const raw of diff.split('\n')) {
+    const fm = raw.match(/^\+\+\+ b\/(.*)$/);
+    if (fm) { file = fm[1]; cur = null; continue; }
+    if (raw.startsWith('--- ')) continue;
+    const hm = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
+    if (hm) { line = Number(hm[1]); cur = { file, removed: [], added: [] }; hunks.push(cur); continue; }
+    if (!file || !cur) continue;
+    if (raw.startsWith('-')) cur.removed.push(raw.slice(1));
+    else if (raw.startsWith('+')) { cur.added.push({ text: raw.slice(1), line }); line++; }
+  }
+}
+const countOf = (re, texts) => texts.reduce((n, t) => n + (t.match(new RegExp(re.source, re.flags.replace('g', '') + 'g')) || []).length, 0);
+for (const h of hunks) {
+  if (!h.file || h.file.startsWith('annotations/')) continue; // Metadaten des Skripts
+  const isHtml = /\.(html?|svg|xml)$/i.test(h.file);
+  const isCss = /\.css$/i.test(h.file);
+  const addedTexts = h.added.map((a) => a.text);
   for (const r of rules) {
     if (r.html && !isHtml) continue;
     if (r.css && !isCss) continue;
-    if (r.re.test(text)) hits.push({ rule: r.rule, file, line, text: text.trim().slice(0, 300) });
+    if (countOf(r.re, addedTexts) <= countOf(r.re, h.removed)) continue;
+    const at = h.added.find((a) => r.re.test(a.text));
+    const m = at.text.match(r.re);
+    const from = Math.max(0, (m ? m.index : 0) - 80);
+    hits.push({ rule: r.rule, file: h.file, line: at.line, text: at.text.slice(from, from + 300).trim() });
   }
-  for (const m of text.matchAll(/(?:https?:)?\/\/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})/g)) {
-    const host = m[1].toLowerCase();
-    if (!known.has(host)) hits.push({ rule: 'unknown-domain', file, line, text: `${host}: ${text.trim().slice(0, 200)}` });
+  const hostRe = /(?:https?:)?\/\/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})/g;
+  const before = new Set(h.removed.flatMap((t) => [...t.matchAll(hostRe)].map((m) => m[1].toLowerCase())));
+  for (const a of h.added) {
+    for (const m of a.text.matchAll(hostRe)) {
+      const host = m[1].toLowerCase();
+      if (!known.has(host) && !before.has(host)) {
+        const from = Math.max(0, m.index - 80);
+        hits.push({ rule: 'unknown-domain', file: h.file, line: a.line, text: `${host}: ${a.text.slice(from, from + 200).trim()}` });
+      }
+    }
   }
-  line++;
 }
 
 // ---------- Design-Vorgaben ----------

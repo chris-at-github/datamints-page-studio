@@ -121,6 +121,14 @@ git_site() { git -C "$SITE" "$@"; }
 
 state_file() { printf '%s/.state.json' "$SITE"; }
 
+# Nächste freie Annotationsnummer: höher als Zähler und als jede vorhandene annotations/A-xxx.json
+next_annotation_number() {
+  local c max
+  c="$(state_get counter)"; c="${c:-0}"
+  max="$(ls "$SITE/annotations" 2>/dev/null | sed -nE 's/^A-0*([0-9]+)\.json$/\1/p' | sort -n | tail -1)"; max="${max:-0}"
+  echo $(( c > max ? c + 1 : max + 1 ))
+}
+
 state_get() {
   local f; f="$(state_file)"
   [[ -f "$f" ]] || { printf ''; return; }

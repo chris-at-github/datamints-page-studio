@@ -15,7 +15,7 @@ SITE="$SITES_DIR/$SLUG"
 
 if [[ "$MODE" != "--no-commit" ]]; then
   [[ -d "$SITE/.git" ]] || die "Website hat kein Git-Repo: $SLUG"
-  [[ -z "$(git -C "$SITE" status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen oder verwerfen."
+  [[ -z "$(git -C "$SITE" status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Lokale Änderungen übernehmen“ im Verlauf) oder verwerfen."
 fi
 
 CREATED=()

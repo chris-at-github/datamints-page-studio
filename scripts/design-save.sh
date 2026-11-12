@@ -8,7 +8,7 @@ require_cmd node jq git
 require_site "${1:-}"
 FILE="${2:-}"
 [[ -f "$FILE" ]] || usage "design-save.sh <slug> <datei>"
-[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen oder verwerfen."
+[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Lokale Änderungen übernehmen“ im Verlauf) oder verwerfen."
 [[ -f "$SITE/design/tokens.json" ]] || "$SCRIPTS_DIR/design-init.sh" "$SLUG" >/dev/null
 
 set +e

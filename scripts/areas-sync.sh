@@ -16,7 +16,7 @@ if [[ "${3:-}" == "--add" ]]; then
 elif [[ -n "${3:-}" ]]; then
   usage "areas-sync.sh <slug> <quellseite> [--add <name> <selektor>]"
 fi
-[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen oder verwerfen."
+[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Lokale Änderungen übernehmen“ im Verlauf) oder verwerfen."
 
 set +e
 OUT="$(node "$LIB_DIR/areas.mjs" sync "$SITE" "$PAGE" "${ADD[@]+"${ADD[@]}"}")"; rc=$?

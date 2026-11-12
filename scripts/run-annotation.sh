@@ -30,7 +30,7 @@ PAGE="/${PAGE#/}"
 [[ -f "$SITE/www$PAGE" ]] || die "Seite nicht im Abzug gefunden: $PAGE"
 
 # Saubere Ausgangslage: keine Reste eines abgebrochenen Schritts
-[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen (offene Prüfung?). Erst übernehmen oder verwerfen."
+[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen (offene Prüfung?). Erst übernehmen („Lokale Änderungen übernehmen“ im Verlauf) oder verwerfen."
 
 # Ältere Abzüge ohne Design-Gedächtnis oder mit veralteter CLAUDE.md nachrüsten (eigener Commit "[design] …")
 if [[ ! -f "$SITE/design/tokens.json" || ! -f "$SITE/design/consistency.json" ]] || ! cmp -s "$MODIO_ROOT/templates/CLAUDE.md" "$SITE/CLAUDE.md"; then
@@ -45,7 +45,7 @@ if [[ "${CLAUDE_BARE:-false}" == "true" && -z "${ANTHROPIC_API_KEY:-}" ]] && ! j
 fi
 
 # Annotation-ID vergeben (Zähler wird beim Rücksprung nicht zurückgesetzt)
-COUNTER="$(state_get counter)"; COUNTER=$(( ${COUNTER:-0} + 1 ))
+COUNTER="$(next_annotation_number)"
 state_set counter "$COUNTER"
 ID="$(printf 'A-%03d' "$COUNTER")"
 log "$ID für $SLUG (Job $JOB_ID): $(head -c 120 <<<"$PROMPT_USER" | tr '\n' ' ')"

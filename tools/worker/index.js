@@ -112,6 +112,13 @@ async function handle(job, logFile) {
       if (!/^jobs\/assets\/job-\d{14}-[0-9a-f]{6}-design\.json$/.test(file)) return { code: 1, result: { status: 'error', error: 'Ungültige Datei' } };
       return runScript('design-save.sh', [slug, path.join(ROOT, file)], logFile);
     }
+    case 'local-commit':
+      return runScript('local-commit.sh', [slug], logFile);
+    case 'inspect-apply': {
+      const file = String(job.params?.file || '');
+      if (!/^jobs\/assets\/job-\d{14}-[0-9a-f]{6}-inspect\.json$/.test(file)) return { code: 1, result: { status: 'error', error: 'Ungültige Datei' } };
+      return runScript('inspect-apply.sh', [slug, path.join(ROOT, file)], logFile);
+    }
     case 'areas-sync': {
       const args = [slug, String(job.params?.page || '')];
       if (job.params?.add) args.push('--add', String(job.params.add.name), String(job.params.add.selector));
@@ -184,7 +191,7 @@ async function processJob(id) {
   job.exitCode = r.code;
   let status;
   if (r.code === 0) status = 'done';
-  else if (r.code === 3 && job.type === 'annotate') status = 'review';
+  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply'].includes(job.type)) status = 'review';
   else {
     status = 'failed';
     job.error = r.result?.error || `Skript endete mit Exit-Code ${r.code} (siehe ${job.log})`;
@@ -198,6 +205,7 @@ async function processJob(id) {
   }
   if (job.type === 'site-new' || job.type === 'pages-add') await fsp.rm(path.join(JOBS_DIR, 'assets', `${id}-urls.txt`), { force: true });
   if (job.type === 'design-save') await fsp.rm(path.join(JOBS_DIR, 'assets', `${id}-design.json`), { force: true });
+  if (job.type === 'inspect-apply') await fsp.rm(path.join(JOBS_DIR, 'assets', `${id}-inspect.json`), { force: true });
 
   await refreshState(job.slug, logFile).catch((e) => log(`Status-Aktualisierung fehlgeschlagen: ${e.message}`));
   await writeJob(job, status);
