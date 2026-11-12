@@ -364,6 +364,9 @@
     '.hintrow{margin-top:2px}' +
     'label.fl{font-size:13px;font-weight:600;margin:4px 0 4px}' +
     'input.textin{width:100%;font:inherit;padding:6px 8px;border:1px solid #cfd5df;border-radius:7px}' +
+    'input.textin.mono{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}' +
+    'input.textin.bad{border-color:#dc2626;background:#fef2f2}' +
+    '.hint.bad{color:#b91c1c}' +
     '.ui.sb-design .panel{right:476px}' +
     '@media (max-width:940px){.ui.sb-design .panel{right:16px}}' +
     '.hintrow .hint{margin:0}' +
@@ -551,12 +554,17 @@
 
   var aMeta = el('div', { class: 'meta' });
   var aName = el('input', { id: 'modio-area-name', type: 'text', class: 'textin', spellcheck: 'false', maxlength: '60' });
+  var aSelIn = el('input', { id: 'modio-area-sel', type: 'text', class: 'textin mono', spellcheck: 'false', maxlength: '200' });
+  var aSelInfo = el('div', { class: 'hint', 'aria-live': 'polite' });
   var aErr = el('div', { class: 'err', role: 'alert' });
   var aCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var aSave = el('button', { type: 'button', class: 'primary', text: 'Übernehmen' });
   var areaPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ah' }, [
     el('h2', { id: 'modio-ah', text: 'Gleichen Bereich festlegen' }),
     aMeta,
+    el('label', { for: 'modio-area-sel', class: 'fl', text: 'Selektor' }),
+    aSelIn,
+    aSelInfo,
     el('label', { for: 'modio-area-name', class: 'fl', text: 'Name des Bereichs' }),
     aName,
     el('div', { class: 'hint', text: 'Der Bereich wird in die Liste aufgenommen, die Seiten bleiben unverändert. Angleichen mit „Für alle Seiten übernehmen“; spätere Änderungen daran überträgt Modio automatisch.' }),
@@ -814,7 +822,7 @@
   function refreshHighlight() {
     if (selecting && hovered) placeHighlight(hovered, false);
     else if (selected && promptPanel.classList.contains('open')) placeHighlight(selected, true);
-    else if (areaSel && areaPanel.classList.contains('open')) placeHighlight(areaSel, true);
+    else if (areaPanel.classList.contains('open')) { var af = null; try { af = aSelIn.value.trim() && document.querySelector(aSelIn.value.trim()); } catch (e) { af = null; } if (af) placeHighlight(af, true); else hl.style.display = 'none'; }
     else hl.style.display = 'none';
     if (previewed && (promptPanel.classList.contains('open') || areaPanel.classList.contains('open'))) placeBox(pv, pvLabel, previewed);
     else hidePreview();
@@ -1073,9 +1081,10 @@
       nav.appendChild(b);
     });
     box.appendChild(nav);
-    var selText = selFn(current);
-    box.appendChild(el('div', { class: 'sel-full' + (selText ? '' : ' bad') }, [el('span', { class: 'sel-lbl', text: 'Selektor' }),
-      selText || 'Ohne Positionsangabe nicht eindeutig – bitte ein übergeordnetes Element wählen']));
+    if (selFn) {
+      var selText = selFn(current);
+      box.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), selText]));
+    }
     nav.addEventListener('scroll', function () { crumbFade(nav); });
     nav.addEventListener('wheel', function (e) {
       var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -1940,20 +1949,48 @@
       areaSel = node;
       if (!areaNameTouched) aName.value = areaName(node);
       hidePreview();
+      aSelIn.value = areaSelectorFor(node) || '';
       renderAreaMeta();
-      placeHighlight(areaSel, true);
-    }, areaPanel, areaSelectorFor);
-    aSave.disabled = isBusy() || !areaSelectorFor(areaSel);
+    }, areaPanel, null);
+    checkAreaSel();
+  }
+
+  // Selektor im Feld prüfen: gültig, ohne verbotene Zeichen, trifft etwas; ersten Treffer hervorheben
+  function checkAreaSel() {
+    var sel = aSelIn.value.trim();
+    var msg = '', ok = false, found = null;
+    if (!sel) msg = areaSel ? 'Ohne Positionsangabe nicht eindeutig – Selektor anpassen oder ein übergeordnetes Element wählen.' : 'Selektor fehlt.';
+    else if (/[<{};@\\]/.test(sel)) msg = 'Unzulässiges Zeichen (< { } ; @ \\).';
+    else {
+      var list;
+      try { list = document.querySelectorAll(sel); } catch (e) { list = null; }
+      list = list ? Array.prototype.filter.call(list, function (n) { return !host.contains(n) && n !== host; }) : null;
+      if (!list) msg = 'Ungültiger Selektor.';
+      else if (!list.length) msg = 'Trifft auf dieser Seite nichts.';
+      else {
+        ok = true;
+        found = list[0];
+        msg = list.length === 1 ? 'Trifft genau ein Element.' : 'Trifft ' + list.length + ' Elemente, verwendet wird das erste (hervorgehoben).';
+        if (/nth-|:eq\(/.test(sel)) msg += ' Hinweis: Positionsangaben passen oft nicht auf allen Seiten.';
+      }
+    }
+    aSelInfo.textContent = msg;
+    aSelInfo.classList.toggle('bad', !ok);
+    aSelIn.classList.toggle('bad', !ok);
+    aSave.disabled = isBusy() || !ok;
+    if (found) placeHighlight(found, true);
+    else hl.style.display = 'none';
+    return ok;
   }
   function openAreaDialog(node) {
     closePrompt();
     areaLeaf = areaSel = node;
     areaNameTouched = false;
     aName.value = areaName(node);
+    aSelIn.value = areaSelectorFor(node) || '';
     aErr.textContent = '';
     areaPanel.classList.add('open');
     renderAreaMeta();
-    placeHighlight(areaSel, true);
     setTimeout(function () { aName.focus(); aName.select(); }, 0);
   }
   function closeAreaDialog() {
@@ -1963,14 +2000,16 @@
     refreshHighlight();
   }
   aName.addEventListener('input', function () { areaNameTouched = true; });
+  aSelIn.addEventListener('input', checkAreaSel);
+  aSelIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); aSave.click(); } });
   aName.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); aSave.click(); } });
   aCancel.addEventListener('click', closeAreaDialog);
   // Bereich nur in consistency.json aufnehmen (Seiten bleiben unverändert)
   aSave.addEventListener('click', function () {
     if (!areaSel) return;
-    var selector = areaSelectorFor(areaSel);
+    if (!checkAreaSel()) return;
+    var selector = aSelIn.value.trim();
     var name = aName.value.trim();
-    if (!selector) { aErr.textContent = 'Kein Selektor ohne Positionsangabe möglich. Bitte ein übergeordnetes Element wählen.'; return; }
     if (!name) { aErr.textContent = 'Bitte einen Namen angeben.'; return; }
     var c = (design && design.consistency) || { shared: [], ignore: ['class:active', 'class:current', 'aria-current'] };
     var shared = (c.shared || []).slice();
