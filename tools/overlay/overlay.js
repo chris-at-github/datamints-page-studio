@@ -1793,6 +1793,11 @@
   function trackJob(job) {
     if (!job || job.slug !== SLUG) return;
     var prev = jobs[job.id];
+    // Statuswechsel eines Auftrags: gemerkten Dateistatus verwerfen (könnte Claudes Zwischenstand enthalten)
+    if (!prev || prev.status !== job.status) {
+      chFiles = { changed: 0, files: [] };
+      if (!ACTIVE[job.status]) setTimeout(function () { if (!isBusy() && !reloading) loadFileStatus().then(renderChangesButton); }, 1500);
+    }
     jobs[job.id] = job;
     if (ACTIVE[job.status]) seenActive[job.id] = true;
 
@@ -1867,6 +1872,7 @@
     }
     if (reloading) return;
     reloading = true;
+    if (typeof renderChangesButton === 'function' && btnChanges) renderChangesButton();
     setTimeout(function () { location.reload(); }, 600);
   }
 
@@ -2754,7 +2760,11 @@
   }
 
   function loadFileStatus() {
-    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/status').then(function (d) { chFiles = d || { changed: 0, files: [] }; }).catch(function () { /* egal */ });
+    var startedIdle = !isBusy();
+    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/status').then(function (d) {
+      // Nur gelten lassen, wenn vor und nach der Abfrage kein Auftrag lief
+      chFiles = startedIdle && !isBusy() && !reloading ? d || { changed: 0, files: [] } : { changed: 0, files: [] };
+    }).catch(function () { /* egal */ });
   }
 
   var chTimer = null;
@@ -2770,7 +2780,7 @@
   function chTotal() { return chDom.length + chCss.length + (chFiles.changed ? 1 : 0); }
   function renderChangesButton() {
     var n = chDom.length + chCss.length + chFiles.changed;
-    btnChanges.style.display = n && !isBusy() ? '' : 'none';
+    btnChanges.style.display = n && !isBusy() && !reloading ? '' : 'none';
     btnChanges.title = btnChanges.modioLabel.textContent = 'Änderungen übernehmen (' + n + ')';
     btnChanges.modioCount.textContent = String(n);
   }
