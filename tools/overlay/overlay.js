@@ -249,9 +249,13 @@
     '.hl.sel{border-color:#d97706;background:rgba(217,119,6,.10)}' +
     '.hl.pv{border:2px dashed #7c3aed;background:rgba(124,58,237,.08);transition:none}' +
     '.hl.pv .hl-label{background:#7c3aed}' +
-    '.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:4px 0 2px}' +
-    '.crumbs .sep{color:#9ca3af;padding:0 1px}' +
-    '.crumbs button{font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:2px 6px;border-radius:5px;border-color:transparent;background:transparent;color:#374151}' +
+    '.crumbs{position:relative;display:flex;flex-wrap:nowrap;align-items:center;gap:0;margin:4px 0 2px;overflow:hidden;white-space:nowrap;scrollbar-width:none}' +
+    '.crumbs::-webkit-scrollbar{display:none}' +
+    '.crumbs.cl{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 28px);mask-image:linear-gradient(to right,transparent 0,#000 28px)}' +
+    '.crumbs.cr{-webkit-mask-image:linear-gradient(to left,transparent 0,#000 28px);mask-image:linear-gradient(to left,transparent 0,#000 28px)}' +
+    '.crumbs.cl.cr{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 28px,#000 calc(100% - 28px),transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 28px,#000 calc(100% - 28px),transparent 100%)}' +
+    '.crumbs .csep{flex:none;color:#9ca3af;padding:0 1px;font-size:12px}' +
+    '.crumbs button{flex:none;font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:1px 4px;border-radius:5px;border-color:transparent;background:transparent;color:#374151}' +
     '.crumbs button:hover,.crumbs button:focus-visible{background:#ede9fe;border-color:#c4b5fd}' +
     '.crumbs button[aria-current=true]{background:#fef3c7;border-color:#d97706;color:#92400e;font-weight:600}' +
     '.sel-full{color:#6b7280;font-size:11px;margin-top:2px}' +
@@ -324,6 +328,7 @@
     '.adv{margin-top:8px;font-size:13px}' +
     '.adv summary{color:#4b5563;cursor:pointer}' +
     '.adv .switch{margin-top:6px}' +
+    '.checks{display:flex;flex-direction:column;gap:4px;margin-top:10px}' +
     '.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}' +
     '.ic{flex:none;display:block}' +
     'button.has-icon,a.btn{display:inline-flex;align-items:center;gap:6px}' +
@@ -476,18 +481,13 @@
     pFile,
     el('div', { class: 'row' }, [pUrl, pUrlAdd]),
     pThumbs,
-    el('div', { class: 'row' }, [
+    el('div', { class: 'checks' }, [
       el('label', { class: 'switch', title: 'Schritt mit dem gründlicheren Modell ausführen' }, [pThorough, 'gründlich']),
       el('label', { class: 'switch', title: 'Genannte Werte als gesperrte Tokens und die Regel in design/notes.md speichern' }, [pRemember, 'Als Regel merken']),
-      el('span', { class: 'spacer' }),
-      pCancel,
-      pSend,
-    ]),
-    el('details', { class: 'adv' }, [
-      el('summary', { text: 'Erweitert' }),
       el('label', { class: 'switch', title: 'Ohne diesen Haken stoppt die Prüfung jede Änderung an gesperrten Tokens' }, [pAllowTokens, 'Gesperrte Tokens dürfen geändert werden']),
     ]),
     pErr,
+    el('div', { class: 'row end' }, [pCancel, pSend]),
   ]);
   ui.appendChild(promptPanel);
 
@@ -952,13 +952,16 @@
 
   // Seite, Pfadleiste (body bis ursprünglich gewähltes Element) und Selektor der aktuellen Auswahl
   function renderMeta() {
+    var old = pMeta.querySelector('.crumbs');
+    var oldScroll = old && old.modioLeaf === pathLeaf ? old.scrollLeft : null;
     clear(pMeta);
     pMeta.appendChild(document.createTextNode(currentPage()));
     var chain = [];
     for (var n = pathLeaf; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) chain.unshift(n);
     var nav = el('div', { class: 'crumbs', role: 'group', 'aria-label': 'Element-Pfad' });
+    nav.modioLeaf = pathLeaf;
     chain.forEach(function (node, i) {
-      if (i) nav.appendChild(el('span', { class: 'sep', 'aria-hidden': 'true', text: '›' }));
+      if (i) nav.appendChild(el('span', { class: 'csep', 'aria-hidden': 'true', text: '›' }));
       var b = el('button', { type: 'button', text: crumbLabel(node), title: describe(node) });
       if (node === selected) b.setAttribute('aria-current', 'true');
       b.addEventListener('mouseenter', function () { showPreview(node); });
@@ -968,13 +971,42 @@
       b.addEventListener('click', function () {
         selectCrumb(node);
         var btns = pMeta.querySelectorAll('.crumbs button'); // nach dem Neuaufbau Fokus halten
-        if (btns[i]) btns[i].focus();
+        if (btns[i]) btns[i].focus({ preventScroll: true });
         hidePreview();
       });
       nav.appendChild(b);
     });
     pMeta.appendChild(nav);
     pMeta.appendChild(el('div', { class: 'sel-full', text: selectorFor(selected) }));
+    nav.addEventListener('scroll', function () { crumbFade(nav); });
+    nav.addEventListener('wheel', function (e) {
+      var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (!d || nav.scrollWidth <= nav.clientWidth) return;
+      e.preventDefault();
+      nav.scrollLeft += d;
+    }, { passive: false });
+    // Einzeilig: rechts steht die unterste Ebene, links wird abgeschnitten. Nach einem Klick bleibt der
+    // gewählte Eintrag sichtbar und sein Elternelement rückt links ins Bild (so klickt man sich nach oben).
+    var place = function () {
+      if (oldScroll === null) nav.scrollLeft = nav.scrollWidth;
+      else nav.scrollLeft = oldScroll;
+      var cur = nav.querySelector('button[aria-current=true]');
+      if (cur) {
+        var prev = cur.previousElementSibling && cur.previousElementSibling.previousElementSibling;
+        var left = (prev || cur).offsetLeft - 28;
+        var right = cur.offsetLeft + cur.offsetWidth + 28 - nav.clientWidth;
+        if (nav.scrollLeft > left) nav.scrollLeft = Math.max(0, left);
+        if (nav.scrollLeft < right) nav.scrollLeft = right;
+      }
+      crumbFade(nav);
+    };
+    if (promptPanel.classList.contains('open')) place();
+    else setTimeout(place, 0);
+  }
+
+  function crumbFade(nav) {
+    nav.classList.toggle('cl', nav.scrollLeft > 1);
+    nav.classList.toggle('cr', nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 1);
   }
 
   function resetPrompt() {

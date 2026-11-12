@@ -72,6 +72,7 @@ export function renderStartPage({ sites, token }) {
   dialog .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
   details summary { cursor:pointer; color:var(--muted); }
   label.inline { display:flex; gap:8px; align-items:center; font-weight:400; font-size:14px; margin:0 0 8px; }
+  label.inline.below { margin:12px 0 0; }
 </style>
 </head>
 <body>
@@ -94,11 +95,11 @@ export function renderStartPage({ sites, token }) {
   </section>
   <section>
     <h2>Websites</h2>
-    <label class="inline"><input type="checkbox" id="keep-design" checked> Beim Neu einlesen Design-Vorgaben (Tokens und Regeln) behalten</label>
     <table>
       <thead><tr><th>Website</th><th class="num">Schritte</th><th>Abzug</th><th>Letzte Änderung</th><th>Aktionen</th></tr></thead>
       <tbody id="sites">${rows}</tbody>
     </table>
+    <label class="inline below"><input type="checkbox" id="keep-design" checked> Beim Neu einlesen Design-Vorgaben (Tokens und Regeln) behalten</label>
   </section>
   <section>
     <h2>Aufträge</h2>
