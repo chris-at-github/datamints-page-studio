@@ -102,6 +102,7 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `POST /api/sites/<slug>/recrawl` | JSON `{ keepDesign?: true }` | `202 { job }` |
 | `POST /api/sites/<slug>/annotations` | `multipart/form-data`: Feld `annotation` (JSON), Dateien im Feld `images` | `202 { job }`, `409` wenn für die Website schon ein Job aktiv ist oder auf Prüfung wartet |
 | `POST /api/jobs/<job-id>/decision` | JSON `{ action: "accept"|"discard" }` | `202 { job }` |
+| `GET /api/sites/<slug>/pages` | – | `{ entry, pages: [{ path, title, url }] }` Seiten des Abzugs (Ordner der Einstiegsseite) |
 | `GET /api/sites/<slug>/queue` | – | `{ items: [{ id, created, page, selector, prompt, references }] }` gesammelte Annotationen |
 | `POST /api/sites/<slug>/queue` | wie `annotations` (multipart) | `201 { item, items }` – in die Queue aufnehmen (auch während ein Schritt läuft; kein Nachbessern; max. 20) |
 | `DELETE /api/sites/<slug>/queue/<id>` | – | `{ items }` – aus der Queue entfernen (mit hochgeladenen Bildern) |

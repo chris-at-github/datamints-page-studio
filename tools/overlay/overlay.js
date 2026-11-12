@@ -74,6 +74,7 @@
       'path:m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z'],
     plus: ['path:M5 12h14', 'path:M12 5v14'],
     chevron: ['path:m9 18 6-6-6-6'],
+    files: ['path:M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'path:M14 2v4a2 2 0 0 0 2 2h4', 'path:M10 13H8', 'path:M16 17H8'],
     pencil: ['path:M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'path:m15 5 4 4'],
   };
   var SVGNS = 'http://www.w3.org/2000/svg';
@@ -313,6 +314,7 @@
     '@keyframes pulse{from{opacity:.25}to{opacity:1}}' +
     '.panel{position:fixed;right:16px;bottom:72px;width:440px;max-width:calc(100vw - 32px);max-height:calc(100vh - 100px);overflow:auto;pointer-events:auto;background:#fff;border:1px solid #cfd5df;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:14px 16px;display:none}' +
     '.panel.wide{width:760px}' +
+    '.panel.prompt{width:520px}' +
     '.panel.open{display:block}' +
     '.panel h2{font-size:16px;margin:0 0 8px}' +
     '.meta{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#4b5563;background:#f3f4f6;border-radius:6px;padding:6px 8px;margin-bottom:8px;word-break:break-all}' +
@@ -470,6 +472,13 @@
     '.logbody .hint{color:#94a3b8}' +
     '.ui.sb-open .logpop{right:416px}' +
     '.ui.sb-design .logpop{right:476px}' +
+    'ul.pglist{list-style:none;margin:8px 0 6px;padding:0;max-height:50vh;overflow:auto}' +
+    'ul.pglist li{display:flex;align-items:center;gap:6px;border-bottom:1px solid #f1f2f4}' +
+    'a.pglink{flex:1;min-width:0;display:block;padding:6px 8px;border-radius:6px;color:#1d2330;text-decoration:none}' +
+    'a.pglink:hover,a.pglink:focus-visible{background:#eef2ff}' +
+    'a.pglink.current{background:#dbeafe}' +
+    '.pgtitle{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.pgpath{display:block;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     'button.queue{background:#2563eb;border-color:#2563eb;color:#fff}' +
     'button.queue:hover:not([disabled]){background:#1d4ed8}' +
     'ul.qlist{list-style:none;margin:0 0 6px;padding:0;max-height:45vh;overflow:auto}' +
@@ -507,6 +516,7 @@
   // Leiste
   var btnSelect = iconButton('click', 'Auswählen', { title: 'Element auswählen (Alt+A)', 'aria-pressed': 'false' });
   var btnHistory = iconButton('history', 'Verlauf', { title: 'Verlauf und Rücksprung', 'aria-expanded': 'false', 'aria-controls': 'modio-history' });
+  var btnPages = iconButton('files', 'Seiten', { title: 'Alle Seiten dieses Abzugs', 'aria-expanded': 'false', 'aria-controls': 'modio-pages' });
   var btnDesign = iconButton('palette', 'Design', { title: 'Design-Vorgaben: Tokens und Regeln', 'aria-expanded': 'false', 'aria-controls': 'modio-design' });
   var btnChanges = iconButton('check', 'Änderungen übernehmen', { class: 'changes', title: 'Im Inspektor, im Styles-Panel oder in Dateien gemachte Änderungen übernehmen' });
   btnChanges.style.display = 'none';
@@ -520,6 +530,7 @@
     el('span', { class: 'sep', 'aria-hidden': 'true' }),
     btnSelect,
     btnHistory,
+    btnPages,
     btnDesign,
     btnFollowup,
     btnChanges,
@@ -567,7 +578,7 @@
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
   var pTokPop = el('div', { id: 'modio-tokpop', class: 'tokpop', hidden: '' }, [pTokFilter, pTokList]);
-  var promptPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
+  var promptPanel = el('div', { class: 'panel prompt', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
     pTitle,
     pMeta,
     el('label', { for: 'modio-prompt', class: 'sr', text: 'Prompt' }),
@@ -998,6 +1009,7 @@
         else if (areaPanel.classList.contains('open')) closeAreaDialog();
         else if (changesPanel.classList.contains('open')) closeChanges();
         else if (queuePanel.classList.contains('open')) closeQueue();
+        else if (pagesPanel.classList.contains('open')) closePages();
         else if (promptPanel.classList.contains('open')) closePrompt();
         else if (historyPanel.classList.contains('open')) closeHistory();
         else if (designPanel.classList.contains('open')) closeDesign();
@@ -1015,6 +1027,7 @@
   // --------------------------------------------------------- Prompt-Dialog
 
   function closePanels() {
+    if (typeof closePages === 'function' && pagesPanel) closePages();
     if (typeof closeQueue === 'function' && queuePanel) closeQueue();
     if (typeof closeChanges === 'function') closeChanges();
     closePrompt();
@@ -1584,6 +1597,60 @@
         renderStatus();
       });
   }
+
+  // ------------------------------------------------------------- Seitenübersicht
+
+  var pgFilter = el('input', { type: 'text', class: 'textin', placeholder: 'Seiten filtern …', 'aria-label': 'Seiten filtern', spellcheck: 'false' });
+  var pgList = el('ul', { class: 'pglist' });
+  var pgInfo = el('div', { class: 'hint' });
+  var pagesPanel = el('div', { id: 'modio-pages', class: 'panel', role: 'dialog', 'aria-labelledby': 'modio-pgh' }, [
+    el('h2', { id: 'modio-pgh', text: 'Seiten im Abzug' }),
+    pgFilter,
+    pgList,
+    pgInfo,
+  ]);
+  ui.appendChild(pagesPanel);
+  var pagesData = null;
+  function renderPages() {
+    clear(pgList);
+    var all = (pagesData && pagesData.pages) || [];
+    var q = pgFilter.value.trim().toLowerCase();
+    var list = all.filter(function (p) { return !q || (p.title + ' ' + p.path).toLowerCase().indexOf(q) !== -1; });
+    var cur = currentPage();
+    list.forEach(function (p) {
+      var a = el('a', { href: BASE + p.path.split('/').map(encodeURIComponent).join('/'), class: 'pglink' + (p.path === cur ? ' current' : '') }, [
+        el('span', { class: 'pgtitle', text: p.title || p.path.split('/').pop() }),
+        el('span', { class: 'pgpath', text: p.url.replace(/^https?:\/\//, '') }),
+      ]);
+      if (p.path === cur) a.setAttribute('aria-current', 'page');
+      var li = el('li', {}, [a]);
+      if (pagesData && p.path === pagesData.entry) li.appendChild(el('span', { class: 'badge', text: 'Start' }));
+      pgList.appendChild(li);
+    });
+    if (!list.length) pgList.appendChild(el('li', { class: 'hint', text: all.length ? 'Keine passende Seite.' : 'Lade …' }));
+    pgInfo.textContent = all.length + ' Seite(n). Weitere Seiten: Startseite › Aktionen › „Seiten hinzufügen“.';
+  }
+  function openPages() {
+    closePanels();
+    pagesPanel.classList.add('open');
+    btnPages.classList.add('on');
+    btnPages.setAttribute('aria-expanded', 'true');
+    pgFilter.value = '';
+    renderPages();
+    api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/pages').then(function (d) { pagesData = d; renderPages(); })
+      .catch(function (err) { clear(pgList); pgList.appendChild(el('li', { class: 'err', text: 'Fehler: ' + err.message })); });
+    setTimeout(function () { pgFilter.focus(); }, 0);
+  }
+  function closePages() {
+    pagesPanel.classList.remove('open');
+    btnPages.classList.remove('on');
+    btnPages.setAttribute('aria-expanded', 'false');
+  }
+  btnPages.addEventListener('click', function () { if (pagesPanel.classList.contains('open')) closePages(); else openPages(); });
+  pgFilter.addEventListener('input', renderPages);
+  pgFilter.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { var a = pgList.querySelector('a'); if (a) { e.preventDefault(); a.click(); } }
+  });
 
   // ------------------------------------------------- Laufende Ausgabe (Hover auf den Status)
 

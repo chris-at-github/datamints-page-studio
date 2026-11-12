@@ -363,6 +363,42 @@ async function jobLogLines(id) {
   return (lines.length ? [...script.slice(-4), ...lines] : script).slice(-40);
 }
 
+// Seiten des Abzugs (HTML-Dateien im Ordner der Einstiegsseite) mit Titel und ursprünglicher Adresse
+async function listSitePages(slug) {
+  const dir = siteDir(slug);
+  const site = await readJson(path.join(dir, 'site.json'), {});
+  const hostDir = String(site.entry || '').split('/')[1] || '';
+  const root = path.join(dir, 'www', hostDir);
+  if (!hostDir || hostDir.includes('..') || !fs.existsSync(root)) return { entry: site.entry || null, pages: [] };
+  const files = [];
+  const walk = async (d) => {
+    for (const e of await fsp.readdir(d, { withFileTypes: true }).catch(() => [])) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (e.name !== '_modio-assets') await walk(p); }
+      else if (/\.html?(@.*)?$/i.test(e.name)) files.push(p);
+      if (files.length > 1000) return;
+    }
+  };
+  await walk(root);
+  const proto = /^https:/i.test(site.url || '') ? 'https' : 'http';
+  const pages = await Promise.all(files.map(async (f) => {
+    const rel = '/' + path.relative(path.join(dir, 'www'), f).split(path.sep).join('/');
+    let title = '';
+    try {
+      const fh = await fsp.open(f, 'r');
+      const buf = Buffer.alloc(65536);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      await fh.close();
+      const m = buf.subarray(0, bytesRead).toString('utf8').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      if (m) title = m[1].replace(/\s+/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+    } catch { /* ohne Titel */ }
+    const urlPath = rel.slice(hostDir.length + 1).replace(/(^|\/)index\.html?$/i, '$1').replace(/@(.*)$/, '?$1');
+    return { path: rel, title, url: `${proto}://${hostDir.replace('+', ':')}${urlPath}` };
+  }));
+  pages.sort((a, b) => (a.path === site.entry ? -1 : b.path === site.entry ? 1 : a.path.localeCompare(b.path)));
+  return { entry: site.entry || null, pages };
+}
+
 // Job-Parameter einer Annotation (direkt oder aus der Queue)
 function annotationParams(slug, annotation, files) {
   return {
@@ -490,6 +526,7 @@ async function handleApi(req, res, url) {
     }
     if (action === 'design' && req.method === 'GET') return send(res, 200, await readDesign(slug));
     if (action === 'queue' && req.method === 'GET') return send(res, 200, { items: await readQueue(slug) });
+    if (action === 'pages' && req.method === 'GET') return send(res, 200, await listSitePages(slug));
     if (action === 'status' && req.method === 'GET') {
       // Nur lesend: ungespeicherte Änderungen im Abzug (für „Änderungen übernehmen“ im Overlay)
       const out = await new Promise((resolve) => execFile('git', ['-C', siteDir(slug), 'status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude)annotations/'],
