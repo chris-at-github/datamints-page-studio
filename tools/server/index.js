@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import busboy from 'busboy';
@@ -388,7 +389,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, { jobs: [...finished, ...active].map(slimJob) });
   }
 
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -397,6 +398,13 @@ async function handleApi(req, res, url) {
       return send(res, 200, await readJson(path.join(siteDir(slug), '.history.json'), { slug, head: null, baseline: null, steps: [] }));
     }
     if (action === 'design' && req.method === 'GET') return send(res, 200, await readDesign(slug));
+    if (action === 'status' && req.method === 'GET') {
+      // Nur lesend: ungespeicherte Änderungen im Abzug (für „Änderungen übernehmen“ im Overlay)
+      const out = await new Promise((resolve) => execFile('git', ['-C', siteDir(slug), 'status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude)annotations/'],
+        { maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => resolve(err ? '' : stdout)));
+      const files = out.split('\n').filter(Boolean).map((l) => l.slice(3));
+      return send(res, 200, { changed: files.length, files: files.slice(0, 50) });
+    }
     if (action === 'design' && req.method === 'PUT') {
       const body = await readBody(req, 512 * 1024);
       const err = validateDesign(body);
@@ -457,17 +465,32 @@ async function handleApi(req, res, url) {
       const body = await readBody(req, 1024 * 1024);
       const page = String(body.page || '');
       const selector = String(body.selector || '').trim();
-      const html = String(body.html || '');
-      const css = body.css ? String(body.css) : '';
+      // Mehrere Elemente (items) und CSS-Regeln (rules) auf einmal; einzelnes Element (selector/html) weiter möglich
+      const items = Array.isArray(body.items) ? body.items : selector ? [{ selector, html: body.html, css: body.css }] : [];
+      const rules = Array.isArray(body.rules) ? body.rules : [];
       if (!/^\/[^\0\n]{1,500}$/.test(page) || page.split('/').includes('..')) return sendError(res, 400, 'Ungültige Seite');
-      if (!selector || selector.length > 500 || /[\0\n]/.test(selector)) return sendError(res, 400, 'Ungültiger Selektor');
-      if (!html.trim() || html.length > 500000) return sendError(res, 400, 'HTML fehlt oder ist zu groß');
-      if (css.length > 5000) return sendError(res, 400, 'CSS zu lang');
+      if (!items.length && !rules.length) return sendError(res, 400, 'Keine Änderungen übergeben');
+      if (items.length > 50 || rules.length > 100) return sendError(res, 400, 'Zu viele Änderungen auf einmal');
+      for (const it of items) {
+        const sel = String(it?.selector || '').trim(), html = String(it?.html || '');
+        if (!sel || sel.length > 500 || /[\0\n]/.test(sel)) return sendError(res, 400, 'Ungültiger Selektor');
+        if (!html.trim() || html.length > 500000) return sendError(res, 400, 'HTML fehlt oder ist zu groß');
+        if (it.css && String(it.css).length > 5000) return sendError(res, 400, 'CSS zu lang');
+      }
+      for (const r of rules) {
+        if (!r || typeof r.selector !== 'string' || !r.selector.trim() || r.selector.length > 500 || typeof r.decls !== 'string' || r.decls.length > 5000) return sendError(res, 400, 'Ungültige CSS-Regel');
+        if (r.media !== undefined && r.media !== null && (typeof r.media !== 'string' || r.media.length > 300)) return sendError(res, 400, 'Ungültige Media-Bedingung');
+      }
       if (await busyCheck(res, slug, 'Das Übernehmen aus dem Inspektor')) return;
       const id = newJobId();
       const file = `jobs/assets/${id}-inspect.json`;
-      await fsp.writeFile(path.join(ROOT, file), JSON.stringify({ page, selector, html, css }));
-      return send(res, 202, { job: await createJob('inspect-apply', slug, { file, page, selector }, id) });
+      const clean = {
+        page,
+        items: items.map((it) => ({ selector: String(it.selector).trim(), html: String(it.html), css: it.css ? String(it.css) : '' })),
+        rules: rules.map((r) => ({ selector: r.selector.trim(), decls: r.decls, media: r.media || null })),
+      };
+      await fsp.writeFile(path.join(ROOT, file), JSON.stringify(clean));
+      return send(res, 202, { job: await createJob('inspect-apply', slug, { file, page, elements: clean.items.length, rules: clean.rules.length }, id) });
     }
     if (action === 'areas/sync') {
       const body = await readBody(req);

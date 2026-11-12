@@ -171,8 +171,8 @@
     );
   }
 
-  function isUnique(sel) {
-    try { return document.querySelectorAll(sel).length === 1; } catch (e) { return false; }
+  function isUnique(sel, doc) {
+    try { return (doc || document).querySelectorAll(sel).length === 1; } catch (e) { return false; }
   }
 
   function segmentFor(node) {
@@ -220,25 +220,26 @@
     return null;
   }
 
-  function selectorFor(target) {
-    if (target.id && !looksGenerated(target.id) && isUnique('#' + esc(target.id))) return '#' + esc(target.id);
+  function selectorFor(target, doc) {
+    doc = doc || document;
+    if (target.id && !looksGenerated(target.id) && isUnique('#' + esc(target.id), doc)) return '#' + esc(target.id);
     var path = [];
     var node = target;
     while (node && node.nodeType === 1) {
-      if (node !== target && node.id && !looksGenerated(node.id) && isUnique('#' + esc(node.id))) {
+      if (node !== target && node.id && !looksGenerated(node.id) && isUnique('#' + esc(node.id), doc)) {
         path.unshift('#' + esc(node.id));
         var withId = path.join(' > ');
-        if (isUnique(withId)) return withId;
+        if (isUnique(withId, doc)) return withId;
         path.shift();
       }
-      if (node === document.body || node === document.documentElement) {
+      if (node === doc.body || node === doc.documentElement) {
         path.unshift(node.tagName.toLowerCase());
       } else {
         path.unshift(segmentFor(node));
       }
       var sel = path.join(' > ');
-      if (isUnique(sel) && path.length > 1) return sel;
-      if (path.length === 1 && isUnique(sel) && node.tagName !== 'DIV' && node.tagName !== 'SPAN') return sel;
+      if (isUnique(sel, doc) && path.length > 1) return sel;
+      if (path.length === 1 && isUnique(sel, doc) && node.tagName !== 'DIV' && node.tagName !== 'SPAN') return sel;
       node = node.parentElement;
     }
     return path.join(' > ');
@@ -460,6 +461,14 @@
     '.dirty{font-size:12px;color:#b45309;align-self:center}' +
     'select:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}' +
     'ul.areas{list-style:none;margin:0;padding:0}' +
+    'button.changes{background:#fef3c7;border-color:#f59e0b;color:#92400e}' +
+    'button.changes:hover:not([disabled]){background:#fde68a}' +
+    'ul.chlist,ul.flist{list-style:none;margin:0;padding:0}' +
+    'ul.flist li{font-size:12px;padding:1px 0}' +
+    '.chitem{border-bottom:1px solid #e5e7eb;padding:6px 0}' +
+    '.chitem .switch code{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}' +
+    '.chitem .switch .hint{margin:0 0 0 6px}' +
+    '.chitem pre.diff{max-height:30vh;margin-top:4px}' +
     'ul.areas li{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f1f2f4;font-size:13px}' +
     'ul.areas li strong{flex:none}' +
     'ul.areas li code{flex:1;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b7280;word-break:break-all}' +
@@ -482,6 +491,8 @@
   var btnSelect = iconButton('click', 'Auswählen', { title: 'Element auswählen (Alt+A)', 'aria-pressed': 'false' });
   var btnHistory = iconButton('history', 'Verlauf', { title: 'Verlauf und Rücksprung', 'aria-expanded': 'false', 'aria-controls': 'modio-history' });
   var btnDesign = iconButton('palette', 'Design', { title: 'Design-Vorgaben: Tokens und Regeln', 'aria-expanded': 'false', 'aria-controls': 'modio-design' });
+  var btnChanges = iconButton('check', 'Änderungen übernehmen', { class: 'changes', title: 'Im Inspektor, im Styles-Panel oder in Dateien gemachte Änderungen übernehmen' });
+  btnChanges.style.display = 'none';
   var btnFollowup = iconButton('refresh', 'Nachbessern', { title: 'Den letzten Schritt in derselben Claude-Session korrigieren' });
   btnFollowup.style.display = 'none';
   var lnkHome = el('a', { class: 'btn icon-only ghost', href: '/', title: 'Zur Übersicht aller Websites', 'aria-label': 'Zur Übersicht' }, [icon('grid')]);
@@ -494,6 +505,7 @@
     btnHistory,
     btnDesign,
     btnFollowup,
+    btnChanges,
     statusEl,
   ]);
   ui.appendChild(bar);
@@ -533,7 +545,6 @@
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var pSend = el('button', { type: 'button', class: 'primary', text: 'Absenden' });
-  var pInspect = el('button', { type: 'button', text: 'Inspektor-Änderungen übernehmen', title: 'Änderungen, die du im Browser-Inspektor an diesem Element gemacht hast, ohne Claude in die Datei übernehmen' });
   var pTokBtn = iconButton('palette', 'Token einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
@@ -553,28 +564,10 @@
       el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet: besser bei kniffligen oder seitenübergreifenden Änderungen, aber langsamer und teurer' }, [pThorough, 'Stärkeres Modell für komplexe Änderungen']),
     ]),
     pErr,
-    el('div', { class: 'row end' }, [pInspect, el('span', { class: 'spacer' }), pCancel, pSend]),
+    el('div', { class: 'row end' }, [pCancel, pSend]),
   ]);
   ui.appendChild(promptPanel);
 
-  // ---------------------------------------------------- Inspektor-Änderungen
-
-  var iInfo = el('div', { class: 'hint' });
-  var iDiff = el('pre', { class: 'diff', tabindex: '0', 'aria-label': 'Unterschied' });
-  var iCss = el('input', { type: 'checkbox' });
-  var iCssRow = el('label', { class: 'switch', title: 'Geänderte Inline-Styles des Elements nicht ins HTML schreiben, sondern als Regel (mit !important) in overrides.css' }, [iCss, 'Inline-Styles als Regel in overrides.css übernehmen']);
-  var iErr = el('div', { class: 'err', role: 'alert' });
-  var iCancel = el('button', { type: 'button', text: 'Abbrechen' });
-  var iApply = el('button', { type: 'button', class: 'primary', text: 'Übernehmen' });
-  var inspectPanel = el('div', { class: 'panel wide', role: 'dialog', 'aria-labelledby': 'modio-ih' }, [
-    el('h2', { id: 'modio-ih', text: 'Änderungen aus dem Inspektor' }),
-    iInfo,
-    iDiff,
-    el('div', { class: 'checks' }, [iCssRow]),
-    iErr,
-    el('div', { class: 'row end' }, [iCancel, iApply]),
-  ]);
-  ui.appendChild(inspectPanel);
 
   // ---------------------------------------------------- Bereichsdialog (gleicher Bereich)
 
@@ -797,7 +790,6 @@
     btnSelect.disabled = busy;
     btnSelect.title = busy ? 'Es läuft noch ein Schritt – bitte warten' : 'Element auswählen (Alt+A)';
     pSend.disabled = busy;
-    pInspect.disabled = busy || !!followupJob;
     var fj = followupCandidate();
     btnFollowup.style.display = fj ? '' : 'none';
     btnFollowup.disabled = busy;
@@ -805,6 +797,7 @@
     if (busy && selecting && selectMode === 'annotate') stopSelecting();
     renderHistoryButtons();
     renderDesignButtons();
+    if (typeof renderChangesButton === 'function' && btnChanges) renderChangesButton();
   }
 
   // --------------------------------------------------------- Auswahlmodus
@@ -849,7 +842,6 @@
     if (selecting && hovered) placeHighlight(hovered, false);
     else if (selected && promptPanel.classList.contains('open')) placeHighlight(selected, true);
     else if (areaSel && areaPanel.classList.contains('open')) placeHighlight(areaSel, true);
-    else if (selected && inspectPanel.classList.contains('open')) placeHighlight(selected, true);
     else hl.style.display = 'none';
     if (previewed && (promptPanel.classList.contains('open') || areaPanel.classList.contains('open'))) placeBox(pv, pvLabel, previewed);
     else hidePreview();
@@ -982,7 +974,7 @@
         if (!pTokPop.hidden) { e.preventDefault(); closeTokPop(true); }
         else if (selEditing) { /* Esc bricht nur die Bearbeitung des Selektors ab (eigener Handler) */ }
         else if (areaPanel.classList.contains('open')) closeAreaDialog();
-        else if (inspectPanel.classList.contains('open')) closeInspect(true);
+        else if (changesPanel.classList.contains('open')) closeChanges();
         else if (promptPanel.classList.contains('open')) closePrompt();
         else if (historyPanel.classList.contains('open')) closeHistory();
         else if (designPanel.classList.contains('open')) closeDesign();
@@ -1000,7 +992,7 @@
   // --------------------------------------------------------- Prompt-Dialog
 
   function closePanels() {
-    if (inspectPanel.classList.contains('open')) closeInspect(false);
+    if (typeof closeChanges === 'function') closeChanges();
     closePrompt();
     closeAreaDialog();
     closeHistory();
@@ -1017,7 +1009,6 @@
     customSel = null;
     followupJob = null;
     pTitle.textContent = 'Annotation';
-    pInspect.style.display = '';
     renderMeta();
     pErr.textContent = '';
     promptPanel.classList.add('open');
@@ -1059,7 +1050,6 @@
     pathLeaf = null;
     followupJob = job;
     pTitle.textContent = 'Nachbessern ' + job.result.annotationId;
-    pInspect.style.display = 'none';
     clear(pMeta);
     pMeta.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), prm.selector || '']));
     pMeta.appendChild(el('div', { class: 'hint', text: 'Bisheriger Auftrag: ' + truncate(prm.prompt || '', 200) }));
@@ -1391,9 +1381,7 @@
     }
   });
   pSend.addEventListener('click', submit);
-  pInspect.addEventListener('click', openInspect);
 
-  var inspectData = null;
 
   // Zeilenweiser Unterschied (LCS) zweier HTML-Fassungen, Tags je Zeile
   function htmlLines(h) { return String(h).replace(/>\s*</g, '>\n<').split('\n'); }
@@ -1423,75 +1411,6 @@
     return m;
   }
 
-  function openInspect() {
-    if (!selected || followupJob) return;
-    var tag = selected.tagName.toLowerCase();
-    if (tag === 'body' || tag === 'html' || tag === 'head') { pErr.textContent = 'Bitte ein Element innerhalb der Seite wählen.'; return; }
-    if (isBusy()) { pErr.textContent = 'Es läuft noch ein Schritt. Bitte warten.'; return; }
-    var selector = customSel || selectorFor(selected);
-    var node = selected;
-    pErr.textContent = '';
-    pInspect.disabled = true;
-    fetch(location.pathname + location.search, { cache: 'no-store', credentials: 'same-origin' })
-      .then(function (res) { return res.text(); })
-      .then(function (text) {
-        var doc = new DOMParser().parseFromString(text, 'text/html');
-        var orig;
-        try { orig = doc.querySelector(selector); } catch (e) { orig = null; }
-        if (!orig) { pErr.textContent = 'Das Element ist in der Datei nicht zu finden (' + selector + '). Selektor anpassen.'; return; }
-        var clone = node.cloneNode(true);
-        Array.prototype.forEach.call(clone.querySelectorAll('[data-modio]'), function (x) { x.remove(); });
-        var before = orig.outerHTML, after = clone.outerHTML;
-        if (before === after) { pErr.textContent = 'Keine Änderungen an diesem Element gefunden.'; return; }
-        var so = styleMap(orig.getAttribute('style')), sn = styleMap(clone.getAttribute('style'));
-        var changed = Object.keys(sn).filter(function (k) { return sn[k] !== so[k]; });
-        inspectData = { page: currentPage(), selector: selector, after: after, origStyle: orig.getAttribute('style'), css: changed.map(function (k) { return k + ': ' + sn[k]; }).join('; ') };
-        iInfo.textContent = 'Element: ' + selector + ' auf ' + currentPage() + '. Achtung: Auch Änderungen, die Scripts der Website zur Laufzeit gemacht haben (z. B. Klassen von Slidern), erscheinen hier.';
-        renderDiffInto(iDiff, lineDiff(htmlLines(before), htmlLines(after)));
-        iCssRow.style.display = changed.length ? '' : 'none';
-        iCss.checked = changed.length > 0;
-        iErr.textContent = '';
-        iApply.disabled = false;
-        promptPanel.classList.remove('open');
-        inspectPanel.classList.add('open');
-        placeHighlight(node, true);
-        setTimeout(function () { iDiff.focus(); }, 0);
-      })
-      .catch(function (err) { pErr.textContent = 'Datei konnte nicht geladen werden: ' + err.message; })
-      .then(function () { pInspect.disabled = false; });
-  }
-  function closeInspect(backToPrompt) {
-    inspectPanel.classList.remove('open');
-    inspectData = null;
-    if (backToPrompt && selected) { promptPanel.classList.add('open'); placeHighlight(selected, true); }
-    else refreshHighlight();
-  }
-  iCancel.addEventListener('click', function () { closeInspect(true); });
-  iApply.addEventListener('click', function () {
-    if (!inspectData) return;
-    var html = inspectData.after, css = '';
-    if (iCss.checked && inspectData.css) {
-      var tmp = document.createElement('template');
-      tmp.innerHTML = html;
-      var root0 = tmp.content.firstElementChild;
-      if (inspectData.origStyle === null) root0.removeAttribute('style'); else root0.setAttribute('style', inspectData.origStyle);
-      html = root0.outerHTML;
-      css = inspectData.css;
-    }
-    iApply.disabled = true;
-    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/inspect', { page: inspectData.page, selector: inspectData.selector, html: html, css: css })
-      .then(function (data) {
-        if (data && data.job) trackJob(data.job);
-        closeInspect(false);
-        resetPrompt();
-        closePrompt();
-        showToast('Inspektor-Änderung wird übernommen …', false);
-      })
-      .catch(function (err) {
-        iErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message;
-        iApply.disabled = false;
-      });
-  });
 
   // ---- Design-Tokens in den Prompt einfügen
   var tokCache = null;
@@ -2506,6 +2425,279 @@
     else startSelecting('token');
   });
 
+  // ------------------------------------------- Änderungen erkennen (Inspektor, Styles-Panel, Dateien)
+  // Vergleicht die Seite im Browser mit der Datei (Elemente) und die CSS-Regeln mit dem Stand kurz nach dem Laden.
+  // Was Scripts der Website beim Laden oder fortlaufend (Slider o. Ä.) ändern, wird so weit wie möglich ausgeblendet.
+
+  var chRef = null; // Datei-Fassung der Seite (DOMParser)
+  var chNoise = new Map(); // live-Element -> outerHTML beim Grundzustand (Änderungen durch Scripts beim Laden)
+  var chAnimated = new Set(); // Elemente, die sich laufend ändern
+  var chSeen = new Map(); // live-Element -> { html, times: [] }
+  var chCssBase = null; // key -> { selector, media, style: {prop: wert} }
+  var chDom = [], chCss = [], chFiles = { changed: 0, files: [] };
+  var chReady = false;
+
+  function isModio(n) { return n === host || (n.nodeType === 1 && (n.hasAttribute('data-modio') || n.id === 'modio-overlay-host')); }
+  function kids(n) { return Array.prototype.filter.call(n.children, function (c) { return !isModio(c); }); }
+  function sameAttrs(a, b) {
+    if (a.attributes.length !== b.attributes.length) return false;
+    for (var i = 0; i < a.attributes.length; i++) if (b.getAttribute(a.attributes[i].name) !== a.attributes[i].value) return false;
+    return true;
+  }
+  function ownText(n) { var t = ''; for (var c = n.firstChild; c; c = c.nextSibling) if (c.nodeType === 3) t += c.data; return t; }
+  function sig(n) { return n.tagName + '#' + (n.id || '') + '.' + (n.getAttribute('class') || ''); }
+
+  // Kleinste geänderte Elemente: Paare {live, ref}
+  function diffWalk(live, ref, out, isRoot) {
+    if (!isRoot && live.outerHTML === ref.outerHTML) return; // eigene Elemente gibt es nur direkt unter body
+    if (!isRoot && (live.tagName !== ref.tagName || !sameAttrs(live, ref) || ownText(live) !== ownText(ref))) { out.push({ live: live, ref: ref }); return; }
+    var lk = kids(live), rk = kids(ref), j = 0;
+    for (var i = 0; i < rk.length; i++) {
+      while (j < lk.length && sig(lk[j]) !== sig(rk[i]) && !(lk.length === rk.length)) j++; // von Scripts eingefügte Elemente überspringen
+      if (j >= lk.length) { if (!isRoot) out.push({ live: live, ref: ref }); return; }
+      diffWalk(lk[j], rk[i], out, false);
+      j++;
+    }
+  }
+
+  function computeDom() {
+    if (!chRef || !document.body) return [];
+    var pairs = [];
+    diffWalk(document.body, chRef.body, pairs, true);
+    var now = Date.now();
+    return pairs.filter(function (p) {
+      var h = p.live.outerHTML;
+      if (chNoise.has(p.live) && chNoise.get(p.live) === h) return false;
+      if (chAnimated.has(p.live)) return false;
+      var seen = chSeen.get(p.live);
+      if (!seen) chSeen.set(p.live, seen = { html: h, times: [] });
+      else if (seen.html !== h) {
+        seen.html = h;
+        seen.times = seen.times.filter(function (t) { return now - t < 15000; }).concat(now);
+        if (seen.times.length >= 3) { chAnimated.add(p.live); return false; }
+      }
+      p.after = h;
+      p.before = p.ref.outerHTML;
+      p.selector = selectorFor(p.ref, chRef);
+      return true;
+    });
+  }
+
+  // CSS-Regeln aller (lesbaren) Stylesheets der Seite, ohne die eigenen Tokens
+  function cssSnapshot() {
+    var snap = new Map();
+    Array.prototype.forEach.call(document.styleSheets, function (sheet, si) {
+      var owner = sheet.ownerNode;
+      if (owner && owner.getAttribute && owner.getAttribute('data-modio') === 'tokens') return;
+      var rules;
+      try { rules = sheet.cssRules; } catch (e) { return; }
+      var base = (sheet.href || 'inline-' + si);
+      (function walk(list, prefix, media) {
+        Array.prototype.forEach.call(list || [], function (r, i) {
+          var key = prefix + '/' + i;
+          if (r.type === 1) {
+            var st = {};
+            for (var k = 0; k < r.style.length; k++) {
+              var prop = r.style[k];
+              st[prop] = r.style.getPropertyValue(prop) + (r.style.getPropertyPriority(prop) ? ' !important' : '');
+            }
+            snap.set(key, { selector: r.selectorText, media: media, style: st });
+          } else if (r.type === 4) walk(r.cssRules, key, r.conditionText || (r.media && r.media.mediaText) || '');
+        });
+      })(rules, base, '');
+    });
+    return snap;
+  }
+
+  function computeCss() {
+    if (!chCssBase) return [];
+    var out = [];
+    cssSnapshot().forEach(function (r, key) {
+      var b = chCssBase.get(key);
+      var props = Object.keys(r.style).filter(function (p) { return !b || b.selector !== r.selector || b.style[p] !== r.style[p]; });
+      if (!props.length) return;
+      out.push({
+        key: key, selector: r.selector, media: r.media || null,
+        decls: props.map(function (p) { return p + ': ' + r.style[p].replace(/\s*!important$/, ''); }).join('; '),
+        before: b && b.selector === r.selector ? props.map(function (p) { return b.style[p] ? p + ': ' + b.style[p] : null; }).filter(Boolean).join('; ') : '',
+      });
+    });
+    return out;
+  }
+
+  function loadFileStatus() {
+    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/status').then(function (d) { chFiles = d || { changed: 0, files: [] }; }).catch(function () { /* egal */ });
+  }
+
+  var chTimer = null;
+  function scheduleCheck() { clearTimeout(chTimer); chTimer = setTimeout(runCheck, 700); }
+  function runCheck() {
+    if (!chReady) return;
+    chDom = computeDom();
+    chCss = computeCss();
+    renderChangesButton();
+    if (changesPanel.classList.contains('open')) renderChanges(false);
+  }
+
+  function chTotal() { return chDom.length + chCss.length + (chFiles.changed ? 1 : 0); }
+  function renderChangesButton() {
+    var n = chDom.length + chCss.length + chFiles.changed;
+    btnChanges.style.display = n && !isBusy() ? '' : 'none';
+    btnChanges.modioLabel.textContent = 'Änderungen übernehmen (' + n + ')';
+  }
+
+  // Grundzustand: Datei laden, Unterschiede und CSS kurz nach dem Laden als „Scripts der Website“ merken
+  function initChanges() {
+    fetch(location.pathname + location.search, { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.text(); })
+      .then(function (text) {
+        chRef = new DOMParser().parseFromString(text, 'text/html');
+        setTimeout(function () {
+          var initial = [];
+          diffWalk(document.body, chRef.body, initial, true);
+          initial.forEach(function (p) { chNoise.set(p.live, p.live.outerHTML); });
+          chCssBase = cssSnapshot();
+          chReady = true;
+          new MutationObserver(function (list) {
+            for (var i = 0; i < list.length; i++) {
+              var t = list[i].target;
+              if (t === document.documentElement || t === host || (t.nodeType === 1 && isModio(t))) continue;
+              scheduleCheck();
+              return;
+            }
+          }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+          setInterval(function () { if (!document.hidden) { chCss = computeCss(); renderChangesButton(); } }, 2000);
+          setInterval(function () { if (!document.hidden && !isBusy()) loadFileStatus().then(renderChangesButton); }, 5000);
+          loadFileStatus().then(runCheck);
+        }, 2500);
+      })
+      .catch(function () { /* ohne Datei keine Erkennung */ });
+  }
+
+  // ---- Panel
+  var cBody = el('div');
+  var cErr = el('div', { class: 'err', role: 'alert' });
+  var cCss = el('input', { type: 'checkbox' });
+  var cCssRow = el('label', { class: 'switch', title: 'Geänderte Inline-Styles (style="…") nicht ins HTML schreiben, sondern als Regel mit !important in overrides.css' }, [cCss, 'Inline-Styles als Regel in overrides.css übernehmen']);
+  var cClose = el('button', { type: 'button', text: 'Schließen' });
+  var cApply = el('button', { type: 'button', class: 'primary', text: 'Ausgewählte übernehmen' });
+  var changesPanel = el('div', { class: 'panel wide', role: 'dialog', 'aria-labelledby': 'modio-ch' }, [
+    el('h2', { id: 'modio-ch', text: 'Änderungen übernehmen' }),
+    cBody,
+    el('div', { class: 'checks' }, [cCssRow]),
+    cErr,
+    el('div', { class: 'row end' }, [cClose, cApply]),
+  ]);
+  ui.appendChild(changesPanel);
+  var chChecks = [];
+
+  function renderChanges(resetChecks) {
+    var prev = {};
+    chChecks.forEach(function (c) { prev[c.id] = c.box.checked; });
+    clear(cBody);
+    chChecks = [];
+    if (chFiles.changed) {
+      var fb = el('button', { type: 'button', text: 'Dateien übernehmen' });
+      fb.addEventListener('click', commitFiles);
+      cBody.appendChild(el('section', { class: 'dsec' }, [
+        el('h3', { text: 'Geänderte Dateien (' + chFiles.changed + ')' }),
+        el('ul', { class: 'flist' }, chFiles.files.slice(0, 12).map(function (f) { return el('li', {}, [el('code', { text: f })]); })),
+        el('div', { class: 'row' }, [fb, el('span', { class: 'hint', text: 'Editor, Chrome-Workspaces o. Ä. – wird geprüft und als Schritt gespeichert.' })]),
+      ]));
+    }
+    var anyStyle = false;
+    function item(id, label, sub, diffText) {
+      var box = el('input', { type: 'checkbox' });
+      box.checked = resetChecks || prev[id] === undefined ? true : prev[id];
+      box.addEventListener('change', renderApply);
+      chChecks.push({ id: id, box: box });
+      var pre = el('pre', { class: 'diff' });
+      renderDiffInto(pre, diffText);
+      return el('li', { class: 'chitem' }, [
+        el('label', { class: 'switch' }, [box, el('code', { text: label }), sub ? el('span', { class: 'hint', text: sub }) : null]),
+        el('details', {}, [el('summary', {}, [icon('chevron', 14), 'Unterschied']), pre]),
+      ]);
+    }
+    if (chDom.length) {
+      cBody.appendChild(el('section', { class: 'dsec' }, [
+        el('h3', { text: 'Im Inspektor geänderte Elemente (' + chDom.length + ')' }),
+        el('ul', { class: 'chlist' }, chDom.map(function (p, i) {
+          var so = styleMap(p.ref.getAttribute('style')), sn = styleMap(p.live.getAttribute('style'));
+          p.styleChanged = Object.keys(sn).filter(function (k) { return sn[k] !== so[k]; });
+          if (p.styleChanged.length) anyStyle = true;
+          return item('d' + i, p.selector, null, lineDiff(htmlLines(p.before), htmlLines(p.after)));
+        })),
+      ]));
+    }
+    if (chCss.length) {
+      cBody.appendChild(el('section', { class: 'dsec' }, [
+        el('h3', { text: 'Im Styles-Panel geänderte CSS-Regeln (' + chCss.length + ')' }),
+        el('ul', { class: 'chlist' }, chCss.map(function (r, i) {
+          return item('c' + i, r.selector, r.media ? '@media ' + r.media : 'kommt als Regel in overrides.css',
+            (r.before ? r.before.split('; ').map(function (d) { return '-' + d; }).join('\n') + '\n' : '') + r.decls.split('; ').map(function (d) { return '+' + d; }).join('\n'));
+        })),
+      ]));
+    }
+    if (!chFiles.changed && !chDom.length && !chCss.length) cBody.appendChild(el('p', { class: 'hint', text: 'Keine Änderungen erkannt.' }));
+    cCssRow.style.display = anyStyle ? '' : 'none';
+    if (resetChecks) cCss.checked = anyStyle;
+    renderApply();
+  }
+
+  function renderApply() {
+    var sel = chChecks.filter(function (c) { return c.box.checked; }).length;
+    cApply.disabled = isBusy() || !sel || chFiles.changed > 0;
+    cApply.title = chFiles.changed ? 'Erst die geänderten Dateien übernehmen (oder verwerfen)' : '';
+    cApply.style.display = chDom.length || chCss.length ? '' : 'none';
+  }
+
+  function openChanges() {
+    closePanels();
+    cErr.textContent = '';
+    loadFileStatus().then(function () {
+      chDom = computeDom();
+      chCss = computeCss();
+      renderChanges(true);
+      changesPanel.classList.add('open');
+      setTimeout(function () { cClose.focus(); }, 0);
+    });
+  }
+  function closeChanges() { changesPanel.classList.remove('open'); }
+
+  function commitFiles() {
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/local-commit')
+      .then(function (data) { if (data && data.job) trackJob(data.job); closeChanges(); showToast('Geänderte Dateien werden geprüft …', false); })
+      .catch(function (err) { cErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message; });
+  }
+
+  cApply.addEventListener('click', function () {
+    var on = {};
+    chChecks.forEach(function (c) { on[c.id] = c.box.checked; });
+    var items = [], rules = [];
+    chDom.forEach(function (p, i) {
+      if (!on['d' + i]) return;
+      var html = p.after, css = '';
+      if (cCss.checked && p.styleChanged && p.styleChanged.length) {
+        var tmp = document.createElement('template');
+        tmp.innerHTML = html;
+        var r0 = tmp.content.firstElementChild, orig = p.ref.getAttribute('style');
+        var sn = styleMap(p.live.getAttribute('style'));
+        if (orig === null) r0.removeAttribute('style'); else r0.setAttribute('style', orig);
+        html = r0.outerHTML;
+        css = p.styleChanged.map(function (k) { return k + ': ' + sn[k]; }).join('; ');
+      }
+      items.push({ selector: p.selector, html: html, css: css });
+    });
+    chCss.forEach(function (r, i) { if (on['c' + i]) rules.push({ selector: r.selector, decls: r.decls, media: r.media }); });
+    if (!items.length && !rules.length) return;
+    cApply.disabled = true;
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/inspect', { page: currentPage(), items: items, rules: rules })
+      .then(function (data) { if (data && data.job) trackJob(data.job); closeChanges(); showToast('Änderungen werden übernommen …', false); })
+      .catch(function (err) { cErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message; renderApply(); });
+  });
+  cClose.addEventListener('click', closeChanges);
+  btnChanges.addEventListener('click', function () { if (changesPanel.classList.contains('open')) closeChanges(); else openChanges(); });
+
   // ----------------------------------------------------------------- Start
 
   try {
@@ -2519,6 +2711,8 @@
   renderStatus();
   loadJobs();
   connectEvents();
+  if (document.readyState === 'complete') initChanges();
+  else window.addEventListener('load', initChanges);
   try {
     if (sessionStorage.getItem(DESIGN_OPEN_KEY)) {
       sessionStorage.removeItem(DESIGN_OPEN_KEY);

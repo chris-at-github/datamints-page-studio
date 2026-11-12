@@ -103,7 +103,8 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `POST /api/sites/<slug>/annotations` | `multipart/form-data`: Feld `annotation` (JSON), Dateien im Feld `images` | `202 { job }`, `409` wenn für die Website schon ein Job aktiv ist oder auf Prüfung wartet |
 | `POST /api/jobs/<job-id>/decision` | JSON `{ action: "accept"|"discard" }` | `202 { job }` |
 | `POST /api/sites/<slug>/local-commit` | – | `202 { job }`: von Hand geänderte Dateien als Schritt übernehmen |
-| `POST /api/sites/<slug>/inspect` | JSON `{ page, selector, html, css? }` | `202 { job }`: im Inspektor geändertes Element übernehmen (`css`: Inline-Styles als Regel in `overrides.css`) |
+| `POST /api/sites/<slug>/inspect` | JSON `{ page, items: [{ selector, html, css? }], rules: [{ selector, decls, media? }] }` | `202 { job }`: im Inspektor geänderte Elemente (`css`: Inline-Styles als Regel in `overrides.css`) und im Styles-Panel geänderte CSS-Regeln (als Regel in `overrides.css`) übernehmen |
+| `GET /api/sites/<slug>/status` | – | `{ changed, files }`: ungespeicherte Änderungen im Abzug (nur lesend) |
 | `POST /api/sites/<slug>/areas/sync` | JSON `{ page: "/www.example.de/index.html", add?: { name, selector } }` | `202 { job }` (`areas-sync`): Bereiche der Seite auf alle Seiten übernehmen, mit `add` vorher als Bereich aufnehmen |
 | `POST /api/sites/<slug>/pages` | JSON `{ urls: [..] }` (max. 100, nur Seiten derselben Website) | `202 { job }` (`pages-add`) |
 | `POST /api/sites/<slug>/rollback` | JSON `{ target }` | `202 { job }` |

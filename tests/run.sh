@@ -243,6 +243,10 @@ check "Inline-Styles als Regel in overrides.css" 'grep -q "/\* $IID: Inline-Styl
 jq '.html = "<p>falsch</p>" | del(.css)' "$IP" >"$IP.2"
 set +e; OUT="$(./scripts/inspect-apply.sh "$SLUG" "$IP.2" 2>/dev/null)"; rc=$?; set -e
 check "Anderes Tag abgelehnt, nichts geändert" '(( rc != 0 )) && [[ -z "$(git -C "$S" status --porcelain)" ]]'
+jq -n --arg page "/$(basename "$(dirname "$P")")/index.html" '{page:$page, items:[{selector:"h1.hero__title", html:"<h1 class=\"hero__title\">Zwei</h1>"}], rules:[{selector:".hero p", decls:"margin-top: 3px"}, {selector:".hero", decls:"padding: 1px", media:"(max-width: 600px)"}]}' >"$IP.3"
+OUT="$(./scripts/inspect-apply.sh "$SLUG" "$IP.3" 2>/dev/null)"
+check "Mehrere Änderungen und CSS-Regeln übernommen" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && grep -q ">Zwei</h1>" "$P" && grep -q "margin-top: 3px !important;" "$S/overrides.css" && grep -q "@media (max-width: 600px) {" "$S/overrides.css" && git -C "$S" log -1 --format=%s | grep -q "2 CSS-Regel(n)"'
+rm -f "$IP.3"
 rm -f "$IP" "$IP.2"
 
 echo "Kontext (context.sh)"
