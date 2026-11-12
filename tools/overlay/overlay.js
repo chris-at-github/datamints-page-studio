@@ -543,7 +543,7 @@
     el('div', { class: 'row' }, [pUrl, pUrlAdd]),
     pThumbs,
     el('div', { class: 'checks' }, [
-      el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet: besser bei kniffligen oder seitenübergreifenden Änderungen, aber langsamer und teurer' }, [pThorough, 'Stärkeres Modell für komplexe Änderungen (langsamer, teurer)']),
+      el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet: besser bei kniffligen oder seitenübergreifenden Änderungen, aber langsamer und teurer' }, [pThorough, 'Stärkeres Modell für komplexe Änderungen']),
     ]),
     pErr,
     el('div', { class: 'row end' }, [pCancel, pSend]),
