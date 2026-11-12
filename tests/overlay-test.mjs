@@ -60,6 +60,21 @@ check('Element gewählt', await ov('textarea').isVisible());
 const meta = await page.evaluate(() => document.querySelector('#modio-overlay-host').shadowRoot.textContent);
 check('Selektor angezeigt', /hero__title/.test(meta));
 
+console.log('Pfadleiste im Annotationsdialog');
+const crumbs = ov('.crumbs button');
+const crumbCount = await crumbs.count();
+check('Pfadleiste zeigt Vorfahren', crumbCount >= 2, String(crumbCount));
+await crumbs.nth(crumbCount - 2).hover();
+const pvShown = await page.evaluate(() => {
+  const pv = document.querySelector('#modio-overlay-host').shadowRoot.querySelector('.hl.pv');
+  return getComputedStyle(pv).display === 'block' && pv.textContent.length > 0;
+});
+check('Hover über Elternglied zeigt Vorschau', pvShown);
+await crumbs.nth(crumbCount - 2).click();
+check('Klick wählt Elternelement', !/hero__title/.test(await ov('.sel-full').textContent()));
+await crumbs.nth(crumbCount - 1).click();
+check('Zurück zum ursprünglichen Element', /hero__title/.test(await ov('.sel-full').textContent()));
+
 console.log('Annotation mit Referenzbild absenden');
 const png = await sharp({ create: { width: 300, height: 120, channels: 3, background: '#e8590c' } }).png().toBuffer();
 await ov('textarea').fill('Headline in Orange wie im Referenzbild einfärben und Schriftgröße auf 56px erhöhen.');

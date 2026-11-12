@@ -237,6 +237,14 @@
     '.ui{font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1d2330}' +
     '.hl{position:fixed;pointer-events:none;border:2px solid #2563eb;background:rgba(37,99,235,.10);border-radius:2px;display:none;transition:all .05s}' +
     '.hl.sel{border-color:#d97706;background:rgba(217,119,6,.10)}' +
+    '.hl.pv{border:2px dashed #7c3aed;background:rgba(124,58,237,.08);transition:none}' +
+    '.hl.pv .hl-label{background:#7c3aed}' +
+    '.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:4px 0 2px}' +
+    '.crumbs .sep{color:#9ca3af;padding:0 1px}' +
+    '.crumbs button{font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:2px 6px;border-radius:5px;border-color:transparent;background:transparent;color:#374151}' +
+    '.crumbs button:hover,.crumbs button:focus-visible{background:#ede9fe;border-color:#c4b5fd}' +
+    '.crumbs button[aria-current=true]{background:#fef3c7;border-color:#d97706;color:#92400e;font-weight:600}' +
+    '.sel-full{color:#6b7280;font-size:11px;margin-top:2px}' +
     '.hl-label{position:absolute;left:-2px;top:-24px;background:#2563eb;color:#fff;font:12px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:4px 6px;border-radius:3px;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}' +
     '.hl.sel .hl-label{background:#d97706}' +
     '.hl.below .hl-label{top:auto;bottom:-24px}' +
@@ -351,6 +359,10 @@
   var hlLabel = el('div', { class: 'hl-label' });
   var hl = el('div', { class: 'hl' }, [hlLabel]);
   ui.appendChild(hl);
+  // Vorschau für die Pfadleiste im Annotationsdialog
+  var pvLabel = el('div', { class: 'hl-label' });
+  var pv = el('div', { class: 'hl pv' }, [pvLabel]);
+  ui.appendChild(pv);
 
   // Leiste
   var btnSelect = iconButton('click', 'Auswählen', { title: 'Element auswählen (Alt+A)', 'aria-pressed': 'false' });
@@ -472,6 +484,8 @@
   var hovered = null;
   var selected = null;
   var childStack = [];
+  var pathLeaf = null; // ursprünglich angeklicktes Element (Ende der Pfadleiste)
+  var previewed = null;
   var refs = []; // { kind: 'file', file, url } | { kind: 'url', url }
   var jobs = {}; // id -> job
   var seenActive = {}; // id -> true, wenn in dieser Sitzung aktiv gesehen
@@ -547,26 +561,42 @@
     return path.indexOf(host) !== -1;
   }
 
-  function placeHighlight(node, isSelected) {
+  function placeBox(box, label, node) {
     if (!node || !node.getBoundingClientRect) {
-      hl.style.display = 'none';
+      box.style.display = 'none';
       return;
     }
     var r = node.getBoundingClientRect();
-    hl.style.display = 'block';
-    hl.style.left = r.left - 2 + 'px';
-    hl.style.top = r.top - 2 + 'px';
-    hl.style.width = r.width + 4 + 'px';
-    hl.style.height = r.height + 4 + 'px';
+    box.style.display = 'block';
+    box.style.left = r.left - 2 + 'px';
+    box.style.top = r.top - 2 + 'px';
+    box.style.width = r.width + 4 + 'px';
+    box.style.height = r.height + 4 + 'px';
+    box.classList.toggle('below', r.top < 28);
+    label.textContent = describe(node) + '  ' + Math.round(r.width) + '×' + Math.round(r.height);
+  }
+
+  function placeHighlight(node, isSelected) {
     hl.classList.toggle('sel', !!isSelected);
-    hl.classList.toggle('below', r.top < 28);
-    hlLabel.textContent = describe(node) + '  ' + Math.round(r.width) + '×' + Math.round(r.height);
+    placeBox(hl, hlLabel, node);
+  }
+
+  function showPreview(node) {
+    previewed = node;
+    placeBox(pv, pvLabel, node);
+  }
+
+  function hidePreview() {
+    previewed = null;
+    pv.style.display = 'none';
   }
 
   function refreshHighlight() {
     if (selecting && hovered) placeHighlight(hovered, false);
     else if (selected && promptPanel.classList.contains('open')) placeHighlight(selected, true);
     else hl.style.display = 'none';
+    if (previewed && promptPanel.classList.contains('open')) placeBox(pv, pvLabel, previewed);
+    else hidePreview();
   }
 
   function onMove(e) {
@@ -696,10 +726,8 @@
     closeHistory();
     reviewPanel.classList.remove('open');
     selected = target;
-    clear(pMeta);
-    pMeta.appendChild(document.createTextNode(currentPage()));
-    pMeta.appendChild(el('br'));
-    pMeta.appendChild(document.createTextNode(selectorFor(target)));
+    pathLeaf = target;
+    renderMeta();
     pErr.textContent = '';
     promptPanel.classList.add('open');
     placeHighlight(selected, true);
@@ -709,7 +737,52 @@
   function closePrompt() {
     promptPanel.classList.remove('open');
     selected = null;
+    pathLeaf = null;
     refreshHighlight();
+  }
+
+  // Kurzbezeichnung eines Pfadglieds: Tag plus ID oder erste sprechende Klasse
+  function crumbLabel(node) {
+    var s = node.tagName.toLowerCase();
+    if (node.id && !looksGenerated(node.id)) return s + '#' + truncate(node.id, 24);
+    var cls = Array.prototype.filter.call(node.classList || [], function (c) {
+      return !looksGenerated(c) && c.indexOf('modio') !== 0;
+    })[0];
+    return cls ? s + '.' + truncate(cls, 24) : s;
+  }
+
+  function selectCrumb(node) {
+    selected = node;
+    hidePreview();
+    renderMeta();
+    placeHighlight(selected, true);
+  }
+
+  // Seite, Pfadleiste (body bis ursprünglich gewähltes Element) und Selektor der aktuellen Auswahl
+  function renderMeta() {
+    clear(pMeta);
+    pMeta.appendChild(document.createTextNode(currentPage()));
+    var chain = [];
+    for (var n = pathLeaf; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) chain.unshift(n);
+    var nav = el('div', { class: 'crumbs', role: 'group', 'aria-label': 'Element-Pfad' });
+    chain.forEach(function (node, i) {
+      if (i) nav.appendChild(el('span', { class: 'sep', 'aria-hidden': 'true', text: '›' }));
+      var b = el('button', { type: 'button', text: crumbLabel(node), title: describe(node) });
+      if (node === selected) b.setAttribute('aria-current', 'true');
+      b.addEventListener('mouseenter', function () { showPreview(node); });
+      b.addEventListener('focus', function () { showPreview(node); });
+      b.addEventListener('mouseleave', hidePreview);
+      b.addEventListener('blur', hidePreview);
+      b.addEventListener('click', function () {
+        selectCrumb(node);
+        var btns = pMeta.querySelectorAll('.crumbs button'); // nach dem Neuaufbau Fokus halten
+        if (btns[i]) btns[i].focus();
+        hidePreview();
+      });
+      nav.appendChild(b);
+    });
+    pMeta.appendChild(nav);
+    pMeta.appendChild(el('div', { class: 'sel-full', text: selectorFor(selected) }));
   }
 
   function resetPrompt() {
