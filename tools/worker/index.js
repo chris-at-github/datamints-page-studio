@@ -106,7 +106,14 @@ async function handle(job, logFile) {
       return runScript('site-new.sh', args, logFile);
     }
     case 'site-recrawl':
-      return runScript('site-recrawl.sh', [slug], logFile);
+      return runScript('site-recrawl.sh', [slug, job.params?.keepDesign === false ? '--no-keep-design' : '--keep-design'], logFile);
+    case 'design-save': {
+      const file = String(job.params?.file || '');
+      if (!/^jobs\/assets\/job-\d{14}-[0-9a-f]{6}-design\.json$/.test(file)) return { code: 1, result: { status: 'error', error: 'Ungültige Datei' } };
+      return runScript('design-save.sh', [slug, path.join(ROOT, file)], logFile);
+    }
+    case 'tokens-propose':
+      return runScript('tokens-propose.sh', [slug], logFile);
     case 'annotate':
       return runScript('run-annotation.sh', [slug, jobPath('running', job.id)], logFile);
     case 'rollback':
@@ -179,6 +186,7 @@ async function processJob(id) {
     }
   }
   if (job.type === 'site-new') await fsp.rm(path.join(JOBS_DIR, 'assets', `${id}-urls.txt`), { force: true });
+  if (job.type === 'design-save') await fsp.rm(path.join(JOBS_DIR, 'assets', `${id}-design.json`), { force: true });
 
   await refreshState(job.slug, logFile).catch((e) => log(`Status-Aktualisierung fehlgeschlagen: ${e.message}`));
   await writeJob(job, status);

@@ -150,7 +150,8 @@ async function createJob(type, slug, params, id = newJobId()) {
 function injectHtml(buf, slug) {
   const cfg = JSON.stringify({ slug, token: TOKEN, base: `/s/${slug}`, imageMaxCount: IMAGE_MAX_COUNT, imageMaxMb: IMAGE_MAX_MB })
     .replace(/</g, '\\u003c');
-  const head = `<link rel="stylesheet" href="/s/${slug}/__overrides.css" data-modio="overrides">`;
+  // Tokens vor overrides.css, damit overrides.css die Variablen verwenden kann
+  const head = `<link rel="stylesheet" href="/s/${slug}/__tokens.css" data-modio="tokens"><link rel="stylesheet" href="/s/${slug}/__overrides.css" data-modio="overrides">`;
   const body = `<script data-modio="config">window.__MODIO__=${cfg}</script><script src="/__modio/overlay.js" defer data-modio="overlay"></script>`;
   let html = buf.toString('latin1'); // byte-treu, Injektion ist reines ASCII
   const hi = html.search(/<\/head\s*>/i);
@@ -173,6 +174,10 @@ async function serveSite(req, res, slug, rest, search) {
   }
   if (rest === '/__overrides.css') {
     const css = await fsp.readFile(path.join(dir, 'overrides.css')).catch(() => Buffer.alloc(0));
+    return send(res, 200, css, { 'Content-Type': 'text/css; charset=utf-8' });
+  }
+  if (rest === '/__tokens.css') {
+    const css = await fsp.readFile(path.join(dir, 'design', 'tokens.css')).catch(() => Buffer.alloc(0));
     return send(res, 200, css, { 'Content-Type': 'text/css; charset=utf-8' });
   }
 
@@ -293,7 +298,41 @@ function validateAnnotation(a, uploadCount) {
   const refs = Array.isArray(a.references) ? a.references : [];
   if (refs.some((r) => r?.type !== 'url' || !validHttpUrl(r.url))) return 'Bild-URLs müssen http- oder https-Adressen sein';
   if (refs.length + uploadCount > IMAGE_MAX_COUNT) return `Höchstens ${IMAGE_MAX_COUNT} Referenzbilder`;
+  for (const k of ['remember', 'followup', 'allow_token_change', 'thorough']) {
+    if (a[k] !== undefined && typeof a[k] !== 'boolean') return `${k} muss true oder false sein`;
+  }
+  if (a.followup_of !== undefined && a.followup_of !== null && !/^A-\d{3,}$/.test(String(a.followup_of))) return 'Ungültige Annotation für Nachbessern';
   return null;
+}
+
+// Design-Vorgaben von Hand: nur Form prüfen, Inhalt prüft design-save.sh
+function validateDesign(body) {
+  if (!body || typeof body !== 'object') return 'JSON-Objekt erwartet';
+  if (body.tokens === undefined && body.notes === undefined) return 'tokens oder notes angeben';
+  if (body.tokens !== undefined && (typeof body.tokens !== 'object' || body.tokens === null || Array.isArray(body.tokens))) return 'tokens muss ein Objekt sein';
+  if (body.tokens && Object.keys(body.tokens).length > 200) return 'Höchstens 200 Tokens';
+  if (body.notes !== undefined && (typeof body.notes !== 'string' || body.notes.length > 20000)) return 'notes muss Text (max. 20 000 Zeichen) sein';
+  return null;
+}
+
+// Tokens, Regeln, Scan und Hinweise des letzten Schritts für das Overlay
+async function readDesign(slug) {
+  const dir = siteDir(slug);
+  const tokensFile = await readJson(path.join(dir, 'design', 'tokens.json'), null);
+  const notes = await fsp.readFile(path.join(dir, 'design', 'notes.md'), 'utf8').catch(() => null);
+  const scan = await readJson(path.join(dir, '.scan.json'), null);
+  let warnings = [];
+  let annotationId = null;
+  const ids = (await fsp.readdir(path.join(dir, 'annotations')).catch(() => []))
+    .map((f) => (f.match(/^(A-\d+)\.json$/) || [])[1])
+    .filter(Boolean)
+    .sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
+  if (ids.length) {
+    annotationId = ids.at(-1);
+    const ann = await readJson(path.join(dir, 'annotations', `${annotationId}.json`), {});
+    warnings = ann.check?.warnings || [];
+  }
+  return { slug, initialized: !!tokensFile, tokens: tokensFile?.tokens || {}, notes: notes ?? '', scan, warnings, annotationId };
 }
 
 async function handleApi(req, res, url) {
@@ -342,7 +381,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, { jobs: [...finished, ...active].map(slimJob) });
   }
 
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -350,7 +389,26 @@ async function handleApi(req, res, url) {
     if (action === 'history' && req.method === 'GET') {
       return send(res, 200, await readJson(path.join(siteDir(slug), '.history.json'), { slug, head: null, baseline: null, steps: [] }));
     }
+    if (action === 'design' && req.method === 'GET') return send(res, 200, await readDesign(slug));
+    if (action === 'design' && req.method === 'PUT') {
+      const body = await readBody(req, 512 * 1024);
+      const err = validateDesign(body);
+      if (err) return sendError(res, 400, err);
+      if (await busyCheck(res, slug, 'Das Speichern der Design-Vorgaben')) return;
+      const id = newJobId();
+      const file = `jobs/assets/${id}-design.json`;
+      const payload = {};
+      if (body.tokens !== undefined) payload.tokens = body.tokens;
+      if (body.notes !== undefined) payload.notes = body.notes;
+      await fsp.writeFile(path.join(ROOT, file), JSON.stringify(payload, null, 2));
+      return send(res, 202, { job: await createJob('design-save', slug, { file }, id) });
+    }
     if (req.method !== 'POST') return sendError(res, 405, 'Methode nicht erlaubt');
+
+    if (action === 'tokens/propose') {
+      if (await busyCheck(res, slug, 'Das Ableiten von Tokens')) return;
+      return send(res, 202, { job: await createJob('tokens-propose', slug, {}) });
+    }
 
     if (action === 'annotations') {
       if (await busyCheck(res, slug, 'Eine neue Annotation')) return req.resume();
@@ -370,13 +428,18 @@ async function handleApi(req, res, url) {
         viewport: annotation.viewport && { width: Number(annotation.viewport.width) || null, height: Number(annotation.viewport.height) || null },
         prompt: annotation.prompt.trim(),
         thorough: annotation.thorough === true,
+        remember: annotation.remember === true,
+        followup: annotation.followup === true,
+        followup_of: annotation.followup === true && annotation.followup_of ? String(annotation.followup_of) : null,
+        allow_token_change: annotation.allow_token_change === true,
         references: [...files.map((file) => ({ type: 'upload', file })), ...(annotation.references || []).map((r) => ({ type: 'url', url: r.url }))],
       };
       return send(res, 202, { job: await createJob('annotate', slug, params, id) });
     }
     if (action === 'recrawl') {
+      const body = await readBody(req);
       if (await busyCheck(res, slug, 'Neu einlesen')) return;
-      return send(res, 202, { job: await createJob('site-recrawl', slug, {}) });
+      return send(res, 202, { job: await createJob('site-recrawl', slug, { keepDesign: body.keepDesign !== false }) });
     }
     if (action === 'rollback') {
       const body = await readBody(req);

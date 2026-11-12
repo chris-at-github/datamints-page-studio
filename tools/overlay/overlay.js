@@ -19,7 +19,9 @@
   var IMAGE_MAX_MB = Number(CFG.imageMaxMb) || 10;
   var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1 };
+  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1 };
+  // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
+  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -287,6 +289,7 @@
     '.hint{color:#4b5563;font-size:12px;margin-top:4px}' +
     '.hits{margin:0 0 10px;padding:0;list-style:none}' +
     '.hits li{border-left:3px solid #d97706;background:#fffbeb;padding:4px 8px;margin-bottom:4px;font-size:13px}' +
+    '.hits li.warn{border-left-color:#2563eb;background:#eff6ff}' +
     '.hits code{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}' +
     'pre.diff{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px;max-height:45vh;overflow:auto;white-space:pre;margin:0}' +
     'pre.diff .add{color:#86efac;background:rgba(34,197,94,.12);display:block}' +
@@ -310,6 +313,9 @@
     '.toast.error{background:#991b1b}' +
     '.toast button{position:absolute;top:6px;right:6px;background:transparent;border:0;color:#fff;padding:2px 6px}' +
     '.switch{display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer}' +
+    '.adv{margin-top:8px;font-size:13px}' +
+    '.adv summary{color:#4b5563;cursor:pointer}' +
+    '.adv .switch{margin-top:6px}' +
     '.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}' +
     '.ic{flex:none;display:block}' +
     'button.has-icon,a.btn{display:inline-flex;align-items:center;gap:6px}' +
@@ -367,6 +373,8 @@
   // Leiste
   var btnSelect = iconButton('click', 'Auswählen', { title: 'Element auswählen (Alt+A)', 'aria-pressed': 'false' });
   var btnHistory = iconButton('history', 'Verlauf', { title: 'Verlauf und Rücksprung', 'aria-expanded': 'false', 'aria-controls': 'modio-history' });
+  var btnFollowup = iconButton('refresh', 'Nachbessern', { title: 'Den letzten Schritt in derselben Claude-Session korrigieren' });
+  btnFollowup.style.display = 'none';
   var lnkHome = el('a', { class: 'btn icon-only ghost', href: '/', title: 'Zur Übersicht aller Websites', 'aria-label': 'Zur Übersicht' }, [icon('grid')]);
   var statusEl = el('span', { class: 'status', role: 'status', 'aria-live': 'polite' });
   var bar = el('div', { class: 'bar', role: 'toolbar', 'aria-label': 'Modio' }, [
@@ -375,6 +383,7 @@
     el('span', { class: 'sep', 'aria-hidden': 'true' }),
     btnSelect,
     btnHistory,
+    btnFollowup,
     statusEl,
   ]);
   ui.appendChild(bar);
@@ -409,11 +418,14 @@
   var pUrlAdd = el('button', { type: 'button', text: 'URL hinzufügen' });
   var pThumbs = el('div', { class: 'thumbs' });
   var pThorough = el('input', { type: 'checkbox' });
+  var pRemember = el('input', { type: 'checkbox' });
+  var pAllowTokens = el('input', { type: 'checkbox' });
+  var pTitle = el('h2', { id: 'modio-ph', text: 'Annotation' });
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var pSend = el('button', { type: 'button', class: 'primary', text: 'Absenden' });
   var promptPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
-    el('h2', { id: 'modio-ph', text: 'Annotation' }),
+    pTitle,
     pMeta,
     el('label', { for: 'modio-prompt', class: 'sr', text: 'Prompt' }),
     pText,
@@ -424,9 +436,14 @@
     pThumbs,
     el('div', { class: 'row' }, [
       el('label', { class: 'switch', title: 'Schritt mit dem gründlicheren Modell ausführen' }, [pThorough, 'gründlich']),
+      el('label', { class: 'switch', title: 'Genannte Werte als gesperrte Tokens und die Regel in design/notes.md speichern' }, [pRemember, 'Als Regel merken']),
       el('span', { class: 'spacer' }),
       pCancel,
       pSend,
+    ]),
+    el('details', { class: 'adv' }, [
+      el('summary', { text: 'Erweitert' }),
+      el('label', { class: 'switch', title: 'Ohne diesen Haken stoppt die Prüfung jede Änderung an gesperrten Tokens' }, [pAllowTokens, 'Gesperrte Tokens dürfen geändert werden']),
     ]),
     pErr,
   ]);
@@ -514,7 +531,24 @@
     report: 'Report',
     'site-recrawl': 'Neu einlesen',
     'site-new': 'Abzug',
+    'design-save': 'Design-Vorgaben',
+    'tokens-propose': 'Token-Vorschläge',
   };
+
+  var followupJob = null; // Annotation, die gerade nachgebessert wird
+
+  // Jüngster fertiger Annotationsschritt, solange danach nichts den Stand verändert hat
+  function followupCandidate() {
+    var list = Object.keys(jobs).map(function (k) { return jobs[k]; }).filter(function (j) {
+      return j.slug === SLUG && STATE_TYPES[j.type];
+    });
+    list.sort(function (a, b) { return a.id < b.id ? 1 : -1; });
+    var j = list[0];
+    if (j && j.type === 'decision' && j.status === 'done' && j.params && j.params.action === 'accept') j = jobs[j.params.jobId];
+    if (!j || j.type !== 'annotate' || j.status !== 'done') return null;
+    var r = j.result || {};
+    return (r.status === 'committed' || r.status === 'nochange') && r.annotationId ? j : null;
+  }
 
   var lastFailed = null;
 
@@ -549,6 +583,10 @@
     btnSelect.disabled = busy;
     btnSelect.title = busy ? 'Es läuft noch ein Schritt – bitte warten' : 'Element auswählen (Alt+A)';
     pSend.disabled = busy;
+    var fj = followupCandidate();
+    btnFollowup.style.display = fj ? '' : 'none';
+    btnFollowup.disabled = busy;
+    if (fj) btnFollowup.title = 'Schritt ' + fj.result.annotationId + ' in derselben Claude-Session korrigieren';
     if (busy && selecting) stopSelecting();
     renderHistoryButtons();
   }
@@ -727,6 +765,9 @@
     reviewPanel.classList.remove('open');
     selected = target;
     pathLeaf = target;
+    followupJob = null;
+    pTitle.textContent = 'Annotation';
+    pRemember.checked = false;
     renderMeta();
     pErr.textContent = '';
     promptPanel.classList.add('open');
@@ -738,6 +779,7 @@
     promptPanel.classList.remove('open');
     selected = null;
     pathLeaf = null;
+    followupJob = null;
     refreshHighlight();
   }
 
@@ -750,6 +792,38 @@
     })[0];
     return cls ? s + '.' + truncate(cls, 24) : s;
   }
+
+  // Nachbessern: Prompt-Dialog für den letzten Schritt, ohne neue Elementauswahl
+  function openFollowup(job) {
+    if (isBusy()) {
+      showToast('Es läuft noch ein Schritt. Bitte warten.', false);
+      return;
+    }
+    if (selecting) stopSelecting();
+    closeHistory();
+    reviewPanel.classList.remove('open');
+    var prm = job.params || {};
+    selected = null;
+    pathLeaf = null;
+    followupJob = job;
+    pTitle.textContent = 'Nachbessern ' + job.result.annotationId;
+    clear(pMeta);
+    pMeta.appendChild(document.createTextNode(prm.page || ''));
+    pMeta.appendChild(el('div', { class: 'sel-full', text: prm.selector || '' }));
+    pMeta.appendChild(el('div', { class: 'hint', text: 'Bisheriger Auftrag: ' + truncate(prm.prompt || '', 200) }));
+    pErr.textContent = '';
+    pText.placeholder = 'Was soll am Ergebnis korrigiert werden?';
+    promptPanel.classList.add('open');
+    var node = null;
+    try { if (prm.page === currentPage()) node = document.querySelector(prm.selector); } catch (e) { node = null; }
+    if (node) placeHighlight(node, true);
+    else hl.style.display = 'none';
+    setTimeout(function () { pText.focus(); }, 0);
+  }
+  btnFollowup.addEventListener('click', function () {
+    var fj = followupCandidate();
+    if (fj) openFollowup(fj);
+  });
 
   function selectCrumb(node) {
     selected = node;
@@ -789,6 +863,9 @@
     pText.value = '';
     pUrl.value = '';
     pThorough.checked = false;
+    pRemember.checked = false;
+    pAllowTokens.checked = false;
+    pText.placeholder = 'Was soll an diesem Element geändert werden?';
     refs.forEach(function (r) { if (r.kind === 'file' && r.url) URL.revokeObjectURL(r.url); });
     refs = [];
     renderThumbs();
@@ -934,7 +1011,7 @@
   });
 
   function submit() {
-    if (!selected) return;
+    if (!selected && !followupJob) return;
     if (isBusy()) {
       pErr.textContent = 'Es läuft noch ein Schritt. Bitte warten.';
       return;
@@ -949,14 +1026,19 @@
       addUrl();
       if (pErr.textContent) return;
     }
+    var fp = followupJob ? followupJob.params || {} : null;
     var annotation = {
-      page: currentPage(),
-      selector: selectorFor(selected),
-      html: truncate(selected.outerHTML, MAX_HTML),
-      text: truncate((selected.innerText || selected.textContent || '').trim(), MAX_TEXT),
+      page: fp ? fp.page : currentPage(),
+      selector: fp ? fp.selector : selectorFor(selected),
+      html: fp ? fp.html || '' : truncate(selected.outerHTML, MAX_HTML),
+      text: fp ? fp.text || '' : truncate((selected.innerText || selected.textContent || '').trim(), MAX_TEXT),
       viewport: { width: window.innerWidth, height: window.innerHeight },
       prompt: prompt,
       thorough: !!pThorough.checked,
+      remember: !!pRemember.checked,
+      allow_token_change: !!pAllowTokens.checked,
+      followup: !!fp,
+      followup_of: fp ? followupJob.result.annotationId : null,
       references: refs.filter(function (r) { return r.kind === 'url'; }).map(function (r) {
         return { type: 'url', url: r.url };
       }),
@@ -1018,6 +1100,9 @@
     if (job.type === 'annotate') {
       msg = r.status === 'nochange' ? 'Keine Änderung (' + (r.annotationId || '') + ').' : 'Fertig: ' + (r.annotationId || '');
       if (r.summary) msg += '\n' + truncate(r.summary, 600);
+      if (r.warnings && r.warnings.length) {
+        msg += '\n\nHinweise der Prüfung:\n' + r.warnings.slice(0, 5).map(function (w) { return '– ' + truncate(w.text || w.rule, 160); }).join('\n');
+      }
     } else if (job.type === 'rollback') {
       msg = 'Zurückgesprungen.';
     } else if (job.type === 'decision') {
@@ -1119,6 +1204,9 @@
           h.text ? el('div', {}, [el('code', { text: truncate(h.text, 300) })]) : null,
         ])
       );
+    });
+    (r.warnings || []).forEach(function (w) {
+      rHits.appendChild(el('li', { class: 'warn' }, [el('strong', { text: 'Hinweis' }), ' – ', w.text || w.rule]));
     });
     renderDiff(r.diff);
     rErr.textContent = '';

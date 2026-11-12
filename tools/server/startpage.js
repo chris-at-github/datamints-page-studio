@@ -65,6 +65,7 @@ export function renderStartPage({ sites, token }) {
   .st-pending { color:var(--muted); } .st-running { color:var(--accent); } .st-review { color:var(--warn); }
   .st-done { color:var(--ok); } .st-failed { color:var(--err); }
   details summary { cursor:pointer; color:var(--muted); }
+  label.inline { display:flex; gap:8px; align-items:center; font-weight:400; font-size:14px; margin:0 0 8px; }
 </style>
 </head>
 <body>
@@ -87,6 +88,7 @@ export function renderStartPage({ sites, token }) {
   </section>
   <section>
     <h2>Websites</h2>
+    <label class="inline"><input type="checkbox" id="keep-design" checked> Beim Neu einlesen Design-Vorgaben (Tokens und Regeln) behalten</label>
     <table>
       <thead><tr><th>Website</th><th class="num">Schritte</th><th>Abzug</th><th>Letzte Änderung</th><th>Aktionen</th></tr></thead>
       <tbody id="sites">${rows}</tbody>
@@ -103,7 +105,7 @@ export function renderStartPage({ sites, token }) {
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report' };
+  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');
@@ -134,9 +136,16 @@ export function renderStartPage({ sites, token }) {
     if (!btn) return;
     const slug = btn.closest('tr').dataset.slug;
     const action = btn.dataset.action;
-    if (action === 'recrawl' && !confirm('Website „' + slug + '“ neu einlesen?\\n\\nDer bisherige Stand wird mit Report archiviert, alle Änderungen sind danach nicht mehr aktiv.')) return;
+    const keepDesign = document.getElementById('keep-design').checked;
+    if (action === 'recrawl' && !confirm('Website „' + slug + '“ neu einlesen?\\n\\nDer bisherige Stand wird mit Report archiviert, alle Änderungen sind danach nicht mehr aktiv.\\n' +
+      (keepDesign ? 'Tokens und Regeln werden übernommen.' : 'Tokens und Regeln werden NICHT übernommen.'))) return;
     btn.disabled = true;
-    try { const { job } = await api('/api/sites/' + slug + '/' + action, { method: 'POST' }); upsert(job); }
+    try {
+      const opts = { method: 'POST' };
+      if (action === 'recrawl') opts.body = JSON.stringify({ keepDesign });
+      const { job } = await api('/api/sites/' + slug + '/' + action, opts);
+      upsert(job);
+    }
     catch (err) { alert(err.message); }
     finally { btn.disabled = false; }
   });
