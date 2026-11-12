@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { parseTokens, cssVarName } from './design.mjs';
 
 const siteDir = process.argv[2];
 const git = (...args) => execFileSync('git', ['-C', siteDir, ...args], { encoding: 'utf8', maxBuffer: 512 * 1024 * 1024 });
@@ -49,6 +50,34 @@ out.push(
   '',
 );
 
+// ---------- Design-Vorgaben (Grundlage für SCSS-Variablen oder ein Theme im echten Projekt) ----------
+const readSite = (f) => { try { return fs.readFileSync(path.join(siteDir, f), 'utf8'); } catch { return null; } };
+const cell = (v) => String(v ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+const tokensText = readSite('design/tokens.json');
+out.push('## Design-Vorgaben', '');
+if (tokensText === null) {
+  out.push('_Für diesen Abzug sind keine Design-Vorgaben angelegt._', '');
+} else {
+  const { tokens, errors } = parseTokens(tokensText);
+  const keys = Object.keys(tokens).sort();
+  out.push('### Tokens', '');
+  if (errors.length) out.push(`> Achtung: tokens.json ist ungültig: ${errors.join('; ')}`, '');
+  if (keys.length) {
+    out.push('| Token | Wert | CSS-Variable | Gesperrt | Notiz |', '|---|---|---|---|---|');
+    for (const k of keys) {
+      const t = tokens[k];
+      out.push(`| \`${k}\` | \`${cell(t.value)}\` | \`${cssVarName(k)}\` | ${t.locked ? 'ja' : 'nein'} | ${cell(t.note || '')} |`);
+    }
+    out.push('');
+  } else out.push('_Noch keine Tokens._', '');
+  const notes = (readSite('design/notes.md') || '').trim();
+  out.push('### Regeln (notes.md)', '', notes ? fence(notes, 'markdown') : '_Keine Regeln._', '');
+  const tcss = readSite('design/tokens.css');
+  if (tcss) out.push('### tokens.css', '', fence(tcss, 'css'), '');
+}
+
+const totals = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, counted: 0 };
+
 for (const line of log) {
   const [commit, date, subject] = line.split('\t');
   const id = (subject.match(/^\[(A-\d+)\]/) || [])[1] || null;
@@ -56,12 +85,25 @@ for (const line of log) {
   if (id) {
     try { ann = JSON.parse(git('show', `${commit}:annotations/${id}.json`)); } catch { /* manuelle Änderung */ }
   }
-  out.push(`## ${id || commit.slice(0, 10)}${ann.prompt ? '' : ': ' + subject}`, '');
+  const isDesign = !id && subject.startsWith('[design]');
+  out.push(`## ${id || (isDesign ? 'Design' : commit.slice(0, 10))}${ann.prompt ? '' : ': ' + subject.replace(/^\[design\]\s*/, '')}`, '');
   out.push(`- Datum: ${dateDe(date)}`, `- Commit: \`${commit.slice(0, 10)}\``);
   if (ann.page) out.push(`- Seite: \`${ann.page}\``);
   if (ann.selector) out.push(`- Selektor: \`${ann.selector.replace(/`/g, "'")}\``);
   if (ann.thorough) out.push('- Modus: gründlich');
+  if (ann.remember) out.push('- Als Regel gemerkt: ja');
+  if (ann.followup) out.push(`- Nachbesserung${ann.followup_of ? ' zu ' + ann.followup_of : ''}`);
+  if (ann.allow_token_change) out.push('- Gesperrte Tokens durften geändert werden');
   out.push('');
+  const r = ann.result || {};
+  if (r.costUsd != null || r.usage) {
+    totals.counted++;
+    totals.cost += Number(r.costUsd || 0);
+    totals.input += Number(r.usage?.input_tokens || 0);
+    totals.output += Number(r.usage?.output_tokens || 0);
+    totals.cacheRead += Number(r.usage?.cache_read_input_tokens || 0);
+    totals.cacheCreation += Number(r.usage?.cache_creation_input_tokens || 0);
+  }
   if (ann.prompt) out.push('**Prompt**', '', ann.prompt.split('\n').map((l) => '> ' + l).join('\n'), '');
   const refs = ann.references || [];
   if (refs.length) {
@@ -74,6 +116,10 @@ for (const line of log) {
   if (ann.result?.summary) out.push('**Zusammenfassung (Claude)**', '', ann.result.summary.trim(), '');
   const files = git('show', '--format=', '--name-only', commit).split('\n').filter((f) => f && !f.startsWith('annotations/'));
   if (files.length) out.push('**Betroffene Dateien**', '', ...files.map((f) => `- \`${f}\``), '');
+  const designDiff = git('show', '--format=', '--no-color', commit, '--', 'design/tokens.json', 'design/notes.md');
+  if (designDiff.trim()) out.push('**Token- und Regeländerungen**', '', fence(designDiff, 'diff'), '');
+  const warns = ann.check?.warnings || [];
+  if (warns.length) out.push('**Hinweise der Prüfung**', '', ...warns.map((w) => `- ${w.rule}: ${String(w.text || '').replace(/\n/g, ' ')}`), '');
   if (id && blocks[id]) out.push('**overrides.css**', '', fence(blocks[id], 'css'), '');
   const htmlDiff = git('show', '--format=', '--no-color', commit, '--', ':(glob)www/**/*.htm', ':(glob)www/**/*.html');
   if (htmlDiff.trim()) {
@@ -88,5 +134,14 @@ for (const line of log) {
 }
 
 out.push('## Vollständige overrides.css', '', css.trim() ? fence(css, 'css') : '_leer_', '');
+if (totals.counted) {
+  out.push('## Nutzung und Kosten', '');
+  out.push(`Erfasst für ${totals.counted} Schritt(e):`, '');
+  out.push(`- Kosten: ${totals.cost.toFixed(4)} USD`);
+  out.push(`- Eingabe-Tokens (neu verarbeitet): ${totals.input}`);
+  out.push(`- Cache-Treffer (gelesen): ${totals.cacheRead}`);
+  out.push(`- Cache geschrieben: ${totals.cacheCreation}`);
+  out.push(`- Ausgabe-Tokens: ${totals.output}`, '');
+}
 fs.writeFileSync(path.join(siteDir, 'CHANGES.md'), out.join('\n'));
 process.stdout.write(JSON.stringify({ file: 'CHANGES.md', steps: log.length }));

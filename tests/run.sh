@@ -37,6 +37,8 @@ check "Eigenes Script bleibt" 'grep -q "js/app.js" "$P"'
 check "JSON-LD bleibt" 'grep -q "application/ld+json" "$P"'
 check "integrity-Attribut entfernt" '! grep -q integrity "$P"'
 check "CSP-Meta entfernt" '! grep -qi content-security-policy "$P"'
+check "design/ in der Baseline" 'git -C "$S" cat-file -e baseline:design/tokens.json && git -C "$S" cat-file -e baseline:design/tokens.css && git -C "$S" cat-file -e baseline:design/notes.md'
+check "Token-Scan geschrieben" '[[ -f "$S/.scan.json" ]] && jq -e ".colors | length > 0" "$S/.scan.json" >/dev/null'
 
 echo "Manuelle Änderung und Commit"
 sed -i 's/Willkommen bei Testfirma/Ihr Partner für gute Dinge/' "$P"
@@ -84,6 +86,69 @@ OUT="$(./scripts/commit-step.sh "$SLUG" A-004 2>/dev/null)"
 check "Status nochange" '[[ "$(jq -r .status <<<"$OUT")" == nochange ]]'
 check "Annotation-Datei aufgeräumt" '[[ ! -f "$S/annotations/A-004.json" ]]'
 
+echo "Design-Vorgaben von Hand (design-save.sh)"
+DS="$(mktemp)"
+jq -n '{tokens:{"color.primary":{value:"#0B5FA5",locked:true,note:"Primärfarbe"},"radius.button":{value:"8px",locked:true}}, notes:"# Regeln\n- Du-Ansprache\n"}' >"$DS"
+OUT="$(./scripts/design-save.sh "$SLUG" "$DS" 2>/dev/null)"
+check "design-save.sh committet" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && [[ "$(git -C "$S" log -1 --format=%s)" == "[design] Design-Vorgaben angepasst" ]]'
+check "tokens.css erzeugt" 'grep -q -- "--modio-color-primary: #0B5FA5;" "$S/design/tokens.css"'
+jq -n '{tokens:{"color.bad":{value:"url(https://evil.example/x)",locked:false}}}' >"$DS"
+set +e; OUT="$(./scripts/design-save.sh "$SLUG" "$DS" 2>/dev/null)"; rc=$?; set -e
+check "Wert mit url( abgelehnt" '(( rc == 3 )) && grep -q "url(" <<<"$OUT" && [[ -z "$(git -C "$S" status --porcelain)" ]]'
+OUT="$(./scripts/history.sh "$SLUG" 2>/dev/null)"
+check "Verlauf führt [design]-Commit" 'jq -e ".steps | map(.kind) | index(\"design\")" <<<"$OUT" >/dev/null'
+
+echo "Prüfungen der Design-Vorgaben (check-diff.sh)"
+ann() { jq -n --arg id "$1" --argjson extra "${2:-{\}}" '{id:$id, prompt:"Test"} + $extra' >"$S/annotations/$1.json"; }
+ann A-010
+jq '.tokens["color.primary"].value = "#ff0000"' "$S/design/tokens.json" >"$DS" && cp "$DS" "$S/design/tokens.json"
+set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-010 2>/dev/null)"; rc=$?; set -e
+check "Gesperrter Token geändert: Prüfung nötig" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"token-locked\")" <<<"$OUT" >/dev/null'
+ann A-010 '{"allow_token_change":true}'
+set +e; OUT="$(./scripts/check-diff.sh "$SLUG" A-010 2>/dev/null)"; rc=$?; set -e
+check "Mit allow_token_change erlaubt" '(( rc == 0 ))'
+./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+ann A-011
+printf -- '- Header auf allen Seiten gleich\n' >>"$S/design/notes.md"
+set +e; OUT="$(./scripts/check-diff.sh "$SLUG" A-011 2>/dev/null)"; rc=$?; set -e
+check "notes.md ohne remember: Prüfung nötig" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"notes-without-remember\")" <<<"$OUT" >/dev/null'
+ann A-011 '{"remember":true}'
+set +e; OUT="$(./scripts/check-diff.sh "$SLUG" A-011 2>/dev/null)"; rc=$?; set -e
+check "notes.md mit remember erlaubt" '(( rc == 0 ))'
+printf -- '- Siehe https://example.org/regeln\n' >>"$S/design/notes.md"
+set +e; OUT="$(./scripts/check-diff.sh "$SLUG" A-011 2>/dev/null)"; rc=$?; set -e
+check "URL in notes.md: Prüfung nötig" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"notes-content\")" <<<"$OUT" >/dev/null'
+./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+ann A-012
+printf '  --modio-x: red;\n' >>"$S/design/tokens.css"
+set +e; OUT="$(./scripts/check-diff.sh "$SLUG" A-012 2>/dev/null)"; rc=$?; set -e
+check "tokens.css von Hand geändert: Prüfung nötig" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"tokens-css-manual\")" <<<"$OUT" >/dev/null'
+./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+
+echo "Hinweise (warn) und tokens-build beim Commit"
+ann A-013
+jq '.tokens["color.accent"] = {value:"#e8590c", locked:false}' "$S/design/tokens.json" >"$DS" && cp "$DS" "$S/design/tokens.json"
+printf '/* A-013: Button */\n.btn {\n  background: #0B5FA5;\n  border-radius: var(--modio-radius-button);\n}\n' >>"$S/overrides.css"
+set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-013 2>/dev/null)"; rc=$?; set -e
+check "Commit trotz Hinweisen" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT")" == committed ]]'
+check "Hinweis token-literal" 'jq -e ".warnings | map(.rule) | index(\"token-literal\")" <<<"$OUT" >/dev/null'
+check "Hinweis token-new" 'jq -e ".warnings | map(.rule) | index(\"token-new\")" <<<"$OUT" >/dev/null'
+check "tokens.css neu erzeugt und committet" 'git -C "$S" show HEAD:design/tokens.css | grep -q -- "--modio-color-accent: #e8590c;"'
+check "Hinweise in der Annotation" 'git -C "$S" show HEAD:annotations/A-013.json | jq -e ".check.warnings | length >= 2" >/dev/null'
+rm -f "$DS"
+
+echo "Kontext (context.sh)"
+OUT="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null)"
+CTX="$(jq -r .context <<<"$OUT")"
+check "Vorgaben mit gesperrtem Token" 'grep -q "<vorgaben" <<<"$CTX" && grep -q "color.primary = #0B5FA5 → var(--modio-color-primary) \[gesperrt\]" <<<"$CTX"'
+check "Regeln eingebettet" 'grep -q "Du-Ansprache" <<<"$CTX"'
+check "Bisherige Schritte" 'grep -q "^A-001 | Prompt:" <<<"$CTX" && grep -q "^A-013 | Prompt:" <<<"$CTX"'
+HEAD_A013="$(git -C "$S" rev-parse HEAD)"
+./scripts/rollback.sh "$SLUG" A-001 >/dev/null 2>&1
+CTX="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null | jq -r .context)"
+check "Nach Rücksprung nur verbliebene Schritte und Vorgaben" '! grep -q "A-013" <<<"$CTX" && grep -q "(noch keine Tokens)" <<<"$CTX"'
+OUT="$(./scripts/rollback.sh "$SLUG" "$HEAD_A013" 2>&1)" || echo "$OUT"
+
 echo "Referenzbild"
 node -e "require('sharp')({create:{width:3000,height:1500,channels:3,background:'#c33'}}).jpeg().withMetadata().toFile('$S/../ref-test.jpg')" 2>/dev/null
 OUT="$(./scripts/add-reference.sh "$SLUG" A-005 "sites/ref-test.jpg" 2>/dev/null)"
@@ -100,6 +165,7 @@ echo "Report und Liste"
 OUT="$(./scripts/report.sh "$SLUG" 2>/dev/null)"
 check "CHANGES.md erzeugt" '[[ -f "$S/CHANGES.md" ]] && grep -q "## A-001" "$S/CHANGES.md" && ! grep -q "## A-003" "$S/CHANGES.md"'
 check "Override-Block im Report" 'grep -q "font-size: 48px" "$S/CHANGES.md"'
+check "Report beginnt mit Design-Vorgaben" 'grep -q "^## Design-Vorgaben" "$S/CHANGES.md" && grep -q "| \`color.primary\` | \`#0B5FA5\`" "$S/CHANGES.md"'
 OUT="$(./scripts/site-list.sh 2>/dev/null)"
 check "site-list.sh enthält Website" 'jq -e --arg s "$SLUG" ".sites | map(.slug) | index(\$s)" <<<"$OUT" >/dev/null'
 
@@ -108,6 +174,7 @@ OUT="$(./scripts/site-recrawl.sh "$SLUG" 2>/dev/null)"
 check "Neuer Abzug angelegt" '[[ "$(jq -r .status <<<"$OUT")" == ok ]]'
 check "Alter Stand archiviert mit Report" 'ls archive/"$SLUG"-*/CHANGES.md >/dev/null 2>&1'
 check "Neue Baseline ohne Schritte" '[[ "$(git -C "$S" rev-list --count baseline..HEAD)" == 0 ]]'
+check "Design-Vorgaben behalten (--keep-design)" 'git -C "$S" show baseline:design/tokens.json | jq -e ".tokens[\"color.primary\"].locked == true" >/dev/null'
 
 echo
 echo "Ergebnis: $PASS bestanden, $FAIL fehlgeschlagen"

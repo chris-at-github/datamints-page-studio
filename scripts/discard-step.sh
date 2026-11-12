@@ -8,5 +8,6 @@ require_site "${1:-}"
 git_site reset -q
 git_site checkout -q -- .
 git_site clean -fdq
+state_set sessionId null  # verworfene Änderungen passen nicht mehr zur Session
 log "Nicht übernommene Änderungen in $SLUG verworfen"
 emit status discarded slug "$SLUG" head "$(git_site rev-parse HEAD)"

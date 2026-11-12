@@ -21,6 +21,10 @@ fi
 
 HEAD_BEFORE="$(git_site rev-parse HEAD)"
 TAG="verworfen/$(date '+%Y%m%d-%H%M%S')"
+# Mehrere Rücksprünge in derselben Sekunde: eindeutigen Tag-Namen wählen
+if git_site rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  n=2; while git_site rev-parse -q --verify "refs/tags/$TAG-$n" >/dev/null; do n=$((n + 1)); done; TAG="$TAG-$n"
+fi
 if [[ "$HEAD_BEFORE" != "$COMMIT" ]]; then
   # Auch nicht committete Reste sichern? Nein: verworfen wird der letzte Snapshot.
   git_site tag "$TAG" "$HEAD_BEFORE"

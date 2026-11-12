@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Gibt den Verlauf seit baseline aus und schreibt ihn nach .history.json.
+# Schritte: Annotationen ([A-xxx]), Design-Änderungen ([design]) und sonstige Commits.
+# totals: Summe der erfassten Kosten und Token-Nutzung aller Annotationen im aktuellen Stand.
 # Aufruf: history.sh <slug>
 source "$(dirname "$0")/lib/common.sh"
 require_cmd git jq
@@ -16,14 +18,25 @@ while IFS=$'\t' read -r COMMIT DATE SUBJECT; do
   fi
   STEP="$(jq -c --arg id "$ID" --arg c "$COMMIT" --arg d "$DATE" --arg s "$SUBJECT" '{
       id: (if $id == "" then null else $id end), commit:$c, date:$d,
+      kind: (if $id != "" then "annotation" elif ($s | startswith("[design]")) then "design" else "manual" end),
       prompt: (.prompt // ($s | sub("^\\[A-[0-9]+\\] "; ""))),
       summary: (.result.summary // null), page: (.page // null), selector: (.selector // null),
-      thorough: (.thorough // false), references: ((.references // []) | length)
+      thorough: (.thorough // false), references: ((.references // []) | length),
+      remember: (.remember // false), followup: (.followup // false),
+      warnings: ((.check.warnings // []) | length),
+      costUsd: (.result.costUsd // null), usage: (.result.usage // null)
     }' <<<"$ANN")"
   STEPS="$(jq -c --argjson s "$STEP" '. + [$s]' <<<"$STEPS")"
 done < <(git_site log --reverse --format='%H%x09%aI%x09%s' baseline..HEAD)
 
 OUT="$(jq -c -n --arg slug "$SLUG" --arg head "$(git_site rev-parse HEAD)" --arg base "$(git_site rev-parse baseline)" \
-  --argjson steps "$STEPS" '{slug:$slug, head:$head, baseline:$base, steps:$steps}')"
+  --argjson steps "$STEPS" '{slug:$slug, head:$head, baseline:$base, steps:$steps,
+    totals: {
+      costUsd: ([$steps[].costUsd // 0] | add // 0),
+      inputTokens: ([$steps[].usage.input_tokens // 0] | add // 0),
+      outputTokens: ([$steps[].usage.output_tokens // 0] | add // 0),
+      cacheReadTokens: ([$steps[].usage.cache_read_input_tokens // 0] | add // 0),
+      cacheCreationTokens: ([$steps[].usage.cache_creation_input_tokens // 0] | add // 0)
+    }}')"
 tmp="$(mktemp "$SITE/.history.XXXXXX")"; printf '%s\n' "$OUT" >"$tmp"; mv "$tmp" "$SITE/.history.json"; chmod 644 "$SITE/.history.json"
 emit_json "$OUT"

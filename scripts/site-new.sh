@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Legt eine neue Website an: Ordner, site.json, urls.txt, Abzug, Git-Repo mit Baseline.
+# Legt eine neue Website an: Ordner, site.json, urls.txt, design/, Abzug, Git-Repo mit Baseline.
 # Aufruf: site-new.sh <url> [slug] [urls.txt]
+# Intern (site-recrawl.sh --keep-design): DESIGN_FROM=<ordner> übernimmt design/tokens.json,
+# notes.md und consistency.json aus einem archivierten Abzug in die neue Baseline.
 source "$(dirname "$0")/lib/common.sh"
 require_cmd git jq wget node
 
@@ -35,7 +37,18 @@ cat >"$SITE/.gitignore" <<'GI'
 .state.*
 .history.json
 CHANGES.md
+.scan.json
 GI
+
+# Design-Gedächtnis: übernommene Vorgaben (Neu einlesen) oder leere Vorlagen
+if [[ -n "${DESIGN_FROM:-}" && -d "$DESIGN_FROM/design" ]]; then
+  mkdir -p "$SITE/design"
+  for f in tokens.json notes.md consistency.json; do
+    [[ -f "$DESIGN_FROM/design/$f" ]] && cp "$DESIGN_FROM/design/$f" "$SITE/design/$f"
+  done
+  log "Design-Vorgaben übernommen aus ${DESIGN_FROM#$MODIO_ROOT/}"
+fi
+"$SCRIPTS_DIR/design-init.sh" "$SLUG" --no-commit >/dev/null || die "design/ konnte nicht angelegt werden"
 
 "$SCRIPTS_DIR/crawl.sh" "$SLUG" >/dev/null
 
@@ -44,6 +57,7 @@ git -C "$SITE" add -A
 git -C "$SITE" commit -q -m "Baseline: Abzug von $URL"
 git -C "$SITE" tag baseline
 jq -n '{counter:0, sessionId:null}' >"$SITE/.state.json"
+"$SCRIPTS_DIR/tokens-scan.sh" "$SLUG" >/dev/null || log "Token-Scan fehlgeschlagen (wird ignoriert)"
 
 trap - EXIT
 log "Website $SLUG angelegt"

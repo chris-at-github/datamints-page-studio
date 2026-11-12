@@ -1,0 +1,4 @@
+{
+  "shared": [],
+  "ignore": ["class:active", "class:current", "aria-current"]
+}
