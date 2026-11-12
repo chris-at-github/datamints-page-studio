@@ -2698,6 +2698,25 @@
     }
   } catch (e) { /* ignorieren */ }
 
+  // Modio-Favicon und Titel mit Präfix, damit Tabs mit dem Abzug erkennbar sind
+  (function brandTab() {
+    var PREFIX = 'Modio · ';
+    var fixIcons = function () {
+      Array.prototype.forEach.call(document.querySelectorAll('link[rel~="icon"]:not([data-modio]), link[rel="shortcut icon"]:not([data-modio]), link[rel="apple-touch-icon"]:not([data-modio])'), function (l) { l.remove(); });
+      if (!document.querySelector('link[data-modio="favicon"]') && document.head) {
+        document.head.appendChild(el('link', { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml', 'data-modio': 'favicon' }));
+      }
+    };
+    var fixTitle = function () {
+      if (document.title.indexOf(PREFIX) !== 0) document.title = PREFIX + (document.title || SLUG);
+    };
+    fixIcons();
+    fixTitle();
+    if (document.head) {
+      new MutationObserver(function () { fixIcons(); fixTitle(); }).observe(document.head, { childList: true, subtree: true, characterData: true });
+    }
+  })();
+
   renderStatus();
   loadJobs();
   connectEvents();

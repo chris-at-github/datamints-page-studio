@@ -152,7 +152,8 @@ function injectHtml(buf, slug) {
   const cfg = JSON.stringify({ slug, token: TOKEN, base: `/s/${slug}`, imageMaxCount: IMAGE_MAX_COUNT, imageMaxMb: IMAGE_MAX_MB })
     .replace(/</g, '\\u003c');
   // Tokens vor overrides.css, damit overrides.css die Variablen verwenden kann
-  const head = `<link rel="stylesheet" href="/s/${slug}/__tokens.css" data-modio="tokens"><link rel="stylesheet" href="/s/${slug}/__overrides.css" data-modio="overrides">`;
+  const head = `<link rel="stylesheet" href="/s/${slug}/__tokens.css" data-modio="tokens"><link rel="stylesheet" href="/s/${slug}/__overrides.css" data-modio="overrides">` +
+    '<link rel="icon" href="/favicon.svg" type="image/svg+xml" data-modio="favicon">';
   const body = `<script data-modio="config">window.__MODIO__=${cfg}</script><script src="/__modio/overlay.js" defer data-modio="overlay"></script>`;
   let html = buf.toString('latin1'); // byte-treu, Injektion ist reines ASCII
   const hi = html.search(/<\/head\s*>/i);
