@@ -196,6 +196,29 @@
     return seg;
   }
 
+  // Selektor für gleiche Bereiche: ohne Positionsangaben (nth-…), damit er auf allen Seiten passt.
+  // Kürzester Pfad aus ID bzw. Tag mit Klassen, dessen erster Treffer das Element ist; sonst null.
+  function areaSelectorFor(target) {
+    function seg(node) {
+      if (node.id && !looksGenerated(node.id)) return '#' + esc(node.id);
+      var tag = node.tagName.toLowerCase();
+      var classes = Array.prototype.filter.call(node.classList || [], function (c) {
+        return !looksGenerated(c) && c.indexOf('modio') !== 0;
+      }).slice(0, 2);
+      return classes.length ? tag + '.' + classes.map(esc).join('.') : tag;
+    }
+    var first = function (sel) { try { return document.querySelector(sel); } catch (e) { return null; } };
+    var path = [];
+    for (var node = target; node && node.nodeType === 1 && node !== document.documentElement; node = node.parentElement) {
+      var s = node === document.body ? 'body' : seg(node);
+      path.unshift(s);
+      var sel = path.join(' > ');
+      if (first(sel) === target) return sel;
+      if (s.charAt(0) === '#') break; // über eine ID hinaus wird es nicht eindeutiger
+    }
+    return null;
+  }
+
   function selectorFor(target) {
     if (target.id && !looksGenerated(target.id) && isUnique('#' + esc(target.id))) return '#' + esc(target.id);
     var path = [];
@@ -260,6 +283,7 @@
     '.crumbs button:hover,.crumbs button:focus-visible{background:#ede9fe;border-color:#c4b5fd}' +
     '.crumbs button[aria-current=true]{background:#fef3c7;border-color:#d97706;color:#92400e;font-weight:600}' +
     '.sel-full{color:#374151;font-size:11px;margin-top:6px;padding-top:6px;border-top:1px dashed #c4c9d2;word-break:break-all}' +
+    '.sel-full.bad{color:#b91c1c}' +
     '.sel-lbl{display:inline-block;font:600 10px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:#6b7280;border-radius:3px;padding:0 5px;margin-right:6px}' +
     '.hl-label{position:absolute;left:-2px;top:-24px;background:#2563eb;color:#fff;font:12px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:4px 6px;border-radius:3px;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}' +
     '.hl.sel .hl-label{background:#d97706}' +
@@ -529,13 +553,13 @@
   var aName = el('input', { id: 'modio-area-name', type: 'text', class: 'textin', spellcheck: 'false', maxlength: '60' });
   var aErr = el('div', { class: 'err', role: 'alert' });
   var aCancel = el('button', { type: 'button', text: 'Abbrechen' });
-  var aSave = el('button', { type: 'button', class: 'primary', text: 'Für alle Seiten übernehmen' });
+  var aSave = el('button', { type: 'button', class: 'primary', text: 'Übernehmen' });
   var areaPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ah' }, [
     el('h2', { id: 'modio-ah', text: 'Gleichen Bereich festlegen' }),
     aMeta,
     el('label', { for: 'modio-area-name', class: 'fl', text: 'Name des Bereichs' }),
     aName,
-    el('div', { class: 'hint', text: 'Der Bereich wird von dieser Seite auf alle anderen Seiten kopiert. Spätere Änderungen daran überträgt Modio automatisch.' }),
+    el('div', { class: 'hint', text: 'Der Bereich wird in die Liste aufgenommen, die Seiten bleiben unverändert. Angleichen mit „Für alle Seiten übernehmen“; spätere Änderungen daran überträgt Modio automatisch.' }),
     aErr,
     el('div', { class: 'row end' }, [aCancel, aSave]),
   ]);
@@ -1021,10 +1045,10 @@
 
   // Pfadleiste (body bis ursprünglich gewähltes Element) und Selektor der aktuellen Auswahl
   function renderMeta() {
-    renderCrumbs(pMeta, pathLeaf, selected, selectCrumb, promptPanel);
+    renderCrumbs(pMeta, pathLeaf, selected, selectCrumb, promptPanel, selectorFor);
   }
 
-  function renderCrumbs(box, leaf, current, onSelect, panel) {
+  function renderCrumbs(box, leaf, current, onSelect, panel, selFn) {
     var old = box.querySelector('.crumbs');
     var oldScroll = old && old.modioLeaf === leaf ? old.scrollLeft : null;
     clear(box);
@@ -1049,7 +1073,9 @@
       nav.appendChild(b);
     });
     box.appendChild(nav);
-    box.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), selectorFor(current)]));
+    var selText = selFn(current);
+    box.appendChild(el('div', { class: 'sel-full' + (selText ? '' : ' bad') }, [el('span', { class: 'sel-lbl', text: 'Selektor' }),
+      selText || 'Ohne Positionsangabe nicht eindeutig – bitte ein übergeordnetes Element wählen']));
     nav.addEventListener('scroll', function () { crumbFade(nav); });
     nav.addEventListener('wheel', function (e) {
       var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -1310,27 +1336,7 @@
     return crumbLabel(node);
   }
 
-  // Element als gleichen Bereich aufnehmen und von dieser Seite auf alle Seiten übertragen
-  function addArea(node, name, onError, onSent) {
-    if (isBusy()) { onError('Es läuft noch ein Schritt. Bitte warten.'); return; }
-    var selector = selectorFor(node);
-    name = String(name || '').trim();
-    if (!name) { onError('Bitte einen Namen angeben.'); return; }
-    onError('');
-    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/areas/sync', { page: currentPage(), add: { name: name, selector: selector } })
-      .then(function (data) {
-        if (data && data.job) trackJob(data.job);
-        if (designPanel.classList.contains('open')) {
-          try { sessionStorage.setItem(DESIGN_OPEN_KEY, '1'); } catch (e) { /* ignorieren */ }
-        }
-        if (onSent) onSent();
-        showToast('„' + name + '“ wird auf alle Seiten übernommen …', false);
-      })
-      .catch(function (err) {
-        onError(err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message);
-      })
-      .then(renderStatus);
-  }
+
 
   pCancel.addEventListener('click', function () {
     closePrompt();
@@ -1936,7 +1942,8 @@
       hidePreview();
       renderAreaMeta();
       placeHighlight(areaSel, true);
-    }, areaPanel);
+    }, areaPanel, areaSelectorFor);
+    aSave.disabled = isBusy() || !areaSelectorFor(areaSel);
   }
   function openAreaDialog(node) {
     closePrompt();
@@ -1944,7 +1951,6 @@
     areaNameTouched = false;
     aName.value = areaName(node);
     aErr.textContent = '';
-    aSave.disabled = isBusy();
     areaPanel.classList.add('open');
     renderAreaMeta();
     placeHighlight(areaSel, true);
@@ -1959,10 +1965,31 @@
   aName.addEventListener('input', function () { areaNameTouched = true; });
   aName.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); aSave.click(); } });
   aCancel.addEventListener('click', closeAreaDialog);
+  // Bereich nur in consistency.json aufnehmen (Seiten bleiben unverändert)
   aSave.addEventListener('click', function () {
     if (!areaSel) return;
+    var selector = areaSelectorFor(areaSel);
+    var name = aName.value.trim();
+    if (!selector) { aErr.textContent = 'Kein Selektor ohne Positionsangabe möglich. Bitte ein übergeordnetes Element wählen.'; return; }
+    if (!name) { aErr.textContent = 'Bitte einen Namen angeben.'; return; }
+    var c = (design && design.consistency) || { shared: [], ignore: ['class:active', 'class:current', 'aria-current'] };
+    var shared = (c.shared || []).slice();
+    if (shared.some(function (a) { return a.selector === selector; })) { aErr.textContent = 'Diesen Bereich gibt es schon (' + selector + ').'; return; }
+    if (isDirty() && !window.confirm('Ungespeicherte Änderungen an Tokens und Regeln gehen dabei verloren. Trotzdem fortfahren?')) return;
+    shared.push({ name: name, selector: selector, pages: 'all' });
     aSave.disabled = true;
-    addArea(areaSel, aName.value, function (msg) { aErr.textContent = msg; if (msg) aSave.disabled = false; }, closeAreaDialog);
+    aErr.textContent = '';
+    api('PUT', '/api/sites/' + encodeURIComponent(SLUG) + '/design', { consistency: { shared: shared, ignore: c.ignore || [] } })
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        try { sessionStorage.setItem(DESIGN_OPEN_KEY, '1'); } catch (e) { /* ignorieren */ }
+        closeAreaDialog();
+        showToast('Bereich „' + name + '“ wird aufgenommen …', false);
+      })
+      .catch(function (err) {
+        aErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message;
+        aSave.disabled = false;
+      });
   });
 
   function syncAreas() {
