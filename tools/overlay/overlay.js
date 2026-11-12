@@ -612,7 +612,6 @@
   var hErr = el('div', { class: 'err', role: 'alert' });
   var hClose = iconButton('x', 'Verlauf schließen', { class: 'ghost' }, true);
   var hReload = iconButton('refresh', 'Verlauf aktualisieren', { class: 'ghost' }, true);
-  var hLocal = iconButton('check', 'Lokale Änderungen übernehmen', { title: 'Von Hand geänderte Dateien (Editor, Chrome-Workspaces) prüfen und als Schritt speichern' });
   var historyPanel = el('aside', { id: 'modio-history', class: 'sidebar', role: 'complementary', 'aria-labelledby': 'modio-hh' }, [
     el('div', { class: 'sb-head' }, [
       el('h2', { id: 'modio-hh' }, [icon('history', 18), 'Verlauf']),
@@ -623,7 +622,6 @@
     el('div', { class: 'sb-sub', text: SLUG }),
     el('div', { class: 'sb-body' }, [hErr, hList]),
     el('div', { class: 'sb-foot' }, [
-      hLocal,
       el('a', { class: 'btn', href: '/' }, [icon('grid'), 'Zur Übersicht']),
     ]),
   ]);
@@ -1866,14 +1864,6 @@
   });
   hClose.addEventListener('click', function () { closeHistory(); });
   hReload.addEventListener('click', loadHistory);
-  hLocal.addEventListener('click', function () {
-    if (isBusy()) { showToast('Es läuft noch ein Schritt. Bitte warten.', false); return; }
-    hLocal.disabled = true;
-    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/local-commit')
-      .then(function (data) { if (data && data.job) trackJob(data.job); showToast('Lokale Änderungen werden geprüft …', false); })
-      .catch(function (err) { hErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message; })
-      .then(function () { hLocal.disabled = false; });
-  });
 
   // ------------------------------------------------------- Design-Vorgaben
 

@@ -9,7 +9,7 @@ require_cmd git jq node
 require_site "${1:-}"
 FILE="${2:-}"
 [[ -f "$FILE" ]] || usage "inspect-apply.sh <slug> <payload.json>"
-[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Lokale Änderungen übernehmen“ im Verlauf) oder verwerfen."
+[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Änderungen übernehmen“ im Overlay) oder verwerfen."
 
 # Kommentar im overrides.css-Block mit der ID, die local-commit.sh gleich vergibt (Worker arbeitet nacheinander)
 NEXT="$(printf 'A-%03d' "$(next_annotation_number)")"

@@ -30,7 +30,7 @@ PAGE="/${PAGE#/}"
 [[ -f "$SITE/www$PAGE" ]] || die "Seite nicht im Abzug gefunden: $PAGE"
 
 # Saubere Ausgangslage: keine Reste eines abgebrochenen Schritts
-[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen (offene Prüfung?). Erst übernehmen („Lokale Änderungen übernehmen“ im Verlauf) oder verwerfen."
+[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen (offene Prüfung?). Erst übernehmen („Änderungen übernehmen“ im Overlay) oder verwerfen."
 
 # Ältere Abzüge ohne Design-Gedächtnis oder mit veralteter CLAUDE.md nachrüsten (eigener Commit "[design] …")
 if [[ ! -f "$SITE/design/tokens.json" || ! -f "$SITE/design/consistency.json" ]] || ! cmp -s "$MODIO_ROOT/templates/CLAUDE.md" "$SITE/CLAUDE.md"; then

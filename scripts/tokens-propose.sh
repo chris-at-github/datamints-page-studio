@@ -6,7 +6,7 @@
 source "$(dirname "$0")/lib/common.sh"
 require_cmd claude node jq git timeout
 require_site "${1:-}"
-[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Lokale Änderungen übernehmen“ im Verlauf) oder verwerfen."
+[[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Änderungen übernehmen“ im Overlay) oder verwerfen."
 [[ -f "$SITE/design/tokens.json" ]] || "$SCRIPTS_DIR/design-init.sh" "$SLUG" >/dev/null || die "design/ konnte nicht angelegt werden"
 
 "$SCRIPTS_DIR/tokens-scan.sh" "$SLUG" >/dev/null || die "Scan fehlgeschlagen"

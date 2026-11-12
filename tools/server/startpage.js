@@ -19,7 +19,6 @@ function siteRow(s) {
         <button class="btn menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-${esc(s.slug)}" aria-label="Weitere Aktionen für ${esc(s.slug)}">Aktionen <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
         <span class="menu" id="menu-${esc(s.slug)}" role="menu" hidden>
           <button type="button" role="menuitem" data-action="pages">Seiten hinzufügen</button>
-          <button type="button" role="menuitem" data-action="local-commit">Lokale Änderungen übernehmen</button>
           <button type="button" role="menuitem" data-action="recrawl">Neu einlesen</button>
           <button type="button" role="menuitem" data-action="report">Report erzeugen</button>
           ${s.hasReport ? `<a role="menuitem" href="/report/${esc(s.slug)}" target="_blank">Report ansehen</a>` : ''}
