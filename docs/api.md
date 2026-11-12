@@ -100,7 +100,7 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `POST /api/sites/<slug>/rollback` | JSON `{ target }` | `202 { job }` |
 | `POST /api/sites/<slug>/report` | – | `202 { job }` |
 | `GET /api/sites/<slug>/design` | – | `{ initialized, tokens, notes, scan, warnings, annotationId }` (Hinweise des letzten Schritts) |
-| `PUT /api/sites/<slug>/design` | JSON `{ tokens?, notes? }` | `202 { job }` (`design-save`) |
+| `PUT /api/sites/<slug>/design` | JSON `{ tokens?, notes?, consistency? }` | `202 { job }` (`design-save`) |
 | `POST /api/sites/<slug>/tokens/propose` | – | `202 { job }` (`tokens-propose`) |
 | `GET /api/sites/<slug>/history` | – | Inhalt von `.history.json` |
 | `GET /api/jobs?slug=<slug>` | – | `{ jobs: [..] }` aktive Jobs (pending, running, review) und die letzten 20 abgeschlossenen |

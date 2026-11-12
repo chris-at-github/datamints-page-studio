@@ -308,7 +308,8 @@ function validateAnnotation(a, uploadCount) {
 // Design-Vorgaben von Hand: nur Form prüfen, Inhalt prüft design-save.sh
 function validateDesign(body) {
   if (!body || typeof body !== 'object') return 'JSON-Objekt erwartet';
-  if (body.tokens === undefined && body.notes === undefined) return 'tokens oder notes angeben';
+  if (body.tokens === undefined && body.notes === undefined && body.consistency === undefined) return 'tokens, notes oder consistency angeben';
+  if (body.consistency !== undefined && (typeof body.consistency !== 'object' || body.consistency === null || Array.isArray(body.consistency))) return 'consistency muss ein Objekt sein';
   if (body.tokens !== undefined && (typeof body.tokens !== 'object' || body.tokens === null || Array.isArray(body.tokens))) return 'tokens muss ein Objekt sein';
   if (body.tokens && Object.keys(body.tokens).length > 200) return 'Höchstens 200 Tokens';
   if (body.notes !== undefined && (typeof body.notes !== 'string' || body.notes.length > 20000)) return 'notes muss Text (max. 20 000 Zeichen) sein';
@@ -400,6 +401,7 @@ async function handleApi(req, res, url) {
       const payload = {};
       if (body.tokens !== undefined) payload.tokens = body.tokens;
       if (body.notes !== undefined) payload.notes = body.notes;
+      if (body.consistency !== undefined) payload.consistency = body.consistency;
       await fsp.writeFile(path.join(ROOT, file), JSON.stringify(payload, null, 2));
       return send(res, 202, { job: await createJob('design-save', slug, { file }, id) });
     }

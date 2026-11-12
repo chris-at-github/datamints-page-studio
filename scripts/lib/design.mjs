@@ -4,13 +4,14 @@
 //   build                         tokens.json prüfen und design/tokens.css schreiben
 //   context <annotation-id> <n>   Kontextblock (Vorgaben + letzte n Schritte)
 //   scan                          häufige Farben, Radien, Schriften, Schriftgrößen nach .scan.json
-//   save <payload.json>           Tokens und/oder notes.md von Hand übernehmen (geprüft)
+//   save <payload.json>           Tokens, notes.md und/oder consistency.json von Hand übernehmen (geprüft)
 //   merge <proposals.json>        Token-Vorschläge mit locked:false übernehmen (nur Werte aus .scan.json)
 // Ausgabe: eine JSON-Zeile auf stdout. Exit 0 ok, 3 Prüfung nötig, 1 Fehler.
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readConfig as readConsistency } from './consistency.mjs';
 
 export const CATEGORIES = ['color', 'font', 'size', 'radius', 'space', 'shadow', 'breakpoint'];
 const KEY_RE = new RegExp(`^(${CATEGORIES.join('|')})\\.[a-z0-9]+(?:-[a-z0-9]+)*$`);
@@ -128,7 +129,7 @@ function context(site, currentId, count) {
     const c = JSON.parse(read(path.join(site, 'design/consistency.json'), '{}'));
     shared = (Array.isArray(c.shared) ? c.shared : [])
       .filter((x) => x && typeof x.selector === 'string')
-      .map((x) => `${oneLine(x.name || x.selector, 60)}: ${oneLine(x.selector, 120)} (${x.pages === undefined || x.pages === 'all' ? 'alle Seiten' : 'ausgewählte Seiten'})`);
+      .map((x) => `${oneLine(x.name || x.selector, 60)}: ${x.selector.replace(/\s+/g, " ").trim().slice(0, 120).replace(/</g, "‹")} (${x.pages === undefined || x.pages === 'all' ? 'alle Seiten' : 'ausgewählte Seiten'})`);
   } catch { /* ungültig, meldet check-consistency */ }
   const vorgaben = [
     '<vorgaben prioritaet="verbindlich">',
@@ -138,7 +139,7 @@ function context(site, currentId, count) {
     '<regeln>',
     notes ? neutral(notes) : '(noch keine Regeln)',
     '</regeln>',
-    ...(shared.length ? ['<gleiche-bereiche hinweis="auf allen betroffenen Seiten identisch ändern">', neutral(shared.join('\n')), '</gleiche-bereiche>'] : []),
+    ...(shared.length ? ['<gleiche-bereiche hinweis="auf allen betroffenen Seiten identisch ändern">', shared.join('\n').replace(/</g, '‹'), '</gleiche-bereiche>'] : []),
     '</vorgaben>',
   ].join('\n');
 
@@ -262,10 +263,24 @@ function save(site, payloadFile) {
     if (typeof payload.notes !== 'string') errors.push('notes muss Text sein');
     else errors.push(...validateNotes(payload.notes));
   }
-  if (tokens === null && payload.notes === undefined) errors.push('Weder Tokens noch Regeln übergeben');
+  let consistency = null;
+  if (payload.consistency !== undefined) {
+    const c = payload.consistency;
+    if (!c || typeof c !== 'object' || Array.isArray(c)) errors.push('consistency muss ein Objekt sein');
+    else {
+      const r = readConsistency(JSON.stringify(c));
+      errors.push(...r.errors.map((e) => 'consistency: ' + e));
+      const sel = r.shared.find((s) => /[<{};@\\]|\n/.test(s.selector) || s.selector.length > 200 || s.name.length > 60);
+      if (sel) errors.push(`consistency: ungültiger Eintrag „${sel.name.slice(0, 60)}“`);
+      if (r.ignore.some((x) => !/^(class:)?[A-Za-z0-9_:-]{1,60}$/.test(x))) errors.push('consistency: ignore enthält ungültige Einträge');
+      consistency = { shared: r.shared, ignore: r.ignore };
+    }
+  }
+  if (tokens === null && payload.notes === undefined && consistency === null) errors.push('Weder Tokens, Regeln noch Konsistenzbereiche übergeben');
   if (errors.length) return { code: 3, out: { status: 'review', error: errors.join('; '), errors } };
   if (tokens !== null) writeAtomic(path.join(site, 'design/tokens.json'), stringifyTokens(tokens));
   if (payload.notes !== undefined) writeAtomic(path.join(site, 'design/notes.md'), payload.notes.replace(/\s*$/, '\n'));
+  if (consistency !== null) writeAtomic(path.join(site, 'design/consistency.json'), JSON.stringify(consistency, null, 2) + '\n');
   return build(site);
 }
 

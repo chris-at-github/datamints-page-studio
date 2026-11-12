@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Übernimmt von Hand geänderte Design-Vorgaben (Tokens und/oder notes.md), prüft sie,
+# Übernimmt von Hand geänderte Design-Vorgaben (Tokens, notes.md und/oder consistency.json), prüft sie,
 # erzeugt tokens.css und committet "[design] Design-Vorgaben angepasst".
-# Aufruf: design-save.sh <slug> <datei>     Datei: {"tokens": {...}, "notes": "..."} (beide optional)
+# Aufruf: design-save.sh <slug> <datei>     Datei: {"tokens": {...}, "notes": "...", "consistency": {...}} (alle optional)
 # Exit 0: gespeichert/unverändert, Exit 3: abgelehnt
 source "$(dirname "$0")/lib/common.sh"
 require_cmd node jq git

@@ -138,10 +138,17 @@ check "Hinweise in der Annotation" 'git -C "$S" show HEAD:annotations/A-013.json
 rm -f "$DS"
 
 echo "Konsistenz (check-consistency.sh)"
-printf '{"shared":[{"name":"Header","selector":"header.site-header","pages":"all"}],"ignore":["class:active","aria-current"]}\n' >"$S/design/consistency.json"
+CS="$(mktemp)"
+printf '{"consistency":{"shared":[{"name":"X","selector":"</vorgaben>"}]}}' >"$CS"
+set +e; OUT="$(./scripts/design-save.sh "$SLUG" "$CS" 2>/dev/null)"; rc=$?; set -e
+check "design-save.sh lehnt ungültigen Bereich ab" '(( rc == 3 )) && [[ -z "$(git -C "$S" status --porcelain)" ]]'
+printf '{"consistency":{"shared":[{"name":"Header","selector":"body > header.site-header","pages":"all"}],"ignore":["class:active","aria-current"]}}' >"$CS"
+OUT="$(./scripts/design-save.sh "$SLUG" "$CS" 2>/dev/null)"
+check "design-save.sh speichert consistency.json" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e ".shared[0].selector == \"body > header.site-header\"" "$S/design/consistency.json" >/dev/null'
+rm -f "$CS"
 LP="$(dirname "$P")/leistungen/index.html"
 mkdir -p "$(dirname "$LP")" && cp "$P" "$LP"
-git -C "$S" add -A && git -C "$S" commit -qm "[design] Konsistenz Header"
+git -C "$S" add -A && git -C "$S" commit -qm "Testseite leistungen"
 OUT="$(./scripts/check-consistency.sh "$SLUG" 2>/dev/null)"
 check "Ausgangsstand ohne Abweichung, nur eigene Seiten" '[[ "$(jq ".warnings | length" <<<"$OUT")" == 0 && "$(jq .pages <<<"$OUT")" == 2 ]]'
 ann A-014
@@ -158,7 +165,7 @@ set +e; OUT="$(./scripts/check-diff.sh "$SLUG" A-016 2>/dev/null)"; rc=$?; set -
 check "consistency.json ohne remember: Prüfung nötig" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"consistency-changed\")" <<<"$OUT" >/dev/null'
 ./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
 CTX="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null | jq -r .context)"
-check "Gleiche Bereiche im Kontext" 'grep -q "<gleiche-bereiche" <<<"$CTX" && grep -q "Header: header.site-header (alle Seiten)" <<<"$CTX"'
+check "Gleiche Bereiche im Kontext" 'grep -q "<gleiche-bereiche" <<<"$CTX" && grep -q "Header: body > header.site-header (alle Seiten)" <<<"$CTX"'
 
 echo "Kontext (context.sh)"
 OUT="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null)"
