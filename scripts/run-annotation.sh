@@ -32,8 +32,8 @@ PAGE="/${PAGE#/}"
 # Saubere Ausgangslage: keine Reste eines abgebrochenen Schritts
 [[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen (offene Prüfung?). Erst übernehmen oder verwerfen."
 
-# Ältere Abzüge ohne Design-Gedächtnis nachrüsten (eigener Commit "[design] …")
-if [[ ! -f "$SITE/design/tokens.json" ]]; then
+# Ältere Abzüge ohne Design-Gedächtnis oder mit veralteter CLAUDE.md nachrüsten (eigener Commit "[design] …")
+if [[ ! -f "$SITE/design/tokens.json" || ! -f "$SITE/design/consistency.json" ]] || ! cmp -s "$MODIO_ROOT/templates/CLAUDE.md" "$SITE/CLAUDE.md"; then
   "$SCRIPTS_DIR/design-init.sh" "$SLUG" >/dev/null || die "design/ konnte nicht angelegt werden"
 fi
 

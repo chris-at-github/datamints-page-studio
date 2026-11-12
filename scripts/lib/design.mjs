@@ -122,6 +122,14 @@ function context(site, currentId, count) {
   // Nur Überschriften (leere Vorlage) zählt nicht als Regel
   const notes = notesRaw.split('\n').some((l) => l.trim() && !/^#+\s/.test(l.trim())) ? notesRaw : '';
   const tl = tokenLines(tokens);
+  // Seitenübergreifend gleiche Bereiche aus consistency.json
+  let shared = [];
+  try {
+    const c = JSON.parse(read(path.join(site, 'design/consistency.json'), '{}'));
+    shared = (Array.isArray(c.shared) ? c.shared : [])
+      .filter((x) => x && typeof x.selector === 'string')
+      .map((x) => `${oneLine(x.name || x.selector, 60)}: ${oneLine(x.selector, 120)} (${x.pages === undefined || x.pages === 'all' ? 'alle Seiten' : 'ausgewählte Seiten'})`);
+  } catch { /* ungültig, meldet check-consistency */ }
   const vorgaben = [
     '<vorgaben prioritaet="verbindlich">',
     '<tokens>',
@@ -130,6 +138,7 @@ function context(site, currentId, count) {
     '<regeln>',
     notes ? neutral(notes) : '(noch keine Regeln)',
     '</regeln>',
+    ...(shared.length ? ['<gleiche-bereiche hinweis="auf allen betroffenen Seiten identisch ändern">', neutral(shared.join('\n')), '</gleiche-bereiche>'] : []),
     '</vorgaben>',
   ].join('\n');
 

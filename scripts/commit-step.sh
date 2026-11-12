@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prüft und committet die Änderungen eines Schritts als Snapshot.
-# Ablauf: check-diff.sh (block/warn) -> tokens-build.sh -> Commit. Hinweise (warn) blockieren nicht,
+# Ablauf: check-diff.sh (block/warn) + check-consistency.sh (warn) -> tokens-build.sh -> Commit. Hinweise (warn) blockieren nicht,
 # sie landen in der Ausgabe und in annotations/<id>.json (.check.warnings).
 # Aufruf: commit-step.sh <slug> <annotation-id> [--accept]
 # Exit 0: committed/nochange, Exit 3: Prüfung nötig
@@ -26,6 +26,13 @@ if [[ -z "$CHANGES" ]]; then
   exit 0
 fi
 
+# Seitenübergreifende Konsistenz (nur Hinweise, Fehler der Prüfung blockieren nicht)
+CONS_WARN="[]"
+if [[ -f "$SITE/design/consistency.json" ]]; then
+  CONS="$("$SCRIPTS_DIR/check-consistency.sh" "$SLUG" --changed-only 2>/dev/null)" && CONS_WARN="$(jq -c '.warnings // []' <<<"$CONS")" \
+    || log "$ID: Konsistenzprüfung fehlgeschlagen, wird übersprungen"
+fi
+
 WARNINGS="[]"
 if [[ "$ACCEPT" != "--accept" ]]; then
   set +e
@@ -35,8 +42,8 @@ if [[ "$ACCEPT" != "--accept" ]]; then
   if (( rc == 3 )); then
     DIFF="$(git_site diff --no-color --no-ext-diff --stat --patch -- . | head -c 300000)"
     log "$ID: Prüfung nötig"
-    emit_json "$(jq -c --arg slug "$SLUG" --arg id "$ID" --arg diff "$DIFF" --arg summary "$SUMMARY" \
-      '{status:"review", slug:$slug, annotationId:$id, summary:$summary, hits:.hits, warnings:(.warnings // []), files:.files, diff:$diff}' <<<"$CHECK")"
+    emit_json "$(jq -c --arg slug "$SLUG" --arg id "$ID" --arg diff "$DIFF" --arg summary "$SUMMARY" --argjson cons "$CONS_WARN" \
+      '{status:"review", slug:$slug, annotationId:$id, summary:$summary, hits:.hits, warnings:((.warnings // []) + $cons), files:.files, diff:$diff}' <<<"$CHECK")"
     exit 3
   elif (( rc != 0 )); then
     die "check-diff.sh fehlgeschlagen"
@@ -47,6 +54,8 @@ else
   CHECK="$("$SCRIPTS_DIR/check-diff.sh" "$SLUG" "$ID" || true)"
   WARNINGS="$(jq -c '.warnings // []' <<<"$CHECK" 2>/dev/null || echo '[]')"
 fi
+
+WARNINGS="$(jq -c --argjson cons "$CONS_WARN" '. + $cons' <<<"$WARNINGS")"
 
 # tokens.css aus tokens.json erzeugen (nach der Prüfung, damit Handänderungen erkannt werden)
 if [[ -f "$SITE/design/tokens.json" ]]; then

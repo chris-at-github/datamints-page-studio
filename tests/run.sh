@@ -137,12 +137,35 @@ check "tokens.css neu erzeugt und committet" 'git -C "$S" show HEAD:design/token
 check "Hinweise in der Annotation" 'git -C "$S" show HEAD:annotations/A-013.json | jq -e ".check.warnings | length >= 2" >/dev/null'
 rm -f "$DS"
 
+echo "Konsistenz (check-consistency.sh)"
+printf '{"shared":[{"name":"Header","selector":"header.site-header","pages":"all"}],"ignore":["class:active","aria-current"]}\n' >"$S/design/consistency.json"
+LP="$(dirname "$P")/leistungen/index.html"
+mkdir -p "$(dirname "$LP")" && cp "$P" "$LP"
+git -C "$S" add -A && git -C "$S" commit -qm "[design] Konsistenz Header"
+OUT="$(./scripts/check-consistency.sh "$SLUG" 2>/dev/null)"
+check "Ausgangsstand ohne Abweichung, nur eigene Seiten" '[[ "$(jq ".warnings | length" <<<"$OUT")" == 0 && "$(jq .pages <<<"$OUT")" == 2 ]]'
+ann A-014
+sed -i '0,/<header class="site-header">/s//<header class="site-header"><span>Neu<\/span>/' "$LP"
+set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-014 2>/dev/null)"; rc=$?; set -e
+check "Abweichender Header als Hinweis, Commit trotzdem" '(( rc == 0 )) && jq -e ".warnings | map(select(.rule == \"consistency\")) | .[0].text | test(\"Header weicht ab auf: .*leistungen\")" <<<"$OUT" >/dev/null'
+ann A-015
+printf '<!-- x -->\n' >>"$LP"
+set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-015 2>/dev/null)"; rc=$?; set -e
+check "Bestehende Abweichung nicht erneut gemeldet" '(( rc == 0 )) && ! jq -e ".warnings | map(.rule) | index(\"consistency\")" <<<"$OUT" >/dev/null'
+ann A-016
+printf '{"shared":[],"ignore":[]}\n' >"$S/design/consistency.json"
+set +e; OUT="$(./scripts/check-diff.sh "$SLUG" A-016 2>/dev/null)"; rc=$?; set -e
+check "consistency.json ohne remember: Prüfung nötig" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"consistency-changed\")" <<<"$OUT" >/dev/null'
+./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+CTX="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null | jq -r .context)"
+check "Gleiche Bereiche im Kontext" 'grep -q "<gleiche-bereiche" <<<"$CTX" && grep -q "Header: header.site-header (alle Seiten)" <<<"$CTX"'
+
 echo "Kontext (context.sh)"
 OUT="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null)"
 CTX="$(jq -r .context <<<"$OUT")"
 check "Vorgaben mit gesperrtem Token" 'grep -q "<vorgaben" <<<"$CTX" && grep -q "color.primary = #0B5FA5 → var(--modio-color-primary) \[gesperrt\]" <<<"$CTX"'
 check "Regeln eingebettet" 'grep -q "Du-Ansprache" <<<"$CTX"'
-check "Bisherige Schritte" 'grep -q "^A-001 | Prompt:" <<<"$CTX" && grep -q "^A-013 | Prompt:" <<<"$CTX"'
+check "Bisherige Schritte" 'grep -q "^A-001 | Prompt:" <<<"$CTX" && grep -q "^A-015 | Prompt:" <<<"$CTX"'
 HEAD_A013="$(git -C "$S" rev-parse HEAD)"
 ./scripts/rollback.sh "$SLUG" A-001 >/dev/null 2>&1
 CTX="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null | jq -r .context)"

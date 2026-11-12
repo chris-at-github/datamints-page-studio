@@ -117,6 +117,11 @@ if (files.has('design/notes.md')) {
   if (notes !== null) for (const e of validateNotes(notes, NOTES_MAX_LINES)) hits.push({ rule: 'notes-content', file: 'design/notes.md', line: 0, text: e });
 }
 
+// consistency.json steuert die Konsistenzprüfung: nur mit „Als Regel merken“ änderbar
+if (files.has('design/consistency.json') && !REMEMBER) {
+  hits.push({ rule: 'consistency-changed', file: 'design/consistency.json', line: 0, text: 'consistency.json geändert, obwohl „Als Regel merken“ nicht gesetzt war' });
+}
+
 // Hinweis: Literalwert in overrides.css, für den es einen Token gibt (nur Farben und Schriften)
 if (!newTokens.errors.length) {
   const candidates = Object.entries(newTokens.tokens)

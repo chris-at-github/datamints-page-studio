@@ -40,7 +40,9 @@ grep -qxF '.scan.json' "$SITE/.gitignore" 2>/dev/null || { printf '.scan.json\n'
 COMMIT=""
 if [[ "$MODE" != "--no-commit" && -n "$(git -C "$SITE" status --porcelain)" ]]; then
   git -C "$SITE" add -A
-  git -C "$SITE" commit -q -m "[design] Design-Vorgaben angelegt"
+  MSG="[design] Design-Vorgaben angelegt"
+  [[ " ${CREATED[*]} " == *" design/tokens.json "* ]] || MSG="[design] Vorlagen aktualisiert"
+  git -C "$SITE" commit -q -m "$MSG"
   COMMIT="$(git -C "$SITE" rev-parse HEAD)"
   log "$SLUG: Design-Vorgaben angelegt (${COMMIT:0:10})"
 fi
