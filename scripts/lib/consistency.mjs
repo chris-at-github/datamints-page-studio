@@ -7,7 +7,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import * as cheerio from 'cheerio';
+
+// cheerio erst bei Bedarf laden: design.mjs nutzt nur readConfig und soll auch ohne cheerio laufen
+let cheerio = null;
+async function loadCheerio() {
+  if (cheerio) return;
+  try { cheerio = await import('cheerio'); } catch (e) {
+    throw new Error(`cheerio nicht ladbar (Node ${process.version}, benötigt >= 20.18): ${e.message}`);
+  }
+}
 
 const MAX_LIST = 8;
 
@@ -115,13 +123,14 @@ function headVersion(site, page) {
   try { return execFileSync('git', ['-C', site, 'show', `HEAD:www/${page}`], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
 }
 
-export function check(site, { changedOnly = false } = {}) {
+export async function check(site, { changedOnly = false } = {}) {
   const cfgFile = path.join(site, 'design', 'consistency.json');
   const warnings = [];
   if (!fs.existsSync(cfgFile)) return { pages: 0, entries: 0, warnings };
   const { shared, ignore, errors } = readConfig(fs.readFileSync(cfgFile, 'utf8'));
   for (const e of errors) warnings.push({ rule: 'consistency-config', file: 'design/consistency.json', line: 0, text: e });
   if (!shared.length) return { pages: 0, entries: 0, warnings };
+  await loadCheerio();
 
   // Nur Seiten der Website selbst (Ordner der Einstiegsseite), keine mitgeladenen fremden Dokumente
   const www = path.join(site, 'www');
@@ -177,10 +186,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url
     console.error('Aufruf: node consistency.mjs <site-dir> [--changed-only]');
     process.exit(2);
   }
-  try {
-    process.stdout.write(JSON.stringify(check(site, { changedOnly: process.argv.includes('--changed-only') })) + '\n');
-  } catch (e) {
-    console.error(e.stack || e.message);
-    process.exit(1);
-  }
+  check(site, { changedOnly: process.argv.includes('--changed-only') })
+    .then((r) => process.stdout.write(JSON.stringify(r) + '\n'))
+    .catch((e) => { console.error(e.message); process.exit(1); });
 }
