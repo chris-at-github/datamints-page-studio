@@ -361,7 +361,8 @@
     '.toast{position:fixed;right:16px;bottom:72px;max-width:440px;pointer-events:auto;background:#1d2330;color:#fff;border-radius:10px;padding:10px 36px 10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.3);display:none;white-space:pre-wrap;font-size:13px}' +
     '.toast.open{display:block}' +
     '.toast.error{background:#991b1b}' +
-    '.toast button{position:absolute;top:6px;right:6px;background:transparent;border:0;color:#fff;padding:2px 6px}' +
+    '.toast > button{position:absolute;top:6px;right:6px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.12);border:0;border-radius:6px;color:#fff;padding:0}' +
+    '.toast > button:hover:not([disabled]),.toast > button:focus-visible{background:rgba(255,255,255,.28);color:#fff}' +
     '.switch{display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer}' +
     '.adv{margin-top:8px;font-size:13px}' +
     '.adv summary{color:#4b5563;cursor:pointer}' +
@@ -461,6 +462,14 @@
     '.dirty{font-size:12px;color:#b45309;align-self:center}' +
     'select:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}' +
     'ul.areas{list-style:none;margin:0;padding:0}' +
+    '.logpop{position:fixed;right:16px;bottom:72px;width:560px;max-width:calc(100vw - 32px);pointer-events:auto;background:#0f172a;color:#e2e8f0;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:none;overflow:hidden}' +
+    '.logpop.open{display:block}' +
+    '.loghead{font-size:12px;font-weight:600;color:#93c5fd;padding:8px 12px;border-bottom:1px solid #1e293b}' +
+    '.logbody{max-height:45vh;overflow:auto;padding:8px 12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}' +
+    '.logline{white-space:pre-wrap;word-break:break-word}' +
+    '.logbody .hint{color:#94a3b8}' +
+    '.ui.sb-open .logpop{right:416px}' +
+    '.ui.sb-design .logpop{right:476px}' +
     'button.queue{background:#2563eb;border-color:#2563eb;color:#fff}' +
     'button.queue:hover:not([disabled]){background:#1d4ed8}' +
     'ul.qlist{list-style:none;margin:0 0 6px;padding:0;max-height:45vh;overflow:auto}' +
@@ -520,7 +529,7 @@
 
   // Hinweis/Toast
   var toastText = el('span');
-  var toastClose = el('button', { type: 'button', 'aria-label': 'Schließen', text: '×' });
+  var toastClose = el('button', { type: 'button', 'aria-label': 'Schließen', title: 'Schließen' }, [icon('x', 14)]);
   var toast = el('div', { class: 'toast', role: 'alert' }, [toastText, toastClose]);
   ui.appendChild(toast);
   var toastTimer = null;
@@ -771,6 +780,9 @@
     clear(statusEl);
     statusEl.className = 'status';
     statusEl.onclick = null;
+    statusEl.removeAttribute('tabindex');
+    statusEl.title = '';
+    if (typeof hideLog === 'function' && logPop && !(job && job.status === 'running')) hideLog(true);
     statusEl.style.cursor = '';
     if (job) {
       var label = TYPE_LABEL[job.type] || job.type;
@@ -784,6 +796,11 @@
       if (job.status === 'review') {
         statusEl.style.cursor = 'pointer';
         statusEl.onclick = function () { openReview(job); };
+      }
+      if (job.status === 'running') {
+        statusEl.setAttribute('tabindex', '0');
+        statusEl.style.cursor = 'help';
+        statusEl.title = 'Überfahren zeigt die laufende Ausgabe';
       }
     } else if (lastFailed) {
       statusEl.classList.add('failed');
@@ -1567,6 +1584,52 @@
         renderStatus();
       });
   }
+
+  // ------------------------------------------------- Laufende Ausgabe (Hover auf den Status)
+
+  var logPop = el('div', { class: 'logpop', role: 'log', 'aria-live': 'polite', 'aria-label': 'Laufende Ausgabe' });
+  var logHead = el('div', { class: 'loghead' });
+  var logBody = el('div', { class: 'logbody' });
+  logPop.appendChild(logHead);
+  logPop.appendChild(logBody);
+  ui.appendChild(logPop);
+  var logTimer = null, logHideTimer = null, logJobId = null;
+  function runningJob() { var j = activeJob(); return j && j.status === 'running' ? j : null; }
+  function loadLog() {
+    if (!logJobId) return;
+    api('GET', '/api/jobs/' + encodeURIComponent(logJobId) + '/log').then(function (d) {
+      var atBottom = logBody.scrollTop + logBody.clientHeight >= logBody.scrollHeight - 8;
+      clear(logBody);
+      var lines = (d && d.lines) || [];
+      if (!lines.length) logBody.appendChild(el('div', { class: 'hint', text: 'Noch keine Ausgabe …' }));
+      lines.forEach(function (l) { logBody.appendChild(el('div', { class: 'logline', text: l })); });
+      if (atBottom) logBody.scrollTop = logBody.scrollHeight;
+    }).catch(function () { /* egal */ });
+  }
+  function showLog() {
+    var j = runningJob();
+    if (!j) return;
+    clearTimeout(logHideTimer);
+    if (logPop.classList.contains('open') && logJobId === j.id) return;
+    logJobId = j.id;
+    logHead.textContent = (TYPE_LABEL[j.type] || j.type) + ' – laufende Ausgabe';
+    clear(logBody);
+    logPop.classList.add('open');
+    loadLog();
+    clearInterval(logTimer);
+    logTimer = setInterval(function () { if (!runningJob()) { hideLog(true); return; } loadLog(); }, 1500);
+  }
+  function hideLog(now) {
+    clearTimeout(logHideTimer);
+    var go = function () { logPop.classList.remove('open'); clearInterval(logTimer); logJobId = null; };
+    if (now) go(); else logHideTimer = setTimeout(go, 250);
+  }
+  statusEl.addEventListener('mouseenter', showLog);
+  statusEl.addEventListener('focus', showLog);
+  statusEl.addEventListener('mouseleave', function () { hideLog(false); });
+  statusEl.addEventListener('blur', function () { hideLog(false); });
+  logPop.addEventListener('mouseenter', function () { clearTimeout(logHideTimer); });
+  logPop.addEventListener('mouseleave', function () { hideLog(false); });
 
   // ------------------------------------------------------------- Queue
 

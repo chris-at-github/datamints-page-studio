@@ -318,6 +318,51 @@ function validateDesign(body) {
   return null;
 }
 
+// Laufende Ausgabe eines Jobs für das Overlay: Skript-Log und Claude-Ereignisse (stream-json), lesbar aufbereitet
+async function tailFile(file, bytes) {
+  let fh;
+  try {
+    fh = await fsp.open(file, 'r');
+    const { size } = await fh.stat();
+    const start = Math.max(0, size - bytes);
+    const buf = Buffer.alloc(size - start);
+    await fh.read(buf, 0, buf.length, start);
+    const text = buf.toString('utf8');
+    return start > 0 ? text.slice(text.indexOf('\n') + 1) : text;
+  } catch { return ''; } finally { await fh?.close(); }
+}
+const short = (s, n = 160) => { s = String(s ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+function toolLine(t) {
+  const i = t.input || {};
+  const rel = (v) => String(v || '').replace(/^.*?\/sites\/[^/]+\/?/, '') || '.';
+  const icon = { Read: '📖', Edit: '✏️', Write: '📝', Grep: '🔎', Glob: '🔎', MultiEdit: '✏️' }[t.name] || '🔧';
+  if (t.name === 'Grep' || t.name === 'Glob') return `${icon} ${t.name} „${short(i.pattern, 80)}“${i.path ? ' in ' + short(rel(i.path), 80) : ''}`;
+  const target = i.file_path || i.path || i.command || '';
+  return `${icon} ${t.name}${target ? ' ' + short(rel(target), 120) : ''}`;
+}
+async function jobLogLines(id) {
+  const lines = [];
+  const claude = await tailFile(path.join(ROOT, 'logs', `claude-${id}.json`), 512 * 1024);
+  for (const raw of claude.split('\n')) {
+    if (!raw.trim()) continue;
+    let ev;
+    try { ev = JSON.parse(raw); } catch { continue; }
+    if (ev.type === 'system' && ev.subtype === 'init') lines.push(`▶ Claude gestartet (${ev.model || 'Modell unbekannt'})`);
+    else if (ev.type === 'assistant') {
+      for (const c of ev.message?.content || []) {
+        if (c.type === 'text' && c.text?.trim()) lines.push('💬 ' + short(c.text, 240));
+        else if (c.type === 'tool_use') lines.push(toolLine(c));
+      }
+    } else if (ev.type === 'user') {
+      for (const c of ev.message?.content || []) if (c.type === 'tool_result' && c.is_error) lines.push('⚠ ' + short(typeof c.content === 'string' ? c.content : JSON.stringify(c.content), 160));
+    } else if (ev.type === 'result') lines.push(`✔ Claude fertig (${ev.num_turns ?? '?'} Runden${ev.total_cost_usd != null ? ', ' + Number(ev.total_cost_usd).toFixed(3) + ' USD' : ''})`);
+  }
+  // Skript-Log ohne Zeitstempel-Rauschen, nur Modio-Meldungen
+  const script = (await tailFile(path.join(ROOT, 'logs', `${id}.log`), 64 * 1024)).split('\n')
+    .filter((l) => /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \[/.test(l)).map((l) => '· ' + short(l.replace(/^\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d) \[[^\]]+\] /, '$1 '), 200));
+  return (lines.length ? [...script.slice(-4), ...lines] : script).slice(-40);
+}
+
 // Job-Parameter einer Annotation (direkt oder aus der Queue)
 function annotationParams(slug, annotation, files) {
   return {
@@ -398,6 +443,9 @@ async function handleApi(req, res, url) {
     return send(res, 202, { job: await createJob('site-new', slug, { url: body.url, slug, urls }) });
   }
 
+  if ((m = p.match(/^\/api\/jobs\/(job-\d{14}-[0-9a-f]{6})\/log$/)) && req.method === 'GET') {
+    return send(res, 200, { lines: await jobLogLines(m[1]) });
+  }
   if ((m = p.match(/^\/api\/jobs\/([^/]+)\/decision$/)) && req.method === 'POST') {
     if (!validJobId(m[1])) return sendError(res, 400, 'Ungültige Job-ID');
     const body = await readBody(req);

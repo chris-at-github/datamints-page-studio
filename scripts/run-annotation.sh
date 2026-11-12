@@ -232,7 +232,7 @@ run_claude() {
     --allowedTools "${CLAUDE_ALLOWED_TOOLS:-Read,Edit,Write,Grep,Glob}"
     --disallowedTools "${CLAUDE_DISALLOWED_TOOLS:-Bash,WebFetch,WebSearch}"
     --permission-mode acceptEdits
-    --output-format json
+    --output-format stream-json --verbose
     --settings "$CLAUDE_SETTINGS"
     --strict-mcp-config
   )
@@ -266,7 +266,8 @@ if (( rc != 0 )) && [[ -n "$SESSION_ID" ]]; then
 fi
 set -e
 
-RESULT_JSON="$(jq -c 'if type=="array" then (map(select(.type=="result")) | last) else . end' "$RESULT_FILE" 2>/dev/null || echo '{}')"
+# stream-json: eine JSON-Zeile je Ereignis (für die Live-Anzeige im Overlay), das Ergebnis ist die letzte "result"-Zeile
+RESULT_JSON="$(jq -cs '[.[] | if type == "array" then .[] else . end | select(.type == "result")] | last // {}' "$RESULT_FILE" 2>/dev/null || echo '{}')"
 [[ -n "$RESULT_JSON" && "$RESULT_JSON" != "null" ]] || RESULT_JSON='{}'
 IS_ERROR="$(jq -r '.is_error // false' <<<"$RESULT_JSON")"
 if (( rc != 0 )) || [[ "$IS_ERROR" == "true" ]]; then
