@@ -139,7 +139,7 @@ function context(site, currentId, count) {
     '<regeln>',
     notes ? neutral(notes) : '(noch keine Regeln)',
     '</regeln>',
-    ...(shared.length ? ['<gleiche-bereiche hinweis="auf allen betroffenen Seiten identisch ändern">', shared.join('\n').replace(/</g, '‹'), '</gleiche-bereiche>'] : []),
+    ...(shared.length ? ['<gleiche-bereiche hinweis="nur auf der Seite der Annotation ändern, Modio überträgt sie automatisch auf alle Seiten">', shared.join('\n').replace(/</g, '‹'), '</gleiche-bereiche>'] : []),
     '</vorgaben>',
   ].join('\n');
 

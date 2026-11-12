@@ -9,9 +9,13 @@
 //       alle Bereiche (bzw. nur den neu aufgenommenen) von der Quellseite auf alle anderen Seiten
 //   node areas.mjs after-add <site-dir> <seite>...
 //       nach pages-add.sh: neue Seiten erhalten Bereiche, bei denen sich die übrigen Seiten einig sind
+//   node areas.mjs after-step <site-dir> [annotierte-seite]
+//       nach einem Schritt (commit-step.sh, vor dem Commit): Bereiche, die der Schritt auf einer Seite geändert hat,
+//       auf alle anderen Seiten übertragen. Haben mehrere Seiten den Bereich unterschiedlich geändert: nur Hinweis.
 // Ausgabe: eine JSON-Zeile
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { readConfig, normalize, resolveLink, sitePages, inScope, loadCheerio, areaError } from './consistency.mjs';
 
 let cheerio;
@@ -198,6 +202,66 @@ export async function afterAdd(site, newPagesArg) {
   return result;
 }
 
+// Ungespeicherte Änderungen an HTML-Seiten (gegenüber HEAD), Pfade relativ zu www/
+function changedPages(site) {
+  const out = execFileSync('git', ['-C', site, 'status', '--porcelain', '-z', '--untracked-files=all', '--', 'www'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const parts = out.split('\0');
+  const files = [];
+  for (let i = 0; i < parts.length; i++) {
+    const e = parts[i];
+    if (!e) continue;
+    files.push(e.slice(3));
+    if (e[0] === 'R' || e[0] === 'C') i++;
+  }
+  return files.filter((f) => f.startsWith('www/') && /\.html?(@.*)?$/i.test(f)).map((f) => f.slice(4));
+}
+
+function headHtml(site, page) {
+  try {
+    const buf = execFileSync('git', ['-C', site, 'show', `HEAD:www/${page}`], { maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    const utf8 = buf.toString('utf8');
+    return Buffer.from(utf8, 'utf8').equals(buf) ? utf8 : buf.toString('latin1');
+  } catch { return null; }
+}
+
+export async function afterStep(site, annotatedPageArg) {
+  const cfg = loadConfig(site);
+  const result = { changed: [], skipped: [], unclear: [], areas: [] };
+  if (!cfg.shared.length || cfg.errors.length) return result;
+  const changed = changedPages(site);
+  if (!changed.length) return result;
+  cheerio = await loadCheerio();
+  const annotated = String(annotatedPageArg || '').replace(/^\/+/, '');
+  const all = sitePages(site);
+  const versionOf = (html, a, p) => {
+    if (html === null) return null;
+    const $ = cheerio.load(html);
+    let n;
+    try { n = $(a.selector).first(); } catch { return null; }
+    return n && n.length ? normalize($, n[0], cfg.ignore, p) : null;
+  };
+  for (const a of cfg.shared) {
+    // Seiten, auf denen der Schritt diesen Bereich verändert hat
+    const sources = new Map();
+    for (const p of changed) {
+      if (!all.includes(p) || !inScope(a, p)) continue;
+      const now = versionOf(readHtml(path.join(site, 'www', p)).text, a, p);
+      if (now === null) continue;
+      if (now !== versionOf(headHtml(site, p), a, p)) sources.set(p, now);
+    }
+    if (!sources.size) continue;
+    if (new Set(sources.values()).size > 1) { result.unclear.push(a.name); continue; }
+    const src = sources.has(annotated) ? annotated : [...sources.keys()][0];
+    const before = result.changed.length;
+    for (const p of all) if (p !== src && inScope(a, p)) applyTo(site, src, p, [a], cfg.ignore, result);
+    if (result.changed.length > before) result.areas.push(a.name);
+  }
+  const byPage = new Map();
+  for (const c of result.changed) byPage.set(c.page, [...(byPage.get(c.page) || []), ...c.areas]);
+  result.changed = [...byPage].map(([page, areas]) => ({ page, areas }));
+  return result;
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
   const [cmd, site, ...rest] = process.argv.slice(2);
   const run = async () => {
@@ -209,6 +273,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url
       return sync(site, rest[0], add);
     }
     if (cmd === 'after-add') return afterAdd(site, rest);
+    if (cmd === 'after-step') return afterStep(site, rest[0]);
     throw Object.assign(new Error('Aufruf: node areas.mjs sync|after-add <site-dir> …'), { code: 2 });
   };
   run()

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prüft und committet die Änderungen eines Schritts als Snapshot.
-# Ablauf: check-diff.sh (block/warn) + check-consistency.sh (warn) -> tokens-build.sh -> Commit. Hinweise (warn) blockieren nicht,
+# Ablauf: check-diff.sh (block/warn) -> gleiche Bereiche auf alle Seiten übertragen (areas.mjs after-step)
+#         -> check-consistency.sh (warn) -> tokens-build.sh -> Commit. Hinweise (warn) blockieren nicht,
 # sie landen in der Ausgabe und in annotations/<id>.json (.check.warnings).
 # Aufruf: commit-step.sh <slug> <annotation-id> [--accept]
 # Exit 0: committed/nochange, Exit 3: Prüfung nötig
@@ -26,13 +27,6 @@ if [[ -z "$CHANGES" ]]; then
   exit 0
 fi
 
-# Seitenübergreifende Konsistenz (nur Hinweise, Fehler der Prüfung blockieren nicht)
-CONS_WARN="[]"
-if [[ -f "$SITE/design/consistency.json" ]]; then
-  CONS="$("$SCRIPTS_DIR/check-consistency.sh" "$SLUG" --changed-only 2>/dev/null)" && CONS_WARN="$(jq -c '.warnings // []' <<<"$CONS")" \
-    || log "$ID: Konsistenzprüfung fehlgeschlagen, wird übersprungen"
-fi
-
 WARNINGS="[]"
 if [[ "$ACCEPT" != "--accept" ]]; then
   set +e
@@ -42,8 +36,8 @@ if [[ "$ACCEPT" != "--accept" ]]; then
   if (( rc == 3 )); then
     DIFF="$(git_site diff --no-color --no-ext-diff --stat --patch -- . | head -c 300000)"
     log "$ID: Prüfung nötig"
-    emit_json "$(jq -c --arg slug "$SLUG" --arg id "$ID" --arg diff "$DIFF" --arg summary "$SUMMARY" --argjson cons "$CONS_WARN" \
-      '{status:"review", slug:$slug, annotationId:$id, summary:$summary, hits:.hits, warnings:((.warnings // []) + $cons), files:.files, diff:$diff}' <<<"$CHECK")"
+    emit_json "$(jq -c --arg slug "$SLUG" --arg id "$ID" --arg diff "$DIFF" --arg summary "$SUMMARY" \
+      '{status:"review", slug:$slug, annotationId:$id, summary:$summary, hits:.hits, warnings:(.warnings // []), files:.files, diff:$diff}' <<<"$CHECK")"
     exit 3
   elif (( rc != 0 )); then
     die "check-diff.sh fehlgeschlagen"
@@ -55,7 +49,26 @@ else
   WARNINGS="$(jq -c '.warnings // []' <<<"$CHECK" 2>/dev/null || echo '[]')"
 fi
 
-WARNINGS="$(jq -c --argjson cons "$CONS_WARN" '. + $cons' <<<"$WARNINGS")"
+# Gleiche Bereiche: was der Schritt auf einer Seite an Header/Footer usw. geändert hat, auf alle Seiten übertragen
+SYNCED='{"changed":[],"skipped":[],"unclear":[],"areas":[]}'
+if [[ -f "$SITE/design/consistency.json" ]]; then
+  PAGE=""; [[ -f "$ANN" ]] && PAGE="$(jq -r '.page // ""' "$ANN")"
+  if S="$(node "$LIB_DIR/areas.mjs" after-step "$SITE" "$PAGE" 2>>"$LOG_DIR/commit-step.log")" && jq -e '.changed' >/dev/null 2>&1 <<<"$S"; then
+    SYNCED="$S"
+    (( $(jq '.changed | length' <<<"$SYNCED") )) && log "$ID: $(jq -r '.areas | join(", ")' <<<"$SYNCED") auf $(jq '.changed | length' <<<"$SYNCED") weitere Seite(n) übertragen"
+  else
+    log "$ID: Übertragen gleicher Bereiche fehlgeschlagen, wird übersprungen"
+  fi
+fi
+UNCLEAR_WARN="$(jq -c '[.unclear[] | {rule:"areas-unclear", file:"design/consistency.json", line:0, text:"\(.) wurde auf mehreren Seiten unterschiedlich geändert und deshalb nicht automatisch übertragen. Im Design-Panel angleichen."}]' <<<"$SYNCED")"
+
+# Seitenübergreifende Konsistenz (nur Hinweise, nach dem Übertragen; Fehler der Prüfung blockieren nicht)
+CONS_WARN="[]"
+if [[ -f "$SITE/design/consistency.json" ]]; then
+  CONS="$("$SCRIPTS_DIR/check-consistency.sh" "$SLUG" --changed-only 2>/dev/null)" && CONS_WARN="$(jq -c '.warnings // []' <<<"$CONS")" \
+    || log "$ID: Konsistenzprüfung fehlgeschlagen, wird übersprungen"
+fi
+WARNINGS="$(jq -c --argjson cons "$CONS_WARN" --argjson u "$UNCLEAR_WARN" '. + $u + $cons' <<<"$WARNINGS")"
 
 # tokens.css aus tokens.json erzeugen (nach der Prüfung, damit Handänderungen erkannt werden)
 if [[ -f "$SITE/design/tokens.json" ]]; then
@@ -77,6 +90,7 @@ PROMPT="Manuelle Änderung"
 {
   printf '[%s] %s\n' "$ID" "$PROMPT"
   [[ "$ACCEPT" == "--accept" ]] && printf '\nNach manueller Prüfung übernommen.\n'
+  jq -r 'if (.changed | length) > 0 then "\nGleiche Bereiche übertragen:\n" + ([.changed[] | "\(.page): \(.areas | join(", "))"] | join("\n")) else empty end' <<<"$SYNCED"
   true
 } >"$MSG"
 
@@ -86,4 +100,4 @@ COMMIT="$(git_site rev-parse HEAD)"
 log "$ID: Snapshot ${COMMIT:0:10}"
 # Nach Übernahme passt die Session dieses Schritts zum neuen Stand (für „Nachbessern“)
 [[ "$(state_get sessionAnnotation)" == "$ID" ]] && state_set sessionHead "\"$COMMIT\""
-emit status committed slug "$SLUG" annotationId "$ID" commit "$COMMIT" summary "$SUMMARY" accepted "json:$([[ "$ACCEPT" == "--accept" ]] && echo true || echo false)" warnings "json:$WARNINGS"
+emit status committed slug "$SLUG" annotationId "$ID" commit "$COMMIT" summary "$SUMMARY" accepted "json:$([[ "$ACCEPT" == "--accept" ]] && echo true || echo false)" warnings "json:$WARNINGS" synced "json:$SYNCED"

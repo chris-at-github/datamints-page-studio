@@ -69,6 +69,7 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `token-new` | warn | neuer, nicht gesperrter Token |
 | `consistency-changed` | block | `design/consistency.json` geändert ohne `remember` |
 | `consistency` | warn | Bereich aus `consistency.json` weicht auf einzelnen Seiten ab oder fehlt (`check-consistency.sh`, nur durch den Schritt neu entstandene Abweichungen) |
+| `areas-unclear` | warn | Gleicher Bereich wurde im Schritt auf mehreren Seiten unterschiedlich geändert und deshalb nicht übertragen |
 | `consistency-config` | warn | `consistency.json` ungültig oder Selektor nicht auswertbar |
 
 `design/consistency.json`:

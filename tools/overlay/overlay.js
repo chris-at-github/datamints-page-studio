@@ -554,6 +554,7 @@
   var dPropose = iconButton('sparkles', 'Aus Abzug ableiten', { title: 'Claude schlägt Tokens aus den häufigsten Werten im Abzug vor (ungesperrt)' });
   var dPickBox = el('div');
   var dAreas = el('ul', { class: 'areas' });
+  var dAreaPick = iconButton('click', 'Bereich auswählen', { title: 'Element auf der Seite anklicken (Pfeil hoch wählt das Elternelement); es wird als gleicher Bereich gemerkt und auf alle Seiten übertragen', 'aria-pressed': 'false' });
   var dAreasSync = el('button', { type: 'button', text: 'Bereiche dieser Seite auf alle Seiten übernehmen', title: 'Kopiert alle gleichen Bereiche von der aktuell geöffneten Seite auf alle anderen Seiten (ohne Claude)' });
   var dScan = el('div');
   var dNotes = el('textarea', { id: 'modio-notes', class: 'notes', spellcheck: 'true' });
@@ -585,8 +586,8 @@
       el('section', { class: 'dsec', 'aria-labelledby': 'modio-da' }, [
         el('h3', { id: 'modio-da', text: 'Gleiche Bereiche' }),
         dAreas,
-        el('div', { class: 'row' }, [dAreasSync]),
-        el('div', { class: 'hint', text: 'Bereiche, die auf allen Seiten gleich sein müssen. Neue Bereiche: Element auswählen und im Annotationsdialog „Auf allen Seiten übernehmen“ wählen.' }),
+        el('div', { class: 'row' }, [dAreaPick, dAreasSync]),
+        el('div', { class: 'hint', text: 'Bereiche, die auf allen Seiten gleich sein müssen. Ändert ein Schritt einen davon, überträgt Modio die Änderung automatisch auf alle Seiten.' }),
       ]),
       el('section', { class: 'dsec' }, [
         el('h3', {}, [el('label', { for: 'modio-notes', text: 'Regeln (notes.md)' })]),
@@ -607,7 +608,7 @@
   // ------------------------------------------------------------ Zustand
 
   var selecting = false;
-  var selectMode = 'annotate'; // 'annotate' öffnet den Prompt, 'token' liest Werte für das Design-Panel
+  var selectMode = 'annotate'; // 'annotate' öffnet den Prompt, 'token' liest Werte, 'area' nimmt einen gleichen Bereich auf
   var hovered = null;
   var selected = null;
   var childStack = [];
@@ -782,13 +783,14 @@
     var mode = selectMode;
     stopSelecting();
     if (mode === 'token') showPick(target);
+    else if (mode === 'area') addArea(target, function (msg) { dErr.textContent = msg; });
     else openPrompt(target);
   }
 
   var BLOCK_EVENTS = ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'auxclick', 'touchstart', 'touchend', 'submit'];
 
   function startSelecting(mode) {
-    selectMode = mode === 'token' ? 'token' : 'annotate';
+    selectMode = mode === 'token' || mode === 'area' ? mode : 'annotate';
     if (selectMode === 'annotate') {
       if (isBusy()) {
         showToast('Es läuft noch ein Schritt. Neue Annotationen sind erst danach möglich.', false);
@@ -799,13 +801,14 @@
       btnSelect.setAttribute('aria-pressed', 'true');
       btnSelect.modioLabel.textContent = 'Auswahl beenden';
     } else {
-      dPick.classList.add('on');
-      dPick.setAttribute('aria-pressed', 'true');
-      dPick.modioLabel.textContent = 'Element anklicken … (Esc)';
+      var pb = selectMode === 'token' ? dPick : dAreaPick;
+      pb.classList.add('on');
+      pb.setAttribute('aria-pressed', 'true');
+      pb.modioLabel.textContent = selectMode === 'token' ? 'Element anklicken … (Esc)' : 'Bereich anklicken, ↑ = Elternelement (Esc)';
     }
     selecting = true;
     hovered = null;
-    hl.classList.toggle('pick', selectMode === 'token');
+    hl.classList.toggle('pick', selectMode !== 'annotate');
     document.documentElement.style.cursor = 'crosshair';
   }
 
@@ -819,6 +822,9 @@
     dPick.classList.remove('on');
     dPick.setAttribute('aria-pressed', 'false');
     dPick.modioLabel.textContent = 'Aus Element übernehmen';
+    dAreaPick.classList.remove('on');
+    dAreaPick.setAttribute('aria-pressed', 'false');
+    dAreaPick.modioLabel.textContent = 'Bereich auswählen';
     hl.classList.remove('pick');
     selectMode = 'annotate';
     document.documentElement.style.cursor = '';
@@ -1183,27 +1189,35 @@
     return crumbLabel(node);
   }
 
-  function syncSelected() {
-    if (!selected || followupJob) return;
-    if (isBusy()) { pErr.textContent = 'Es läuft noch ein Schritt. Bitte warten.'; return; }
-    var selector = selectorFor(selected);
-    var name = window.prompt('„' + selector + '“ wird als gleicher Bereich gemerkt und von dieser Seite auf alle anderen Seiten kopiert.\n\nName des Bereichs:', areaName(selected));
+  // Element als gleichen Bereich aufnehmen und von dieser Seite auf alle Seiten übertragen
+  function addArea(node, onError, onSent) {
+    if (isBusy()) { onError('Es läuft noch ein Schritt. Bitte warten.'); return; }
+    var selector = selectorFor(node);
+    placeHighlight(node, true);
+    var name = window.prompt('„' + selector + '“ wird als gleicher Bereich gemerkt und von dieser Seite auf alle anderen Seiten kopiert.\n\nName des Bereichs:', areaName(node));
+    refreshHighlight();
     if (name === null) return;
     name = name.trim();
-    if (!name) { pErr.textContent = 'Bitte einen Namen angeben.'; return; }
-    pSync.disabled = true;
-    pErr.textContent = '';
+    if (!name) { onError('Bitte einen Namen angeben.'); return; }
+    onError('');
     api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/areas/sync', { page: currentPage(), add: { name: name, selector: selector } })
       .then(function (data) {
         if (data && data.job) trackJob(data.job);
-        resetPrompt();
-        closePrompt();
+        if (designPanel.classList.contains('open')) {
+          try { sessionStorage.setItem(DESIGN_OPEN_KEY, '1'); } catch (e) { /* ignorieren */ }
+        }
+        if (onSent) onSent();
         showToast('„' + name + '“ wird auf alle Seiten übernommen …', false);
       })
       .catch(function (err) {
-        pErr.textContent = err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message;
+        onError(err.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + err.message);
       })
       .then(renderStatus);
+  }
+
+  function syncSelected() {
+    if (!selected || followupJob) return;
+    addArea(selected, function (msg) { pErr.textContent = msg; }, function () { resetPrompt(); closePrompt(); });
   }
   pCancel.addEventListener('click', function () {
     closePrompt();
@@ -1302,6 +1316,7 @@
     if (job.type === 'annotate') {
       msg = r.status === 'nochange' ? 'Keine Änderung (' + (r.annotationId || '') + ').' : 'Fertig: ' + (r.annotationId || '');
       if (r.summary) msg += '\n' + truncate(r.summary, 600);
+      if (r.synced && r.synced.changed && r.synced.changed.length) msg += '\n\n' + (r.synced.areas || []).join(', ') + ' auf ' + r.synced.changed.length + ' weitere Seite(n) übertragen.';
       if (r.warnings && r.warnings.length) {
         msg += '\n\nHinweise der Prüfung:\n' + r.warnings.slice(0, 5).map(function (w) { return '– ' + truncate(w.text || w.rule, 160); }).join('\n');
       }
@@ -1671,6 +1686,7 @@
     dPropose.disabled = busy || !design;
     var hasAreas = !!(design && design.consistency && (design.consistency.shared || []).length);
     dAreasSync.disabled = busy || !hasAreas;
+    dAreaPick.disabled = busy;
   }
 
   function tokenRow(key) {
@@ -1813,6 +1829,10 @@
       .then(renderDesignButtons);
   }
   dAreasSync.addEventListener('click', syncAreas);
+  dAreaPick.addEventListener('click', function () {
+    if (selecting) stopSelecting();
+    else startSelecting('area');
+  });
 
   function renderDesign() {
     clear(dInfo);
@@ -1985,7 +2005,7 @@
 
   function closeDesign() {
     if (!designPanel.classList.contains('open')) return;
-    if (selecting && selectMode === 'token') stopSelecting();
+    if (selecting && selectMode !== 'annotate') stopSelecting();
     designPanel.classList.remove('open');
     ui.classList.remove('sb-design');
     if (!historyPanel.classList.contains('open')) ui.classList.remove('sb-open');

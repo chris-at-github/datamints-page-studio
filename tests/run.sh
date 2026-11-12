@@ -154,7 +154,12 @@ check "Ausgangsstand ohne Abweichung, nur eigene Seiten" '[[ "$(jq ".warnings | 
 ann A-014
 sed -i '0,/<header class="site-header">/s//<header class="site-header"><span>Neu<\/span>/' "$LP"
 set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-014 2>/dev/null)"; rc=$?; set -e
-check "Abweichender Header als Hinweis, Commit trotzdem" '(( rc == 0 )) && jq -e ".warnings | map(select(.rule == \"consistency\")) | .[0].text | test(\"Header ist nicht auf allen Seiten gleich.*kontakt\")" <<<"$OUT" >/dev/null'
+check "Header-Änderung auf einer Seite automatisch auf die andere übertragen" '(( rc == 0 )) && jq -e ".synced.changed | length == 1" <<<"$OUT" >/dev/null && grep -q "<span>Neu</span>" "$P" && ! jq -e ".warnings | map(.rule) | index(\"consistency\")" <<<"$OUT" >/dev/null'
+# Abweichung von Hand (ohne commit-step), damit die folgenden Prüfungen eine uneinheitliche Ausgangslage haben
+sed -i 's#<span>Neu</span>#<span>Neu</span><i>Abw</i>#' "$LP"
+git -C "$S" commit -qam "Test: Header nur auf kontakt.html abweichend"
+OUT="$(./scripts/check-consistency.sh "$SLUG" 2>/dev/null)"
+check "Abweichung gemeldet" 'jq -e ".warnings | map(select(.rule == \"consistency\")) | .[0].text | test(\"Header ist nicht auf allen Seiten gleich\")" <<<"$OUT" >/dev/null'
 ann A-015
 printf '<!-- x -->\n' >>"$LP"
 set +e; OUT="$(./scripts/commit-step.sh "$SLUG" A-015 2>/dev/null)"; rc=$?; set -e
@@ -198,13 +203,23 @@ printf 'http://127.0.0.1:%s/team.html\n' "$PORT" >"$PA"
 OUT="$(./scripts/pages-add.sh "$SLUG" "$PA" 2>/dev/null)"; rm -f "$PA"
 TP="$(dirname "$P")/team.html"
 check "Neue Seite übernimmt einheitlichen Header automatisch" 'jq -e ".areas.changed[0].areas | index(\"Header\")" <<<"$OUT" >/dev/null && grep -q "<span>Neu</span>" "$TP" && grep -q "© Testfirma" "$TP"'
+ann A-017 "{\"page\":\"/$(basename "$(dirname "$P")")/index.html\"}"
+sed -i 's#<span>Neu</span>#<span>Neu</span><em>Schritt</em>#' "$P"
+OUT="$(./scripts/commit-step.sh "$SLUG" A-017 2>/dev/null)"
+check "Schritt am Header wird automatisch auf alle Seiten übertragen" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e ".synced.changed | length == 3" <<<"$OUT" >/dev/null && grep -q "<em>Schritt</em>" "$LS" && grep -q "<em>Schritt</em>" "$TP" && grep -q "<a href=\"../index.html\" class=\"active\">Start</a>" "$LS"'
+check "Übertragung im selben Commit, keine Konsistenzhinweise" '[[ -z "$(git -C "$S" status --porcelain)" ]] && git -C "$S" show --stat HEAD | grep -q "team.html" && ! jq -e ".warnings | map(.rule) | index(\"consistency\")" <<<"$OUT" >/dev/null'
+ann A-018 "{\"page\":\"/$(basename "$(dirname "$P")")/index.html\"}"
+sed -i 's#<em>Schritt</em>#<em>Eins</em>#' "$P"
+sed -i 's#<em>Schritt</em>#<em>Zwei</em>#' "$LP"
+OUT="$(./scripts/commit-step.sh "$SLUG" A-018 2>/dev/null)"
+check "Unterschiedlich geändert: nicht übertragen, Hinweis" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e ".warnings | map(.rule) | index(\"areas-unclear\")" <<<"$OUT" >/dev/null && grep -q "<em>Schritt</em>" "$TP"'
 
 echo "Kontext (context.sh)"
 OUT="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null)"
 CTX="$(jq -r .context <<<"$OUT")"
 check "Vorgaben mit gesperrtem Token" 'grep -q "<vorgaben" <<<"$CTX" && grep -q "color.primary = #0B5FA5 → var(--modio-color-primary) \[gesperrt\]" <<<"$CTX"'
 check "Regeln eingebettet" 'grep -q "Du-Ansprache" <<<"$CTX"'
-check "Bisherige Schritte" 'grep -q "^A-001 | Prompt:" <<<"$CTX" && grep -q "^A-015 | Prompt:" <<<"$CTX"'
+check "Bisherige Schritte" 'grep -q "^A-015 | Prompt:" <<<"$CTX" && grep -q "^A-018 | Prompt:" <<<"$CTX"'
 HEAD_A013="$(git -C "$S" rev-parse HEAD)"
 ./scripts/rollback.sh "$SLUG" A-001 >/dev/null 2>&1
 CTX="$(./scripts/context.sh "$SLUG" A-020 2>/dev/null | jq -r .context)"
