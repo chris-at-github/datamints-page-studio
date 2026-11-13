@@ -456,7 +456,7 @@
     '.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}' +
     '.chips button{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:2px 7px;border-radius:10px;display:inline-flex;align-items:center;gap:4px}' +
     '.chips-label{font-size:12px;color:#6b7280;margin-top:8px}' +
-    '.pick{border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;margin-top:8px;background:#ecfdf5}' +
+    '.pickbox{border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;margin-top:8px;background:#ecfdf5}' +
     '.pick-head{display:flex;align-items:center;gap:6px;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#065f46;margin-bottom:4px;word-break:break-all}' +
     '.pick-row{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0}' +
     '.pick-row .lbl2{width:92px;flex:none;color:#374151}' +
@@ -2569,7 +2569,7 @@
     var items = pickValues(node);
     var close = iconButton('x', 'Auswahl schließen', { class: 'ghost' }, true);
     close.addEventListener('click', function () { clear(dPickBox); });
-    var box = el('div', { class: 'pick', role: 'group', 'aria-label': 'Werte des Elements' }, [
+    var box = el('div', { class: 'pickbox', role: 'group', 'aria-label': 'Werte des Elements' }, [
       el('div', { class: 'pick-head' }, [icon('pipette', 14), el('span', { class: 'spacer', text: describe(node) }), close]),
     ]);
     if (!items.length) box.appendChild(el('div', { class: 'hint', text: 'Keine übernehmbaren Werte gefunden.' }));
