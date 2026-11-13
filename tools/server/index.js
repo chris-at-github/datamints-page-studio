@@ -155,7 +155,7 @@ async function createJob(type, slug, params, id = newJobId()) {
 function injectHtml(buf, slug, opts = {}) {
   const { layered = false, preview = null } = opts;
   const cfg = JSON.stringify({ slug, token: TOKEN, base: `/s/${slug}`, imageMaxCount: IMAGE_MAX_COUNT, imageMaxMb: IMAGE_MAX_MB,
-    preview: preview ? { draft: preview.draft, version: preview.version } : null })
+    preview: preview ? { draft: preview.draft, version: preview.version, name: preview.name } : null })
     .replace(/</g, '\\u003c');
   const b = `/s/${slug}`;
   let head;
@@ -208,7 +208,7 @@ async function readDraft(slug, id) {
       befund: befundText === null ? [] : validateBefund(befundText).befund, platzhalter: v.platzhalter || 0 };
   }));
   return { id: d.id, page: d.page, selector: d.selector, prompt: d.prompt, created: d.created, status: draftStatus(slug, d),
-    appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, versions };
+    appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, revises: d.revises || null, versions };
 }
 
 async function listDrafts(slug) {
@@ -618,6 +618,16 @@ async function handleApi(req, res, url) {
     return send(res, 200, { jobs: [...finished, ...active].map(slimJob) });
   }
 
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/drafts\/(D-\d{3,})\/versions\/(\d{1,4})$/)) && req.method === 'GET') {
+    // Markup einer Version für das Live-Umschalten in der Vorschau (geprüft wie die Vorschau selbst)
+    const [, slug, id, vs] = m;
+    if (!validSlug(slug) || !siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    const dir = siteDir(slug);
+    const v = await loadVersion(dir, path.join(dir, 'drafts', id), Number(vs)).catch(() => null);
+    if (!v || !v.html) return sendError(res, 404, 'Version nicht gefunden');
+    if (v.errors.length) return sendError(res, 409, `Version ungültig: ${v.errors.join('; ')}`);
+    return send(res, 200, { version: Number(vs), name: v.name, html: v.html });
+  }
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/drafts\/(D-\d{3,})(?:\/(versions|apply|discard))?$/))) {
     const [, slug, id, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');

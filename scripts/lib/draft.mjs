@@ -243,6 +243,8 @@ async function main() {
     out({ error: 'Aufruf: node draft.mjs validate|apply <site-dir> <draft-dir> <version> [seite selektor]' }, 2);
   }
   const v = await loadVersion(siteDir, draftDir, version, { requireBefund: cmd === 'validate' });
+  const expect = process.env.DRAFT_EXPECT_NAME || '';
+  if (cmd === 'validate' && expect && v.name !== expect) v.errors.push(`Überarbeitung: Name muss "${expect}" bleiben (meta.json, Klasse mx-${expect}, @scope (.mx-${expect}))`);
   if (cmd === 'validate') out({ name: v.name, title: v.meta.title || '', bausteine: v.meta.bausteine || [], befund: v.befund, platzhalter: v.platzhalter, errors: v.errors, warnings: v.warnings }, v.errors.length ? 3 : 0);
 
   if (v.errors.length) out({ error: `Komponente ungültig: ${v.errors.join('; ')}`, errors: v.errors }, 3);

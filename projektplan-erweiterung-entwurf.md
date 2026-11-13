@@ -131,3 +131,11 @@ Damit Entwürfe so durchdacht werden wie im Chat:
 - **C – Platzhalter:** Funktionen, die laut Hintergrund existieren, aber im Ausgangsmaterial fehlen, darf Claude ergänzen. Sie sind mit `data-mx-platzhalter` gekennzeichnet, berechenbare Werte werden ausgerechnet, Bedienelemente sind `<button type="button">` ohne Ziel. Das Vorschau-Band hat „Platzhalter zeigen“. Beim Übernehmen stehen die Platzhalter in der Zusammenfassung und im Report.
 - **D – Textkorrekturen:** Texte, die gegen `<regeln>` verstoßen (Ansprache, Ton, Bezeichnungen, Schreibweisen), korrigiert Claude in Entwürfen und Annotationen und nennt die Korrekturen.
 - **B – Screenshots und Selbstprüfung:** zurückgestellt.
+
+## 12. Ergänzung: Bedienung und Überarbeitung (13.11.2026)
+
+- **Panel behält den Zustand:** Scrollposition, Fokus, Text in „Nachbessern“ und Hinweise bleiben erhalten, wenn Befundpunkte oder Bausteine umgeschaltet werden.
+- **Live-Umschalten in der Vorschau:** Versionen und „Aktuell“ wechseln ohne Neuladen (im Band, in den Versions-Reitern, Taste V). Das Markup kommt über `GET …/drafts/<id>/versions/<n>`, das CSS über `__draft.css`, und die URL wird mitgeführt.
+- **Bausteine live:** Baustein-Elemente tragen `data-mx-baustein`, `meta.json` nennt `klassen.neu` und `klassen.bestand`. Das Overlay tauscht nur die Klassen, das CSS für „neu“ liegt immer vor. Endgültig wird die Wahl erst mit „Neue Version“. Ältere Versionen ohne `klassen` sind nicht live umschaltbar (Hinweis im Panel).
+- **Hinweise zu Elementen:** „Element im Entwurf wählen“ (nur innerhalb der Komponente, ↑ = Elternelement) legt einen Hinweis mit Selektor relativ zur Komponente an. Beschreibungen gehen gesammelt in die nächste Version.
+- **Überarbeitung übernommener Komponenten:** Ein Entwurf auf einer Komponente behält deren Namen, bekommt das bisherige CSS als Material und ersetzt beim Übernehmen `components/mx-<name>.css`.

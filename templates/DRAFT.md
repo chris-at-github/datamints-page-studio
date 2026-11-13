@@ -18,9 +18,9 @@ Schreibe in den Versionsordner, den der Auftrag nennt (z. B. `v1/`), `befund.jso
 
 1. `component.html`: genau ein Wurzelelement mit der Klasse `mx-<name>`, darunter das vollständige Markup. Keine `<style>`-, `<script>`-, `<link>`- oder `<meta>`-Tags, keine Inline-Event-Handler, keine iframes.
 2. `component.css`: alle Styles in `@scope (.mx-<name>) { … }`. Innen kurze Selektoren (`:scope`, `h2`, `.card`, `.card__title`). `@media`, `@container` und `@supports` sind erlaubt, wenn sie nur `@scope (.mx-<name>)` enthalten. Keyframes heißen `mx-<name>-…`. Kein `@import`, kein `@layer`, kein `!important`.
-3. `meta.json`: `{"name": "<name>", "title": "<kurze deutsche Bezeichnung>", "bausteine": [{"key": "…", "label": "…", "source": "neu"|"bestand"}]}`. In `bausteine` stehen die gestalterischen Bausteine der Komponente (z. B. Layout, Überschrift, Button primär, Karte, Bild), jeweils mit der Angabe, ob sie neu gestaltet sind oder aus dem Bestand stammen.
+3. `meta.json`: `{"name": "<name>", "title": "<kurze deutsche Bezeichnung>", "bausteine": [{"key": "…", "label": "…", "source": "neu"|"bestand", "klassen": {"neu": "…", "bestand": "…"}}]}`. In `bausteine` stehen die gestalterischen Bausteine der Komponente (z. B. Überschrift, Button primär, Preis, Karte), jeweils mit der Angabe, ob sie neu gestaltet sind oder aus dem Bestand stammen. Zu `klassen` siehe „Bausteine aus dem Bestand“.
 
-`<name>`: kurz und sprechend, nur a-z, 0-9 und Bindestrich (z. B. `teaser`, `leistungen-grid`). Er darf keinem Namen aus der Liste vorhandener Komponenten entsprechen. Bei einer neuen Version bleibt der Name gleich.
+`<name>`: kurz und sprechend, nur a-z, 0-9 und Bindestrich (z. B. `teaser`, `leistungen-grid`). Er darf keinem Namen aus der Liste vorhandener Komponenten entsprechen. Bei einer neuen Version bleibt der Name gleich. Bei einer Überarbeitung einer bestehenden Komponente (der Auftrag sagt es) behältst du deren Namen; `bestand-komponente.css` ist dann das bisherige CSS.
 
 ## Gestaltung
 - Maßstab sind die Gestaltungsleitlinien (unten angehängt): moderner, Weiterentwicklung, Designkonzept bleibt erkennbar, kein KI-Look, Rundungen und Schatten sparsam, reines CSS mit Custom Properties, Tokens, kleine Bildschirme.
@@ -41,6 +41,7 @@ Schreibe in den Versionsordner, den der Auftrag nennt (z. B. `v1/`), `befund.jso
 - `bausteine.json` enthält gemessene Bausteine der Seite (z. B. Buttons, Überschriften) mit Klassen und Styles. Sie zeigen dir den Charakter der Website.
 - Verlangt der Auftrag einen Baustein „aus dem Bestand“ oder „wie bisher“, verwende genau dessen Klassen im Markup (z. B. `<a class="btn btn-primary">`) und schreibe dafür **kein** eigenes CSS. In `meta.json` steht er dann mit `"source": "bestand"`.
 - Sonst gestaltest du die Bausteine als Weiterentwicklung neu, mit eigenen Klassen innerhalb der Komponente (sie greifen nur innerhalb von `@scope`).
+- **Umschaltbar machen:** Jedes Element eines Bausteins trägt `data-mx-baustein="<key>"`. In `meta.json` steht je Baustein `klassen.neu` (die eigene Klasse, z. B. `card__btn`) und, falls es in `bausteine.json` ein passendes Gegenstück gibt, `klassen.bestand` (dessen Klassen, z. B. `btn btn-primary`). Das Markup trägt die Klassen der gewählten Quelle. Schreibe das CSS für `klassen.neu` **immer**, auch wenn der Baustein gerade aus dem Bestand kommt, und sprich Baustein-Elemente im CSS nur über diese Klasse an, nie über reine Element-Selektoren. So kann der Nutzer in der Vorschau zwischen „neu“ und „wie bisher“ umschalten, indem nur die Klassen getauscht werden.
 
 ## Arbeitsweise
 - Lies zuerst `source.html`, `bausteine.json` und die Referenzbilder. Schreibe dann `befund.json`, danach die Komponente.

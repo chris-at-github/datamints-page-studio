@@ -19,15 +19,17 @@ if (MODE === 'before') {
   check('Vorschau: Element durch Komponente ersetzt', html.includes('<section class="mx-hero">') && !html.includes('hero__title'));
   check('Vorschau: Alt-CSS, tokens.css und overrides.css in @layer legacy', /@import url\("[^"]*style\.css"\) layer\(legacy\)/.test(html) && html.includes('__overrides.css") layer(legacy)'));
   check('Vorschau: Entwurfs-CSS und Komponenten ohne Ebene', html.includes(`__draft.css?d=D-001&amp;v=1`) && html.includes('__components.css?exclude=hero'));
-  check('Vorschau: Overlay kennt den Entwurf', html.includes('"preview":{"draft":"D-001","version":1}'));
+  check('Vorschau: Overlay kennt den Entwurf', html.includes('"preview":{"draft":"D-001","version":1,"name":"hero"}'));
 
   const css = await (await fetch(`${BASE}/s/${SLUG}/__draft.css?d=D-001&v=1`)).text();
   check('Entwurfs-CSS lieferbar', css.includes('@scope (.mx-hero)'));
 
   const list = await (await fetch(`${BASE}/api/sites/${SLUG}/drafts`, { headers: auth })).json();
   const d = list.drafts?.find((x) => x.id === 'D-001');
-  check('API: Entwurfsliste mit Version und Bausteinen', d?.status === 'open' && d.versions[0]?.name === 'hero' && d.versions[0].bausteine[0]?.source === 'bestand' && d.versions[0].befund.length === 2 && d.versions[0].befund[1].umgesetzt === false, JSON.stringify(list).slice(0, 300));
+  check('API: Entwurfsliste mit Version und Bausteinen', d?.status === 'open' && d.versions[0]?.name === 'hero' && d.versions[0].bausteine[0]?.klassen?.bestand === 'btn' && d.versions[0].befund.length === 2 && d.versions[0].befund[1].umgesetzt === false, JSON.stringify(list).slice(0, 300));
 
+  const vm = await (await fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/versions/2`, { headers: auth })).json();
+  check('API: Markup einer Version für das Live-Umschalten', vm.html?.includes('Version zwei') && vm.name === 'hero', JSON.stringify(vm).slice(0, 200));
   const wrong = await fetch(`${BASE}/s/${SLUG}/__draft.css?d=D-999&v=1`);
   check('Unbekannter Entwurf: 404', wrong.status === 404, wrong.status);
   const noauth = await fetch(`${BASE}/api/sites/${SLUG}/drafts`);

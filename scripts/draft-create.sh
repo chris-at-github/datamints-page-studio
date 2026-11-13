@@ -38,10 +38,24 @@ if [[ -z "$DID" ]]; then
   VERSION=1
   jq -r '.html // ""' <<<"$P" | head -c 60000 >"$DDIR/source.html"
   jq '.bausteine // []' <<<"$P" >"$DDIR/bausteine.json"
+  # Überarbeitung: Ist das Element selbst eine übernommene Komponente (Wurzel mit Klasse mx-<name>), bleibt der Name,
+  # und das bisherige CSS liegt als Material bei
+  REVISES="$(node -e '
+    const html = require("fs").readFileSync(process.argv[1], "utf8");
+    const m = html.match(/^\s*<[a-z][a-z0-9-]*\b[^>]*\bclass\s*=\s*["\x27]([^"\x27]*)["\x27]/i);
+    const c = m && m[1].split(/\s+/).find((x) => /^mx-[a-z0-9-]+$/.test(x));
+    process.stdout.write(c ? c.slice(3) : "");' "$DDIR/source.html")"
+  if [[ -n "$REVISES" && -f "$SITE/components/mx-$REVISES.css" ]]; then
+    cp "$SITE/components/mx-$REVISES.css" "$DDIR/bestand-komponente.css"
+    log "$DID überarbeitet die Komponente mx-$REVISES"
+  else
+    REVISES=""
+  fi
   jq -n --arg id "$DID" --arg page "$PAGE" --arg sel "$SELECTOR" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)" --argjson p "$P" '
     {id:$id, page:$page, selector:$sel, prompt:$prompt, created:$created, status:"open", sessionId:null,
      viewport:($p.viewport // null), rect:($p.rect // null), text:(($p.text // "")[0:4000]),
      appliedAs:null, appliedVersion:null, references:[], versions:[]}' >"$DDIR/draft.json"
+  if [[ -n "$REVISES" ]]; then tmp="$(mktemp)"; jq --arg r "$REVISES" '.revises = $r' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
   # Referenzbilder
   while IFS= read -r REF; do
     [[ -n "$REF" ]] || continue
@@ -82,7 +96,8 @@ fail() {
 # ----- Kontext -----
 CTX="$(node "$LIB_DIR/design.mjs" context "$SITE" A-000 0)" || fail "Kontext konnte nicht erzeugt werden"
 VORGABEN="$(jq -r .context <<<"$CTX" | sed '/^<bisherige-schritte>/,$d')"
-COMPONENTS="$( (ls "$SITE/components" 2>/dev/null || true) | sed -nE 's/^mx-(.*)\.css$/\1/p' | paste -sd, - | sed 's/,/, /g')"
+REVISES="$(jq -r '.revises // ""' "$DDIR/draft.json")"
+COMPONENTS="$( (ls "$SITE/components" 2>/dev/null || true) | sed -nE 's/^mx-(.*)\.css$/\1/p' | { grep -vxF "${REVISES:-//}" || true; } | paste -sd, - | sed 's/,/, /g')"
 NAME_HINT=""
 if (( VERSION > 1 )); then NAME_HINT="$(jq -r '.name // ""' "$DDIR/v$((VERSION - 1))/meta.json" 2>/dev/null || true)"; fi
 sanitize_block() { sed -E 's#</?(seiteninhalt|auftrag|vorgaben|tokens|regeln)#[\1]#gI'; }
@@ -93,6 +108,10 @@ done < <(jq -r '.references[]?' "$DDIR/draft.json")
 VIEWPORT="$(jq -r 'if .viewport then "\(.viewport.width)×\(.viewport.height) px" else "unbekannt" end' "$DDIR/draft.json")"
 WIDTH="$(jq -r 'if .rect.width then "\(.rect.width|floor) px" else "unbekannt" end' "$DDIR/draft.json")"
 
+REVISE_NOTE=""
+if [[ -n "$REVISES" ]]; then
+  REVISE_NOTE=$'\n'"Dies ist eine Überarbeitung der bestehenden Komponente mx-$REVISES: Name \"$REVISES\" beibehalten. Bisheriges Markup: source.html, bisheriges CSS: bestand-komponente.css (Material, Ausgangspunkt der Überarbeitung)."
+fi
 if (( VERSION == 1 )); then
   TASK="Entwirf das gewählte Element als Komponente (Entwurf $DID, Version 1). Prüfe es zuerst und schreibe den Befund nach v1/befund.json, dann component.html, component.css und meta.json nach v1/."
 else
@@ -104,7 +123,7 @@ PROMPT="$(
 Verbindliche Vorgaben dieser Website (vom Skript zusammengestellt):
 $VORGABEN
 
-$TASK
+$TASK$REVISE_NOTE
 Es gelten ausschließlich die Regeln in CLAUDE.md dieses Ordners (Entwürfe), nicht die Regeln des Website-Abzugs.
 
 Seite: www$PAGE
@@ -175,7 +194,7 @@ COST="$(jq -r '.total_cost_usd // 0' <<<"$R")"
 
 # ----- Prüfen, bei Fehlern eine Korrekturrunde -----
 set +e
-CHECK="$(node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?
+CHECK="$(DRAFT_EXPECT_NAME="$REVISES" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?
 set -e
 if (( crc == 3 )) && [[ -n "$SESSION" ]]; then
   ERRS="$(jq -r '.errors | map("- " + .) | join("\n")' <<<"$CHECK")"
@@ -188,7 +207,7 @@ $ERRS"
   R="$(last_result)"
   if (( rc == 0 )) && [[ "$(jq -r '.is_error // false' <<<"$R")" != "true" ]]; then
     COST="$(jq -rn --argjson a "$COST" --argjson b "$(jq -r '.total_cost_usd // 0' <<<"$R")" '$a + $b')"
-    set +e; CHECK="$(node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?; set -e
+    set +e; CHECK="$(DRAFT_EXPECT_NAME="$REVISES" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?; set -e
   fi
 fi
 (( crc == 0 )) || fail "Entwurf ungültig: $(jq -r '(.errors // [.error]) | join("; ")' <<<"$CHECK" 2>/dev/null | head -c 500)"

@@ -19,7 +19,7 @@
   var IMAGE_MAX_MB = Number(CFG.imageMaxMb) || 10;
   var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   // Vorschau eines Entwurfs: Seite mit ersetztem Element, nur ansehen (keine Auswahl, keine Änderungserkennung)
-  var PREVIEW = CFG.preview && CFG.preview.draft ? { draft: String(CFG.preview.draft), version: Number(CFG.preview.version) } : null;
+  var PREVIEW = CFG.preview && CFG.preview.draft ? { draft: String(CFG.preview.draft), version: Number(CFG.preview.version), name: String(CFG.preview.name || '') } : null;
   var ACTIVE = { pending: 1, running: 1, review: 1 };
   var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
@@ -531,6 +531,15 @@
     '.seg button:first-child{border-radius:6px 0 0 6px;margin-left:0}' +
     '.seg button:last-child{border-radius:0 6px 6px 0}' +
     '.dactions{margin-top:14px;padding-top:10px;border-top:1px solid #e5e7eb}' +
+    '.bst-live{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#059669;margin-right:4px}' +
+    'ul.nlist{list-style:none;margin:8px 0 0;padding:0}' +
+    'ul.nlist li{border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin-bottom:6px}' +
+    'ul.nlist li:hover{border-color:#d97706}' +
+    '.nhead{display:flex;align-items:center;gap:6px;font-size:12px}' +
+    '.nhead code{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#374151;word-break:break-all}' +
+    '.nhead .nsnip{color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}' +
+    '.nhead button{padding:3px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;flex:none}' +
+    'textarea.ndesc{min-height:52px;margin-top:4px;font-size:13px}' +
     '.bf-group{font-size:12px;font-weight:600;color:#374151;margin:10px 0 2px}' +
     'label.bf-item{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #f1f2f4;font-size:13px;cursor:pointer}' +
     'label.bf-item input{margin-top:3px;flex:none}' +
@@ -943,6 +952,7 @@
     if (isOwn(e)) return;
     var t = e.target;
     if (!t || t.nodeType !== 1 || t === hovered) return;
+    if (selectMode === 'draftnote' && !(pvLive.node && pvLive.node.contains(t))) return; // nur innerhalb der Komponente
     hovered = t;
     childStack = [];
     placeHighlight(hovered, false);
@@ -962,13 +972,15 @@
     e.stopImmediatePropagation();
     var target = hovered || e.target;
     if (!target || target.nodeType !== 1) return;
+    if (selectMode === 'draftnote' && !(pvLive.node && pvLive.node.contains(target))) return;
     finishSelecting(target);
   }
 
   function finishSelecting(target) {
     var mode = selectMode;
     stopSelecting();
-    if (mode === 'token') showPick(target);
+    if (mode === 'draftnote') addDraftNote(target);
+    else if (mode === 'token') showPick(target);
     else if (mode === 'area') openAreaDialog(target);
     else openPrompt(target);
   }
@@ -976,8 +988,11 @@
   var BLOCK_EVENTS = ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'auxclick', 'touchstart', 'touchend', 'submit'];
 
   function startSelecting(mode) {
-    selectMode = mode === 'token' || mode === 'area' ? mode : 'annotate';
-    if (selectMode === 'annotate') {
+    selectMode = mode === 'token' || mode === 'area' || mode === 'draftnote' ? mode : 'annotate';
+    if (selectMode === 'annotate' && PREVIEW) return; // in der Vorschau keine Annotationen (DOM weicht von der Datei ab)
+    if (selectMode === 'draftnote') {
+      /* Hinweis zu einem Element der Komponente: Hervorhebung genügt, Panel bleibt offen */
+    } else if (selectMode === 'annotate') {
       closePanels();
       btnSelect.classList.add('on');
       btnSelect.setAttribute('aria-pressed', 'true');
@@ -1040,6 +1055,7 @@
           e.preventDefault();
           e.stopPropagation();
           var p = hovered.parentElement;
+          if (selectMode === 'draftnote' && !(pvLive.node && pvLive.node.contains(p))) p = null; // nicht über die Komponente hinaus
           if (p && p !== document.documentElement) {
             childStack.push(hovered);
             hovered = p;
@@ -3031,12 +3047,19 @@
 
   // ------------------------------------------------------------- Entwürfe (Komponenten)
   // Ein Entwurf entsteht ohne Altlasten als Komponente; die Vorschau zeigt die echte Seite mit ersetztem Element.
+  // In der Vorschau lassen sich Versionen, „Aktuell“ und Bausteine live umschalten (ohne Neuladen).
 
   var drafts = [];
   var draftCurrent = null; // id des geöffneten Entwurfs
   var draftVersion = null; // gewählte Version im Panel
-  var draftToggles = {}; draftBefund = {}; // key -> 'neu' | 'bestand' (geänderte Bausteine)
+  var draftToggles = {}; // Baustein-key -> 'neu' | 'bestand' (vom Stand der Version abweichend)
   var draftBefund = {}; // Befund-ID -> true (umsetzen) | false (zurücknehmen)
+  var draftText = {}; // Entwurf-ID -> Text im Feld „Nachbessern“ (bleibt beim Neuzeichnen erhalten)
+  var draftNotes = {}; // Entwurf-ID -> [{ selector, label, snippet, desc }] Hinweise zu Elementen
+  // Live-Vorschau: aktuell gezeigter Stand (0 = Aktuell) und das ersetzte Element in der Seite
+  var pvLive = { node: null, shown: PREVIEW ? PREVIEW.version : null, lastV: PREVIEW ? PREVIEW.version : null, cache: {} };
+  if (PREVIEW && PREVIEW.name) pvLive.node = document.querySelector('.mx-' + PREVIEW.name);
+
   var btnDrafts = iconButton('pencilSparkles', 'Entwürfe', { 'aria-expanded': 'false', 'aria-controls': 'modio-drafts' }, true);
   btnDrafts.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
   btnDrafts.appendChild(btnDrafts.modioCount);
@@ -3047,9 +3070,10 @@
   var dReload = iconButton('refresh', 'Entwürfe aktualisieren', { class: 'ghost' }, true);
   var dBack = iconButton('undo', 'Zur Liste', { class: 'ghost' }, true);
   var dTitle = el('span', { text: 'Entwürfe' });
+  var dScroll = el('div', { class: 'sb-body' }, [dErr, dBody]);
   var draftsPanel = el('aside', { id: 'modio-drafts', class: 'sidebar drafts', role: 'complementary', 'aria-labelledby': 'modio-dh' }, [
     el('div', { class: 'sb-head' }, [dBack, el('h2', { id: 'modio-dh' }, [icon('pencilSparkles', 18), dTitle]), el('span', { class: 'spacer' }), dReload, dClose]),
-    el('div', { class: 'sb-body' }, [dErr, dBody]),
+    dScroll,
   ]);
   ui.appendChild(draftsPanel);
 
@@ -3073,8 +3097,27 @@
   function currentUrl(d) { return d.page === currentPage() ? location.pathname + cleanSearch() : pageUrl(d.page); }
   function latest(d) { return d.versions.length ? d.versions[d.versions.length - 1] : null; }
   function versionOf(d, v) { return d.versions.filter(function (x) { return x.v === v; })[0] || null; }
+  function draftById(id) { return drafts.filter(function (x) { return x.id === id; })[0] || null; }
   function draftLabel(d) { var l = latest(d); return (l && l.title) || truncate(d.prompt, 60); }
   function draftsApi(path, body) { return api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/drafts' + path, body || {}); }
+  // Element der Komponente in der Vorschau finden; Name notfalls aus den Entwurfsdaten (älterer Server ohne preview.name)
+  function ensureLiveNode() {
+    if (!PREVIEW || (pvLive.node && pvLive.node.isConnected)) return pvLive.node;
+    if (!PREVIEW.name) {
+      var d = draftById(PREVIEW.draft), v = d && versionOf(d, PREVIEW.version);
+      if (v && v.name) PREVIEW.name = v.name;
+    }
+    if (PREVIEW.name && pvLive.shown) pvLive.node = document.querySelector('.mx-' + PREVIEW.name);
+    return pvLive.node;
+  }
+  function liveFor(d) { return !!(PREVIEW && d && PREVIEW.draft === d.id && ensureLiveNode() && pvLive.node.isConnected); }
+  // Knopf zur Live-Vorschau für Hinweise, wenn das Panel außerhalb der Vorschau geöffnet ist
+  function liveButton(d, v) {
+    var b = iconButton('click', PREVIEW && PREVIEW.draft === d.id ? 'Version v' + v.v + ' zeigen' : 'Live-Vorschau v' + v.v + ' öffnen');
+    b.addEventListener('click', function () { showLive(d, v.v); });
+    return b;
+  }
+  function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
 
   function renderDraftsButton() {
     var open = drafts.filter(function (d) { return d.status === 'open'; }).length;
@@ -3089,18 +3132,128 @@
         drafts = (d && d.drafts) || [];
         renderDraftsButton();
         if (draftsPanel.classList.contains('open')) renderDrafts();
+        applyToggles();
         renderPreviewBand();
       })
       .catch(function (err) { dErr.textContent = 'Entwürfe nicht ladbar: ' + err.message; });
   }
 
+  // ---- Live-Umschalten in der Vorschau
+
+  function fetchStateHtml(d, v) {
+    if (pvLive.cache[v]) return Promise.resolve(pvLive.cache[v]);
+    var p = v === 0
+      ? fetch(location.pathname + cleanSearch(), { cache: 'no-store', credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (t) {
+        var n = new DOMParser().parseFromString(t, 'text/html').querySelector(d.selector);
+        if (!n) throw new Error('Element der aktuellen Seite nicht gefunden');
+        return n.outerHTML;
+      })
+      : api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/drafts/' + d.id + '/versions/' + v).then(function (r) { return r.html; });
+    return p.then(function (html) { pvLive.cache[v] = html; return html; });
+  }
+
+  function showLive(d, v) {
+    if (!liveFor(d)) { location.href = v ? previewUrl(d, v) : currentUrl(d); return Promise.resolve(); }
+    if (v === pvLive.shown) return Promise.resolve();
+    return fetchStateHtml(d, v).then(function (html) {
+      var t = document.createElement('template');
+      t.innerHTML = String(html).trim();
+      var n = t.content.firstElementChild;
+      if (!n) throw new Error('Leeres Markup');
+      pvLive.node.replaceWith(n);
+      pvLive.node = n;
+      var draftLink = document.querySelector('link[data-modio="draft"]');
+      var compLink = document.querySelector('link[data-modio="components"]');
+      if (v) {
+        if (draftLink) { draftLink.disabled = false; draftLink.href = BASE + '/__draft.css?d=' + encodeURIComponent(d.id) + '&v=' + v; }
+        if (compLink && PREVIEW.name) compLink.href = BASE + '/__components.css?exclude=' + encodeURIComponent(PREVIEW.name);
+        PREVIEW.version = v;
+        pvLive.lastV = v;
+        if (draftVersion !== v) { draftVersion = v; draftToggles = {}; draftBefund = {}; }
+        try { history.replaceState(null, '', previewUrl(d, v)); } catch (e) { /* ignorieren */ }
+      } else {
+        if (draftLink) draftLink.disabled = true;
+        if (compLink) compLink.href = BASE + '/__components.css'; // bei einer Überarbeitung: bisherige Komponente zeigen
+      }
+      pvLive.shown = v;
+      applyToggles();
+      markPlaceholders(!!document.querySelector('style[data-modio="platzhalter"]'));
+      renderPreviewBand();
+      if (draftsPanel.classList.contains('open')) renderDrafts();
+    }).catch(function (e) { showToast('Umschalten fehlgeschlagen: ' + e.message, true); });
+  }
+
+  // Bausteine live umschalten: Klassen der gewählten Quelle setzen (CSS für „neu“ liegt immer vor)
+  function splitCls(s) { return String(s || '').split(/\s+/).filter(Boolean); }
+  function applyToggles() {
+    if (!PREVIEW || !pvLive.node || !pvLive.shown) return;
+    var d = draftById(PREVIEW.draft), v = d && versionOf(d, pvLive.shown);
+    if (!v || !v.bausteine) return;
+    v.bausteine.forEach(function (b) {
+      var k = b.klassen || {};
+      var key = String(b.key || b.label);
+      var target = draftToggles[key] || (b.source === 'bestand' ? 'bestand' : 'neu');
+      var add = splitCls(target === 'bestand' ? k.bestand : k.neu);
+      if (!add.length || !splitCls(k.bestand).length || !splitCls(k.neu).length) return;
+      var rm = splitCls(k.neu).concat(splitCls(k.bestand));
+      var nodes = Array.prototype.slice.call(pvLive.node.querySelectorAll('[data-mx-baustein]')).filter(function (n) { return n.getAttribute('data-mx-baustein') === key; });
+      if (pvLive.node.getAttribute('data-mx-baustein') === key) nodes.push(pvLive.node);
+      nodes.forEach(function (n) {
+        rm.forEach(function (c) { n.classList.remove(c); });
+        add.forEach(function (c) { n.classList.add(c); });
+      });
+    });
+  }
+  function canLiveToggle(b) { var k = b.klassen || {}; return splitCls(k.neu).length > 0 && splitCls(k.bestand).length > 0; }
+
+  function markPlaceholders(on) {
+    var st = document.querySelector('style[data-modio="platzhalter"]');
+    if (on && !st) document.head.appendChild(el('style', { 'data-modio': 'platzhalter', text: '[data-mx-platzhalter]{outline:2px dashed #7c3aed !important;outline-offset:2px !important;cursor:help}' }));
+    if (!on && st) st.remove();
+    Array.prototype.forEach.call(document.querySelectorAll('[data-mx-platzhalter]'), function (n) {
+      if (on) { if (!n.hasAttribute('data-mx-title')) n.setAttribute('data-mx-title', n.getAttribute('title') || ''); n.setAttribute('title', 'Platzhalter: ' + n.getAttribute('data-mx-platzhalter')); }
+      else if (n.hasAttribute('data-mx-title')) { var t = n.getAttribute('data-mx-title'); if (t) n.setAttribute('title', t); else n.removeAttribute('title'); n.removeAttribute('data-mx-title'); }
+    });
+  }
+
+  // ---- Hinweise zu einzelnen Elementen der Komponente
+
+  function relSelector(node) {
+    var base = '.mx-' + (PREVIEW && PREVIEW.name || '');
+    if (node === pvLive.node) return base;
+    var path = [];
+    for (var n = node; n && n !== pvLive.node; n = n.parentElement) path.unshift(segmentFor(n));
+    return base + ' > ' + path.join(' > ');
+  }
+  function addDraftNote(node) {
+    var d = PREVIEW && draftById(PREVIEW.draft);
+    if (!d || !pvLive.node || !pvLive.node.contains(node)) return;
+    var list = draftNotes[d.id] = draftNotes[d.id] || [];
+    list.push({ selector: relSelector(node), label: describe(node), snippet: truncate((node.innerText || node.textContent || '').trim().replace(/\s+/g, ' '), 60), desc: '' });
+    openDrafts(d.id, pvLive.shown || null, true);
+    setTimeout(function () { var f = dBody.querySelector('[data-fk="note-' + (list.length - 1) + '"]'); if (f) f.focus(); }, 0);
+  }
+  function noteNode(n) { try { return document.querySelector(n.selector); } catch (e) { return null; } }
+
+  // ---- Panel
+
+  // Neu zeichnen, ohne Scrollposition und Fokus zu verlieren
   function renderDrafts() {
+    var sc = dScroll.scrollTop;
+    var a = root.activeElement;
+    var fk = a && a.getAttribute ? a.getAttribute('data-fk') : null;
     clear(dBody);
-    var d = draftCurrent && drafts.filter(function (x) { return x.id === draftCurrent; })[0];
+    var d = draftCurrent && draftById(draftCurrent);
     dBack.style.display = d ? '' : 'none';
-    if (d) return renderDraftDetail(d);
+    if (d) renderDraftDetail(d);
+    else renderDraftList();
+    dScroll.scrollTop = sc;
+    if (fk) { var f = dBody.querySelector('[data-fk="' + fk + '"]'); if (f) f.focus({ preventScroll: true }); }
+  }
+
+  function renderDraftList() {
     dTitle.textContent = 'Entwürfe';
-    dBody.appendChild(el('p', { class: 'hint', text: 'Element auswählen und im Dialog „Entwurf erstellen“ wählen. Claude gestaltet es ohne Altlasten als eigene Komponente; erst „Übernehmen“ ändert die Website.' }));
+    dBody.appendChild(el('p', { class: 'hint', text: 'Element auswählen und im Dialog „Entwurf erstellen“ wählen. Claude gestaltet es ohne Altlasten als eigene Komponente; erst „Übernehmen“ ändert die Website. Eine übernommene Komponente (Klasse mx-…) lässt sich auf demselben Weg überarbeiten.' }));
     var open = drafts.filter(function (x) { return x.status === 'open'; });
     var doneList = drafts.filter(function (x) { return x.status === 'applied'; }).slice(0, 10);
     if (!open.length) dBody.appendChild(el('p', { class: 'hint', text: 'Keine offenen Entwürfe.' }));
@@ -3112,12 +3265,12 @@
           el('strong', { text: x.id }),
           el('span', { text: draftLabel(x) }),
           el('span', { class: 'spacer' }),
-          x.status === 'applied' ? el('span', { class: 'badge', text: 'übernommen ' + (x.appliedAs || '') }) : el('span', { class: 'dver', text: x.versions.length + ' Version(en)' }),
+          x.status === 'applied' ? el('span', { class: 'badge', text: 'übernommen ' + (x.appliedAs || '') }) : el('span', { class: 'dver', text: x.versions.length + ' Version(en)' + (x.revises ? ' · Überarbeitung' : '') }),
         ]),
         el('span', { class: 'step-sel', text: [x.page === currentPage() ? 'diese Seite' : x.page, x.selector].join(' · ') }),
         el('span', { class: 'step-date', text: fmtDate((l && l.created) || x.created) }),
       ]);
-      b.addEventListener('click', function () { draftCurrent = x.id; draftVersion = null; draftToggles = {}; draftBefund = {}; renderDrafts(); });
+      b.addEventListener('click', function () { draftCurrent = x.id; draftVersion = null; draftToggles = {}; draftBefund = {}; dScroll.scrollTop = 0; renderDrafts(); });
       ul.appendChild(el('li', {}, [b]));
     });
     dBody.appendChild(ul);
@@ -3125,26 +3278,39 @@
 
   function renderDraftDetail(d) {
     var isOpen = d.status === 'open';
+    var live = liveFor(d);
     var v = versionOf(d, draftVersion) || latest(d);
     if (v) draftVersion = v.v;
     dTitle.textContent = d.id + (v && v.title ? ' · ' + v.title : '');
-    dBody.appendChild(el('div', { class: 'step-sel', text: (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector }));
+    dBody.appendChild(el('div', { class: 'step-sel', text: (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector + (d.revises ? ' · Überarbeitung von mx-' + d.revises : '') }));
     dBody.appendChild(el('div', { class: 'step-prompt', text: d.prompt }));
-    if (!isOpen) dBody.appendChild(el('p', { class: 'hint', text: d.status === 'applied' ? 'Übernommen als ' + d.appliedAs + ' (Version ' + d.appliedVersion + '). Spätere Änderungen per Annotation.' : 'Verworfen.' }));
+    if (!isOpen) dBody.appendChild(el('p', { class: 'hint', text: d.status === 'applied' ? 'Übernommen als ' + d.appliedAs + ' (Version ' + d.appliedVersion + '). Für weitere Änderungen die Komponente auswählen und per Annotation oder als neuen Entwurf (Überarbeitung) bearbeiten.' : 'Verworfen.' }));
     if (!v) { dBody.appendChild(el('p', { class: 'hint', text: 'Noch keine Version.' })); return; }
 
-    // Versionen und Vorschau
+    // Versionen: in der Vorschau live umschalten, sonst nur auswählen
     var vrow = el('div', { class: 'vtabs', role: 'group', 'aria-label': 'Versionen' });
+    if (live) {
+      var bCur = el('button', { type: 'button', text: 'Aktuell', 'data-fk': 'vt-0', 'aria-pressed': String(pvLive.shown === 0), title: 'Seite ohne Entwurf (Taste V)' });
+      bCur.addEventListener('click', function () { showLive(d, 0); });
+      vrow.appendChild(bCur);
+    }
     d.versions.forEach(function (x) {
-      var b = el('button', { type: 'button', text: 'v' + x.v, title: x.prompt, 'aria-pressed': String(x.v === v.v) });
-      b.addEventListener('click', function () { draftVersion = x.v; draftToggles = {}; draftBefund = {}; renderDrafts(); });
+      var pressed = live ? pvLive.shown === x.v : x.v === v.v;
+      var b = el('button', { type: 'button', text: 'v' + x.v, 'data-fk': 'vt-' + x.v, title: x.prompt, 'aria-pressed': String(pressed) });
+      b.addEventListener('click', function () {
+        if (live) { showLive(d, x.v); return; }
+        if (draftVersion !== x.v) { draftVersion = x.v; draftToggles = {}; draftBefund = {}; }
+        renderDrafts();
+      });
       vrow.appendChild(b);
     });
     dBody.appendChild(vrow);
-    var inPreview = PREVIEW && PREVIEW.draft === d.id && PREVIEW.version === v.v;
-    var bShow = iconButton('click', inPreview ? 'Aktuelle Seite zeigen' : 'Vorschau v' + v.v + ' in der Seite', { class: inPreview ? '' : 'primary' });
-    bShow.addEventListener('click', function () { location.href = inPreview ? currentUrl(d) : previewUrl(d, v.v); });
-    if (isOpen || inPreview) dBody.appendChild(el('div', { class: 'row' }, [bShow]));
+    if (live) dBody.appendChild(el('p', { class: 'hint', text: 'Live-Vorschau: Versionen, „Aktuell“ (Taste V) und Bausteine schalten ohne Neuladen um.' }));
+    else if (isOpen) {
+      var bShow = iconButton('click', 'Vorschau v' + v.v + ' in der Seite', { class: 'primary' });
+      bShow.addEventListener('click', function () { location.href = previewUrl(d, v.v); });
+      dBody.appendChild(el('div', { class: 'row' }, [bShow]));
+    }
 
     if (v.prompt && v.v > 1) dBody.appendChild(el('div', { class: 'vprompt', text: 'Auftrag v' + v.v + ': ' + v.prompt }));
     if (v.summary) dBody.appendChild(el('details', { open: '' }, [el('summary', {}, [icon('chevron', 14), 'Gestaltungsidee von Claude']), el('p', { class: 'dsum', text: v.summary })]));
@@ -3163,8 +3329,8 @@
         if (!items.length) return;
         bsec.appendChild(el('div', { class: 'bf-group', text: GR[g] }));
         items.forEach(function (b) {
-          var changed = Object.prototype.hasOwnProperty.call(draftBefund, b.id);
-          var cb = el('input', { type: 'checkbox', disabled: isOpen ? null : '' });
+          var changed = hasOwn(draftBefund, b.id);
+          var cb = el('input', { type: 'checkbox', 'data-fk': 'bf-' + b.id, disabled: isOpen ? null : '' });
           cb.checked = changed ? draftBefund[b.id] : b.umgesetzt;
           cb.addEventListener('change', function () {
             if (cb.checked === b.umgesetzt) delete draftBefund[b.id]; else draftBefund[b.id] = cb.checked;
@@ -3179,32 +3345,78 @@
     }
     if (v.platzhalter) dBody.appendChild(el('p', { class: 'hint', text: v.platzhalter + ' Platzhalter (ergänzte Funktionen, im echten Projekt anzubinden). In der Vorschau mit „Platzhalter zeigen“ markieren.' }));
 
-    // Bausteine: neu oder aus dem Bestand
+    // Bausteine: neu oder wie bisher – live, wenn die Version beide Klassen kennt
     if (v.bausteine && v.bausteine.length) {
       var tb = el('div', { class: 'bst' });
+      var liveHere = live && pvLive.shown === v.v;
       v.bausteine.forEach(function (b) {
         var key = String(b.key || b.label);
         var cur = draftToggles[key] || (b.source === 'bestand' ? 'bestand' : 'neu');
+        var lv = liveHere && canLiveToggle(b);
         var seg = el('span', { class: 'seg', role: 'group', 'aria-label': b.label || key });
         ['neu', 'bestand'].forEach(function (s) {
-          var sb = el('button', { type: 'button', text: s === 'neu' ? 'neu' : 'wie bisher', 'aria-pressed': String(cur === s), disabled: isOpen ? null : '' });
+          var sb = el('button', { type: 'button', text: s === 'neu' ? 'neu' : 'wie bisher', 'data-fk': 'bst-' + key + '-' + s, 'aria-pressed': String(cur === s), disabled: isOpen ? null : '' });
           sb.addEventListener('click', function () {
             var orig = b.source === 'bestand' ? 'bestand' : 'neu';
             if (s === orig) delete draftToggles[key]; else draftToggles[key] = s;
+            applyToggles();
             renderDrafts();
           });
           seg.appendChild(sb);
         });
-        tb.appendChild(el('div', { class: 'bst-row' + (draftToggles[key] ? ' changed' : '') }, [el('span', { text: b.label || key }), seg]));
+        tb.appendChild(el('div', { class: 'bst-row' + (draftToggles[key] ? ' changed' : '') }, [
+          el('span', { text: b.label || key }),
+          el('span', { class: 'bst-live', text: lv ? 'live' : '', title: lv ? 'Umschalten wirkt sofort in der Vorschau' : '' }),
+          seg,
+        ]));
       });
-      dBody.appendChild(el('section', { class: 'dsec' }, [el('h3', { text: 'Bausteine' }), tb]));
+      var anyLive = v.bausteine.some(canLiveToggle);
+      dBody.appendChild(el('section', { class: 'dsec' }, [
+        el('h3', { text: 'Bausteine' }), tb,
+        el('p', { class: 'hint', text: liveHere && anyLive ? 'Umschalten zeigt die Wirkung sofort. Mit „Neue Version“ setzt Claude die Wahl sauber um.' : anyLive ? 'Live umschalten geht in der Vorschau dieser Version:' : 'Die Wirkung zeigt erst eine neue Version (diese Version ist noch ohne Klassen-Angaben entstanden und nicht live umschaltbar).' }),
+        anyLive && !liveHere && isOpen ? el('div', { class: 'row' }, [liveButton(d, v)]) : null,
+      ]));
     }
     if (!isOpen) return;
 
+    // Hinweise zu einzelnen Elementen
+    var notes = draftNotes[d.id] = draftNotes[d.id] || [];
+    var nsec = el('section', { class: 'dsec' }, [el('h3', { text: 'Hinweise zu Elementen' + (notes.length ? ' (' + notes.length + ')' : '') })]);
+    var canPick = live && pvLive.shown;
+    var bPick = iconButton('click', 'Element im Entwurf wählen', { 'data-fk': 'note-pick', disabled: canPick ? null : '' });
+    bPick.title = canPick ? 'Ein Element der Komponente anklicken und beschreiben, was sich ändern soll (Esc bricht ab)' : 'In der Vorschau einer Version möglich';
+    bPick.addEventListener('click', function () { startSelecting('draftnote'); showToast('Element in der Komponente anklicken (↑ = Elternelement, Esc bricht ab).', false); });
+    nsec.appendChild(el('div', { class: 'row' }, [bPick, canPick ? null : liveButton(d, v)]));
+    if (!canPick) nsec.appendChild(el('p', { class: 'hint', text: 'Elemente lassen sich in der Vorschau einer Version wählen.' }));
+    var nlist = el('ul', { class: 'nlist' });
+    notes.forEach(function (n, i) {
+      var ta2 = el('textarea', { class: 'ndesc', 'data-fk': 'note-' + i, placeholder: 'Was soll sich an diesem Element ändern?', 'aria-label': 'Hinweis zu ' + n.label });
+      ta2.value = n.desc;
+      ta2.addEventListener('input', function () { n.desc = ta2.value; updateNewLabel(); });
+      var del = iconButton('trash', 'Hinweis entfernen', { class: 'ghost' }, true);
+      del.addEventListener('click', function () { notes.splice(i, 1); hl.style.display = 'none'; renderDrafts(); });
+      var li = el('li', {}, [
+        el('div', { class: 'nhead' }, [el('code', { text: n.label }), n.snippet ? el('span', { class: 'nsnip', text: '„' + n.snippet + '“' }) : null, el('span', { class: 'spacer' }), del]),
+        ta2,
+      ]);
+      li.addEventListener('mouseenter', function () { var nn = noteNode(n); if (nn) placeHighlight(nn, true); });
+      li.addEventListener('mouseleave', function () { if (!selecting) hl.style.display = 'none'; });
+      nlist.appendChild(li);
+    });
+    if (notes.length) nsec.appendChild(nlist);
+    dBody.appendChild(nsec);
+
     // Nachbessern und Aktionen
-    var ta = el('textarea', { placeholder: 'Was soll am Entwurf anders werden? (wie im Chat)', 'aria-label': 'Entwurf nachbessern' });
-    var nChanged = Object.keys(draftToggles).length + Object.keys(draftBefund).length;
-    var bNew = iconButton('refresh', nChanged ? 'Neue Version (' + nChanged + ' Änderung(en) gewählt)' : 'Neue Version');
+    var ta = el('textarea', { 'data-fk': 'ta', placeholder: 'Was soll am Entwurf insgesamt anders werden? (wie im Chat)', 'aria-label': 'Entwurf nachbessern' });
+    ta.value = draftText[d.id] || '';
+    var bNew = iconButton('refresh', 'Neue Version');
+    function noteCount() { return notes.filter(function (n) { return n.desc.trim(); }).length; }
+    function updateNewLabel() {
+      var nChanged = Object.keys(draftToggles).length + Object.keys(draftBefund).length + noteCount();
+      bNew.modioLabel.textContent = nChanged ? 'Neue Version (' + nChanged + ' Änderung(en) gewählt)' : 'Neue Version';
+    }
+    updateNewLabel();
+    ta.addEventListener('input', function () { draftText[d.id] = ta.value; });
     var bApply = iconButton('check', 'v' + v.v + ' übernehmen', { class: 'primary', title: 'Ersetzt das Element in der Seite durch diese Version (Schritt mit Prüfung und Verlauf)' });
     var bDiscard = iconButton('trash', 'Verwerfen', { class: 'ghost danger' });
     var err = el('div', { class: 'err', role: 'alert' });
@@ -3219,25 +3431,34 @@
       v.bausteine.forEach(function (b) {
         var key = String(b.key || b.label), s = draftToggles[key];
         if (!s) return;
-        lines.push('- ' + (b.label || key) + ': ' + (s === 'bestand' ? 'aus dem Bestand verwenden (passende Klassen aus bausteine.json, kein eigenes CSS dafür)' : 'neu gestalten (nicht mehr aus dem Bestand)'));
+        lines.push('- ' + (b.label || key) + ': ' + (s === 'bestand' ? 'aus dem Bestand verwenden (klassen.bestand bzw. passende Klassen aus bausteine.json, kein eigenes CSS dafür nötig)' : 'neu gestalten (klassen.neu, nicht mehr aus dem Bestand)'));
       });
       var blines = [];
       (v.befund || []).forEach(function (b) {
-        if (!Object.prototype.hasOwnProperty.call(draftBefund, b.id)) return;
+        if (!hasOwn(draftBefund, b.id)) return;
         blines.push('- ' + b.id + ' ' + b.titel + ': ' + (draftBefund[b.id] ? 'umsetzen' : 'zurücknehmen (nicht umsetzen, Zustand wie vor diesem Punkt)'));
       });
+      var nlines = notes.filter(function (n) { return n.desc.trim(); }).map(function (n) {
+        return '- `' + n.selector + '`' + (n.snippet ? ' („' + n.snippet + '“)' : '') + ': ' + n.desc.trim().replace(/\n+/g, ' ');
+      });
       var prompt = ta.value.trim();
+      if (nlines.length) prompt = (prompt ? prompt + '\n\n' : '') + 'Hinweise zu einzelnen Elementen (Selektor in v' + v.v + '):\n' + nlines.join('\n');
       if (blines.length) prompt = (prompt ? prompt + '\n\n' : '') + 'Befund:\n' + blines.join('\n');
       if (lines.length) prompt = (prompt ? prompt + '\n\n' : '') + 'Bausteine anpassen:\n' + lines.join('\n');
-      if (blines.length || lines.length) prompt += '\nAlles andere unverändert lassen.';
-      if (!prompt) { err.textContent = 'Bitte beschreiben, was anders werden soll, oder Befundpunkte bzw. Bausteine umschalten.'; ta.focus(); return; }
+      if (nlines.length || blines.length || lines.length) prompt += '\nAlles andere unverändert lassen.';
+      if (!prompt) { err.textContent = 'Bitte beschreiben, was anders werden soll, oder Hinweise, Befundpunkte bzw. Bausteine wählen.'; ta.focus(); return; }
       bNew.disabled = true;
       draftsApi('/' + d.id + '/versions', { prompt: prompt })
-        .then(function (data) { if (data && data.job) trackJob(data.job); draftToggles = {}; draftBefund = {}; showToast('Neue Version von ' + d.id + ' wird entworfen …', false); renderDrafts(); })
+        .then(function (data) {
+          if (data && data.job) trackJob(data.job);
+          draftToggles = {}; draftBefund = {}; draftText[d.id] = ''; draftNotes[d.id] = [];
+          showToast('Neue Version von ' + d.id + ' wird entworfen …', false);
+          renderDrafts();
+        })
         .catch(function (e) { err.textContent = e.status === 409 ? 'Es läuft noch ein Auftrag.' : 'Fehlgeschlagen: ' + e.message; bNew.disabled = false; });
     });
     bApply.addEventListener('click', function () {
-      if (!confirm('Version ' + v.v + ' von ' + d.id + ' übernehmen? Das Element auf ' + d.page + ' wird durch die Komponente ersetzt (als Schritt im Verlauf, Rücksprung möglich).')) return;
+      if (!confirm('Version ' + v.v + ' von ' + d.id + ' übernehmen? Das Element auf ' + d.page + ' wird durch die Komponente ersetzt (als Schritt im Verlauf, Rücksprung möglich).' + (Object.keys(draftToggles).length ? '\n\nHinweis: Umgeschaltete Bausteine werden nicht übernommen. Dafür erst „Neue Version“.' : ''))) return;
       bApply.disabled = true;
       draftsApi('/' + d.id + '/apply', { version: v.v })
         .then(function (data) { if (data && data.job) trackJob(data.job); showToast(d.id + ' v' + v.v + ' wird übernommen …', false); })
@@ -3255,54 +3476,51 @@
   function renderPreviewBand() {
     clear(pvBand);
     if (!PREVIEW) { pvBand.classList.remove('open'); return; }
-    var d = drafts.filter(function (x) { return x.id === PREVIEW.draft; })[0];
-    var v = d && versionOf(d, PREVIEW.version);
+    var d = draftById(PREVIEW.draft);
+    var shown = pvLive.shown;
+    var v = d && shown ? versionOf(d, shown) : null;
     pvBand.classList.add('open');
-    pvBand.appendChild(el('span', { class: 'pv-label' }, [icon('pencilSparkles', 14), 'Vorschau ' + PREVIEW.draft + ' · v' + PREVIEW.version + (v && v.title ? ' · ' + v.title : '')]));
+    pvBand.appendChild(el('span', { class: 'pv-label' }, [icon('pencilSparkles', 14), 'Vorschau ' + PREVIEW.draft + (shown ? ' · v' + shown + (v && v.title ? ' · ' + v.title : '') : ' · aktuelle Seite')]));
     if (d) {
       var seg = el('span', { class: 'seg', role: 'group', 'aria-label': 'Ansicht' });
-      var cur = el('button', { type: 'button', text: 'Aktuell', 'aria-pressed': 'false', title: 'Seite ohne Entwurf (Taste V)' });
-      cur.addEventListener('click', function () { location.href = currentUrl(d); });
+      var cur = el('button', { type: 'button', text: 'Aktuell', 'aria-pressed': String(shown === 0), title: 'Seite ohne Entwurf (Taste V)' });
+      cur.addEventListener('click', function () { showLive(d, 0); });
       seg.appendChild(cur);
       d.versions.forEach(function (x) {
-        var b = el('button', { type: 'button', text: 'v' + x.v, 'aria-pressed': String(x.v === PREVIEW.version), title: x.prompt });
-        b.addEventListener('click', function () { if (x.v !== PREVIEW.version) location.href = previewUrl(d, x.v); });
+        var b = el('button', { type: 'button', text: 'v' + x.v, 'aria-pressed': String(x.v === shown), title: x.prompt });
+        b.addEventListener('click', function () { showLive(d, x.v); });
         seg.appendChild(b);
       });
       pvBand.appendChild(seg);
     }
     var phs = document.querySelectorAll('[data-mx-platzhalter]');
     if (phs.length) {
-      var phStyle = document.querySelector('style[data-modio="platzhalter"]');
-      var bPh = el('button', { type: 'button', 'aria-pressed': String(!!phStyle), text: 'Platzhalter zeigen (' + phs.length + ')', title: 'Ergänzte Funktionen markieren, die im echten Projekt anzubinden sind' });
-      bPh.addEventListener('click', function () {
-        var st = document.querySelector('style[data-modio="platzhalter"]');
-        if (st) { st.remove(); Array.prototype.forEach.call(phs, function (n) { if (n.getAttribute('data-mx-title') !== null) { n.setAttribute('title', n.getAttribute('data-mx-title')); n.removeAttribute('data-mx-title'); } else n.removeAttribute('title'); }); }
-        else {
-          document.head.appendChild(el('style', { 'data-modio': 'platzhalter', text: '[data-mx-platzhalter]{outline:2px dashed #7c3aed !important;outline-offset:2px !important;cursor:help}' }));
-          Array.prototype.forEach.call(phs, function (n) { if (n.hasAttribute('title')) n.setAttribute('data-mx-title', n.getAttribute('title')); n.setAttribute('title', 'Platzhalter: ' + n.getAttribute('data-mx-platzhalter')); });
-        }
-        renderPreviewBand();
-      });
+      var on = !!document.querySelector('style[data-modio="platzhalter"]');
+      var bPh = el('button', { type: 'button', 'aria-pressed': String(on), text: 'Platzhalter zeigen (' + phs.length + ')', title: 'Ergänzte Funktionen markieren, die im echten Projekt anzubinden sind' });
+      bPh.addEventListener('click', function () { markPlaceholders(!on); renderPreviewBand(); });
       pvBand.appendChild(bPh);
     }
     var bOpen = el('button', { type: 'button', text: 'Bearbeiten' });
-    bOpen.addEventListener('click', function () { openDrafts(PREVIEW.draft, PREVIEW.version); });
+    bOpen.addEventListener('click', function () { openDrafts(PREVIEW.draft, pvLive.shown || null); });
     pvBand.appendChild(bOpen);
   }
 
-  function openDrafts(id, version) {
+  function openDrafts(id, version, keep) {
     if (selecting) stopSelecting();
-    closePanels();
-    if (id) { draftCurrent = id; draftVersion = version || null; draftToggles = {}; draftBefund = {}; }
+    var wasOpen = draftsPanel.classList.contains('open');
+    if (!wasOpen) closePanels();
+    if (id && (id !== draftCurrent || !keep)) {
+      if (id !== draftCurrent || (version && version !== draftVersion)) { draftToggles = {}; draftBefund = {}; dScroll.scrollTop = 0; }
+      draftCurrent = id;
+      draftVersion = version || null;
+    }
     draftsPanel.classList.add('open');
     ui.classList.add('sb-open');
     btnDrafts.classList.add('on');
     btnDrafts.setAttribute('aria-expanded', 'true');
     dErr.textContent = '';
     renderDrafts();
-    loadDrafts();
-    setTimeout(function () { dClose.focus(); }, 0);
+    if (!wasOpen) { loadDrafts(); setTimeout(function () { dClose.focus(); }, 0); }
   }
   function closeDrafts() {
     draftsPanel.classList.remove('open');
@@ -3313,14 +3531,16 @@
   btnDrafts.addEventListener('click', function () { if (draftsPanel.classList.contains('open')) closeDrafts(); else openDrafts(); });
   dClose.addEventListener('click', closeDrafts);
   dReload.addEventListener('click', loadDrafts);
-  dBack.addEventListener('click', function () { draftCurrent = null; renderDrafts(); });
+  dBack.addEventListener('click', function () { draftCurrent = null; dScroll.scrollTop = 0; renderDrafts(); });
   document.addEventListener('keydown', function (e) {
-    // V: in der Vorschau zwischen Entwurf und aktueller Seite wechseln
-    if (!PREVIEW || e.ctrlKey || e.metaKey || e.altKey || (e.key !== 'v' && e.key !== 'V')) return;
+    // V: in der Vorschau zwischen Entwurf und aktueller Seite wechseln (live)
+    if (!PREVIEW || selecting || e.ctrlKey || e.metaKey || e.altKey || (e.key !== 'v' && e.key !== 'V')) return;
     var t = e.composedPath ? e.composedPath()[0] : e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    var d = drafts.filter(function (x) { return x.id === PREVIEW.draft; })[0];
-    if (d) location.href = currentUrl(d);
+    var d = draftById(PREVIEW.draft);
+    if (!d) return;
+    e.preventDefault();
+    showLive(d, pvLive.shown ? 0 : (pvLive.lastV || latest(d).v));
   }, true);
 
   // Bausteine der Seite messen (für „wie bisher“): typische Elemente gruppiert nach Tag und Klassen

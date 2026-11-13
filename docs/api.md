@@ -122,9 +122,10 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `PUT /api/sites/<slug>/design` | JSON `{ tokens?, notes?, consistency? }` | `202 { job }` (`design-save`) |
 | `POST /api/sites/<slug>/tokens/propose` | – | `202 { job }` (`tokens-propose`) |
 | `GET /api/sites/<slug>/history` | – | Inhalt von `.history.json` |
-| `GET /api/sites/<slug>/drafts` | – | `{ drafts: [{ id, page, selector, prompt, created, status: "open"|"applied"|"discarded", appliedAs, appliedVersion, versions: [{ v, prompt, created, summary, name, title, costUsd, warnings, bausteine, befund, platzhalter }] }], components: ["mx-…"] }` |
+| `GET /api/sites/<slug>/drafts` | – | `{ drafts: [{ id, page, selector, prompt, created, status: "open"|"applied"|"discarded", appliedAs, appliedVersion, revises, versions: [{ v, prompt, created, summary, name, title, costUsd, warnings, bausteine, befund, platzhalter }] }], components: ["mx-…"] }` |
 | `POST /api/sites/<slug>/drafts` | wie `annotations` (multipart), Annotation zusätzlich mit `rect` und `bausteine` | `202 { job }` (`draft`); `409` nur, wenn ein Auftrag läuft oder wartet (eine offene Prüfung blockiert nicht) |
 | `GET /api/sites/<slug>/drafts/<D-xxx>` | – | `{ draft }` |
+| `GET /api/sites/<slug>/drafts/<D-xxx>/versions/<n>` | – | `{ version, name, html }` Markup einer Version (geprüft) für das Live-Umschalten in der Vorschau |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/versions` | JSON `{ prompt }` | `202 { job }` (`draft`, neue Version, setzt die Claude-Session des Entwurfs fort) |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/apply` | JSON `{ version? }` (Standard: neueste) | `202 { job }` (`draft-apply`) |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/discard` | – | `202 { job }` (`draft-discard`) |
@@ -181,9 +182,11 @@ Vor `</head>` bindet er `/s/<slug>/__tokens.css` (aus `design/tokens.css`) und d
 
 ### Entwürfe (`sites/<slug>/drafts/D-xxx/`, nicht versioniert)
 
-`draft.json` (Metadaten, Versionen, `sessionId`, `appliedAs`), `CLAUDE.md` (aus `templates/DRAFT.md`), `source.html`, `bausteine.json`, `refs/`, je Version `v<n>/befund.json` (`[{ id: "P1", gruppe: "pflicht"|"inhalt"|"funktionen"|"feinschliff", titel, text, umgesetzt }]`, Pflicht beim Erzeugen, ältere Entwürfe ohne bleiben gültig), `component.html`, `component.css`, `meta.json` (`{ name, title, bausteine: [{ key, label, source: "neu"|"bestand" }] }`). Ergänzte Funktionen tragen `data-mx-platzhalter="<was anzubinden ist>"`; beim Übernehmen stehen Platzhalter und offene Befundpunkte in der Zusammenfassung des Schritts.
+`draft.json` (Metadaten, Versionen, `sessionId`, `appliedAs`), `CLAUDE.md` (aus `templates/DRAFT.md`), `source.html`, `bausteine.json`, `refs/`, je Version `v<n>/befund.json` (`[{ id: "P1", gruppe: "pflicht"|"inhalt"|"funktionen"|"feinschliff", titel, text, umgesetzt }]`, Pflicht beim Erzeugen, ältere Entwürfe ohne bleiben gültig), `component.html`, `component.css`, `meta.json` (`{ name, title, bausteine: [{ key, label, source: "neu"|"bestand", klassen: { neu, bestand } }] }`; Baustein-Elemente tragen `data-mx-baustein="<key>"`, das Overlay tauscht in der Vorschau die Klassen für „neu/wie bisher“ live). Ergänzte Funktionen tragen `data-mx-platzhalter="<was anzubinden ist>"`; beim Übernehmen stehen Platzhalter und offene Befundpunkte in der Zusammenfassung des Schritts.
 
 Prüfung (`scripts/lib/draft.mjs`): genau ein Wurzelelement mit Klasse `mx-<name>`; CSS nur in `@scope (.mx-<name>)` (auch innerhalb von `@media`/`@supports`/`@container`), Keyframes `mx-<name>…`; verboten sind Scripts, Event-Handler, iframes, `<style>`/`<link>`/`<meta>`/`<base>`, `@import`, `@layer`, `javascript:` und Domains, die nicht im Ausgangsmaterial oder als Host der Website vorkommen. Ist eine Version ungültig, bekommt Claude eine Korrekturrunde.
+
+**Überarbeitung:** Ist das gewählte Element selbst eine übernommene Komponente (Wurzel mit Klasse `mx-<name>` und `components/mx-<name>.css` vorhanden), setzt `draft-create.sh` `revises: <name>`, legt das bisherige CSS als `bestand-komponente.css` bei und verlangt denselben Namen; `draft-apply.sh` ersetzt dann die vorhandene CSS-Datei.
 
 Status „übernommen“ ergibt sich aus dem Abzug: `appliedAs` gesetzt und `annotations/<appliedAs>.json` vorhanden. Nach Verwerfen der Prüfung oder einem Rücksprung ist der Entwurf wieder offen.
 

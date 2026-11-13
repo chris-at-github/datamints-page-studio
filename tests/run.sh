@@ -278,10 +278,10 @@ D="$S/drafts/D-001"
 mkdir -p "$D/v1"
 printf '<section class="hero"><h1 class="hero__title">Willkommen</h1></section>' >"$D/source.html"
 jq -n --arg page "$ENTRY" '{id:"D-001", page:$page, selector:"section.hero", prompt:"Hero neu gestalten", status:"open", appliedAs:null, versions:[{v:1, prompt:"Hero neu gestalten", name:"hero", title:"Hero", summary:"Neu gestaltet."}]}' >"$D/draft.json"
-printf '<section class="mx-hero"><h1>Willkommen</h1><a class="btn" href="/leistungen/">Mehr</a><button type="button" data-mx-platzhalter="Merkliste anbinden">Merken</button></section>\n' >"$D/v1/component.html"
+printf '<section class="mx-hero"><h1>Willkommen</h1><a class="hero__cta" data-mx-baustein="button" href="/leistungen/">Mehr</a><button type="button" data-mx-platzhalter="Merkliste anbinden">Merken</button></section>\n' >"$D/v1/component.html"
 echo '[{"id":"P1","gruppe":"pflicht","titel":"Ansprache","text":"ihren -> Ihren","umgesetzt":true},{"id":"P2","gruppe":"pflicht","titel":"Kontrast Orange","text":"Gesperrter Token, klären.","umgesetzt":false}]' >"$D/v1/befund.json"
 printf '@scope (.mx-hero) {\n  :scope { padding: var(--modio-space-l, 4rem); }\n  h1 { font-size: clamp(2rem, 5vw, 4rem); color: #fff; }\n}\n@media (min-width: 60em) {\n  @scope (.mx-hero) { :scope { display: grid; } }\n}\n' >"$D/v1/component.css"
-echo '{"name":"hero","title":"Hero","bausteine":[{"key":"button","label":"Button","source":"bestand"}]}' >"$D/v1/meta.json"
+echo '{"name":"hero","title":"Hero","bausteine":[{"key":"button","label":"Button","source":"neu","klassen":{"neu":"hero__cta","bestand":"btn"}}]}' >"$D/v1/meta.json"
 set +e; OUT="$(node scripts/lib/draft.mjs validate "$S" "$D" 1 2>/dev/null)"; rc=$?; set -e
 check "Gültige Komponente besteht die Prüfung" '(( rc == 0 )) && [[ "$(jq -r .name <<<"$OUT")" == hero ]]'
 check "Befund und Platzhalter erkannt" 'jq -e "(.befund | length == 2) and (.platzhalter[0].text == \"Merkliste anbinden\")" <<<"$OUT" >/dev/null'
@@ -297,6 +297,10 @@ set +e; OUT="$(node scripts/lib/draft.mjs validate "$S" "$D" 2 2>/dev/null)"; rc
 check "Ungültige Komponente: Exit 3" '(( rc == 3 ))'
 check "Erkennt Script, Handler, fremde Domain, Regel ohne @scope, @import" 'jq -e ".errors | (map(test(\"script-tag\")) | any) and (map(test(\"event-handler\")) | any) and (map(test(\"evil.example\")) | any) and (map(test(\"außerhalb von @scope\")) | any) and (map(test(\"css-import\")) | any)" <<<"$OUT" >/dev/null'
 rm -rf "$D/v2"
+# gültige Version 2 für das Live-Umschalten
+mkdir -p "$D/v2"; cp "$D/v1/component.css" "$D/v1/meta.json" "$D/v1/befund.json" "$D/v2/"
+sed 's#<h1>Willkommen</h1>#<h1>Version zwei</h1>#' "$D/v1/component.html" >"$D/v2/component.html"
+jq '.versions += [{v:2, prompt:"Zweite Fassung", name:"hero", title:"Hero 2", summary:"Zwei."}]' "$D/draft.json" >"$D/draft.tmp" && mv "$D/draft.tmp" "$D/draft.json"
 SPORT="${TEST_SERVER_PORT:-3998}"; STOKEN="test-token-0123456789abcdef"
 MODIO_API_TOKEN="$STOKEN" BRIDGE_PORT="$SPORT" node tools/server/index.js >/dev/null 2>&1 &
 SRV_PID=$!
@@ -317,6 +321,16 @@ set +e; OUT="$(./scripts/draft-apply.sh "$SLUG" D-001 2>/dev/null)"; rc=$?; set 
 check "Übernommener Entwurf nicht noch einmal übernehmbar" '(( rc != 0 )) && grep -q "nicht mehr offen" <<<"$OUT"'
 check "Server: CSS-Ebenen nach Übernahme" 'node tests/draft-server-test.mjs "http://127.0.0.1:$SPORT" "$SLUG" "$ENTRY" "$STOKEN" after'
 kill "$SRV_PID" 2>/dev/null || true
+
+# Überarbeitung einer übernommenen Komponente: Name bleibt, CSS-Datei wird ersetzt
+JOBR="$(mktemp)"
+jq -n --arg page "$ENTRY" '{id:"job-test-rev", params:{page:$page, selector:"section.mx-hero", html:"<section class=\"mx-hero\"><h1>Willkommen</h1></section>", text:"Willkommen", prompt:"Hero ruhiger"}}' >"$JOBR"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBR" 2>/dev/null)" || true
+RD="$(jq -r .draft <<<"$OUT")"
+check "Überarbeitung erkannt (Name bleibt, bisheriges CSS als Material)" '[[ "$(jq -r .name <<<"$OUT")" == hero ]] && [[ "$(jq -r .revises "$S/drafts/$RD/draft.json")" == hero ]] && [[ -f "$S/drafts/$RD/bestand-komponente.css" ]]'
+set +e; OUT="$(./scripts/draft-apply.sh "$SLUG" "$RD" 2>/dev/null)"; rc=$?; set -e
+check "Überarbeitung ersetzt components/mx-hero.css" '(( rc == 0 )) && grep -q "padding: 2rem" "$S/components/mx-hero.css" && [[ "$(ls "$S/components" | wc -l)" == 1 ]]'
+rm -f "$JOBR" logs/claude-job-test-rev*.json logs/claude-job-test-rev*.stderr.log
 OUT="$(node --input-type=module -e "
 import { layerLegacyCss } from './scripts/lib/draft.mjs';
 const h = '<link rel=\"stylesheet\" href=\"/css/a.css?x=1&amp;y=2\" media=\"screen\"><link rel=\"icon\" href=\"/f.ico\"><style>@import url(b.css);h1{color:red}</style><style data-modio>x{}</style>';

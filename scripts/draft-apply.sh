@@ -20,7 +20,11 @@ ensure_drafts_ignored
 
 PAGE="$(jq -r .page "$DDIR/draft.json")"; SELECTOR="$(jq -r .selector "$DDIR/draft.json")"
 NAME="$(jq -r '.name // ""' "$DDIR/v$VERSION/meta.json" 2>/dev/null || true)"
-[[ -n "$NAME" && ! -f "$SITE/components/mx-$NAME.css" ]] || die "Die Komponente mx-$NAME gibt es im Abzug schon. Entwurf mit anderem Namen nachbessern."
+REVISES="$(jq -r '.revises // ""' "$DDIR/draft.json")"
+[[ -n "$NAME" ]] || die "Version $VERSION ohne Namen"
+if [[ -f "$SITE/components/mx-$NAME.css" && "$NAME" != "$REVISES" ]]; then
+  die "Die Komponente mx-$NAME gibt es im Abzug schon. Entwurf mit anderem Namen nachbessern."
+fi
 
 COUNTER="$(next_annotation_number)"
 state_set counter "$COUNTER"
@@ -29,7 +33,7 @@ mkdir -p "$SITE/annotations"
 jq --arg id "$ID" --arg created "$(now_iso)" --argjson v "$VERSION" '
   (.versions[] | select(.v == $v)) as $ver
   | {id:$id, source:"draft", created:$created,
-     prompt:("Entwurf \(.id) v\($v) übernommen (mx-\($ver.name)): \(.prompt)"),
+     prompt:("Entwurf \(.id) v\($v) übernommen (mx-\($ver.name)\(if .revises then ", Überarbeitung" else "" end)): \(.prompt)"),
      page, selector, remember:false, allow_token_change:false,
      draft:{id, version:$v, name:$ver.name, title:$ver.title, prompts:[.versions[] | select(.v <= $v) | .prompt]},
      result:{summary:("Element durch die Komponente mx-\($ver.name) ersetzt (components/mx-\($ver.name).css).\n\n" + ($ver.summary // ""))}}' \
