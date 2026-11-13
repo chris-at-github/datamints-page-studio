@@ -45,6 +45,9 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `local-commit` | `{}` | `local-commit.sh <slug>` (Exit 3 → `review` wie bei Annotationen) |
 | `inspect-apply` | `{ file: "jobs/assets/<job-id>-inspect.json", page, selector }` | `inspect-apply.sh <slug> <datei>` (Exit 3 → `review`) |
 | `areas-sync` | `{ page, add?: { name, selector } }` | `areas-sync.sh <slug> <page> [--add <name> <selector>]` |
+| `draft` | neu: Annotation (wie `annotate`, ohne Nachbessern) plus `rect: {width, height}` und `bausteine: [{ kind, tag, classes, count, sample, style }]`; neue Version: `{ draft: "D-001", prompt }` | `draft-create.sh <slug> <job.json>` |
+| `draft-apply` | `{ draft, version? }` | `draft-apply.sh <slug> <draft> [version]` (Exit 3 → `review`) |
+| `draft-discard` | `{ draft }` | `draft-discard.sh <slug> <draft>` |
 
 `site-recrawl` hat `params.keepDesign` (Standard `true`) und ruft `site-recrawl.sh <slug> --keep-design|--no-keep-design` auf.
 
@@ -61,7 +64,7 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | Regel | Stufe | Auslöser |
 |---|---|---|
 | `script-tag`, `event-handler`, `iframe`, `object-embed`, `javascript-url`, `css-expression`, `meta-refresh`, `base-tag`, `form-action`, `unknown-domain` | block | riskante Inhalte (unverändert) |
-| `path-outside` | block | Änderung außerhalb von `www/`, `overrides.css`, `design/`, `annotations/` |
+| `path-outside` | block | Änderung außerhalb von `www/`, `overrides.css`, `components/mx-*.css`, `design/`, `annotations/` |
 | `tokens-invalid`, `tokens-removed` | block | `design/tokens.json` kein gültiges JSON, Wert abgelehnt oder Datei gelöscht |
 | `token-locked` | block | gesperrten Token geändert, entfernt oder entsperrt (außer `allow_token_change`) |
 | `notes-without-remember` | block | `design/notes.md` geändert ohne `remember` |
@@ -69,6 +72,7 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `tokens-css-manual` | block | `design/tokens.css` weicht vom Ergebnis von `tokens-build.sh` ab |
 | `token-literal` | warn | Literalwert in `overrides.css` entspricht einem Farb- oder Schrift-Token |
 | `token-new` | warn | neuer, nicht gesperrter Token |
+| `docs-changed` | block | weitere `design/*.md` (Hintergrundwissen) geändert ohne `remember` |
 | `consistency-changed` | block | `design/consistency.json` geändert ohne `remember` |
 | `consistency` | warn | Bereich aus `consistency.json` weicht auf einzelnen Seiten ab oder fehlt (`check-consistency.sh`, nur durch den Schritt neu entstandene Abweichungen) |
 | `areas-unclear` | warn | Gleicher Bereich wurde im Schritt auf mehreren Seiten unterschiedlich geändert und deshalb nicht übertragen |
@@ -118,6 +122,12 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `PUT /api/sites/<slug>/design` | JSON `{ tokens?, notes?, consistency? }` | `202 { job }` (`design-save`) |
 | `POST /api/sites/<slug>/tokens/propose` | – | `202 { job }` (`tokens-propose`) |
 | `GET /api/sites/<slug>/history` | – | Inhalt von `.history.json` |
+| `GET /api/sites/<slug>/drafts` | – | `{ drafts: [{ id, page, selector, prompt, created, status: "open"|"applied"|"discarded", appliedAs, appliedVersion, versions: [{ v, prompt, created, summary, name, title, costUsd, warnings, bausteine }] }], components: ["mx-…"] }` |
+| `POST /api/sites/<slug>/drafts` | wie `annotations` (multipart), Annotation zusätzlich mit `rect` und `bausteine` | `202 { job }` (`draft`); `409` nur, wenn ein Auftrag läuft oder wartet (eine offene Prüfung blockiert nicht) |
+| `GET /api/sites/<slug>/drafts/<D-xxx>` | – | `{ draft }` |
+| `POST /api/sites/<slug>/drafts/<D-xxx>/versions` | JSON `{ prompt }` | `202 { job }` (`draft`, neue Version, setzt die Claude-Session des Entwurfs fort) |
+| `POST /api/sites/<slug>/drafts/<D-xxx>/apply` | JSON `{ version? }` (Standard: neueste) | `202 { job }` (`draft-apply`) |
+| `POST /api/sites/<slug>/drafts/<D-xxx>/discard` | – | `202 { job }` (`draft-discard`) |
 | `GET /api/jobs/<job-id>/log` | – | `{ lines: [..] }` laufende Ausgabe (Skript-Log und Claude-Ereignisse aus `logs/claude-<job-id>.json`, stream-json), lesbar aufbereitet |
 | `GET /api/jobs?slug=<slug>` | – | `{ jobs: [..] }` aktive Jobs (pending, running, review) und die letzten 20 abgeschlossenen |
 | `GET /api/events` | – | SSE: `event: job` mit dem Job als JSON, `event: reload` mit `{ slug }` |
@@ -164,5 +174,17 @@ Der Server schleust vor `</body>` ein:
 ```
 
 Vor `</head>` bindet er `/s/<slug>/__tokens.css` (aus `design/tokens.css`) und danach `/s/<slug>/__overrides.css` ein.
+
+**CSS-Ebenen:** Sobald `components/mx-*.css` existiert (oder in der Vorschau eines Entwurfs), legt der Server alle Stylesheets des Originals (`<link rel="stylesheet">` als `@import … layer(legacy)`, `<style>` als `@layer legacy { … }`) sowie `__tokens.css` und `__overrides.css` in `@layer legacy`. `/s/<slug>/__components.css` (alle Komponenten, `?exclude=<name>` lässt eine aus) steht ohne Ebene darüber. Das Verhalten bestehender Overrides bleibt dadurch gleich.
+
+**Vorschau eines Entwurfs:** `<seite>?__modio_draft=D-001&__modio_v=2` liefert die Seite mit dem Element des Entwurfs durch die Komponente ersetzt (gleiches Verfahren wie `draft-apply.sh`) und bindet `/s/<slug>/__draft.css?d=D-001&v=2` ein. `window.__MODIO__.preview = { draft, version }`; das Overlay sperrt dort Auswahl und Änderungserkennung.
+
+### Entwürfe (`sites/<slug>/drafts/D-xxx/`, nicht versioniert)
+
+`draft.json` (Metadaten, Versionen, `sessionId`, `appliedAs`), `CLAUDE.md` (aus `templates/DRAFT.md`), `source.html`, `bausteine.json`, `refs/`, je Version `v<n>/component.html`, `component.css`, `meta.json` (`{ name, title, bausteine: [{ key, label, source: "neu"|"bestand" }] }`).
+
+Prüfung (`scripts/lib/draft.mjs`): genau ein Wurzelelement mit Klasse `mx-<name>`; CSS nur in `@scope (.mx-<name>)` (auch innerhalb von `@media`/`@supports`/`@container`), Keyframes `mx-<name>…`; verboten sind Scripts, Event-Handler, iframes, `<style>`/`<link>`/`<meta>`/`<base>`, `@import`, `@layer`, `javascript:` und Domains, die nicht im Ausgangsmaterial oder als Host der Website vorkommen. Ist eine Version ungültig, bekommt Claude eine Korrekturrunde.
+
+Status „übernommen“ ergibt sich aus dem Abzug: `appliedAs` gesetzt und `annotations/<appliedAs>.json` vorhanden. Nach Verwerfen der Prüfung oder einem Rücksprung ist der Entwurf wieder offen.
 
 Ausgelieferte Seiten erhalten eine Content-Security-Policy, die Scripts und Verbindungen nur zur eigenen Adresse erlaubt.

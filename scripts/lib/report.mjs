@@ -50,6 +50,25 @@ out.push(
   '',
 );
 
+// ---------- Komponenten und CSS-Ebenen (aus übernommenen Entwürfen) ----------
+const compDir = path.join(siteDir, 'components');
+const components = fs.existsSync(compDir) ? fs.readdirSync(compDir).filter((f) => /^mx-[a-z0-9-]+\.css$/.test(f)).sort() : [];
+if (components.length) {
+  out.push('## Komponenten und CSS-Ebenen', '');
+  out.push(
+    'Neu gestaltete Elemente sind eigenständige Komponenten: Markup ersetzt das bisherige Element (siehe HTML-Diff des jeweiligen Schritts), ' +
+      'das CSS steht je Komponente in `components/mx-<name>.css` und ist mit `@scope (.mx-<name>)` gekapselt.',
+    '',
+    'Einmalig im echten Projekt einrichten:',
+    '',
+    '1. Bisheriges Theme-CSS und die Overrides in die Ebene `legacy` legen, z. B. `@import url(theme.css) layer(legacy);` oder im Build mit `@layer legacy { … }` umschließen.',
+    '2. Die Komponenten-CSS-Dateien **ohne** Ebene danach einbinden. CSS ohne Ebene gewinnt unabhängig von der Spezifität gegen `legacy`.',
+    '3. Wirkt weiterhin: `!important` im Theme und Inline-Styles. In Komponenten deshalb kein `!important` verwenden.',
+    '',
+  );
+  for (const f of components) out.push(`### ${f.slice(0, -4)}`, '', fence(fs.readFileSync(path.join(compDir, f), 'utf8'), 'css'), '');
+}
+
 // ---------- Design-Vorgaben (Grundlage für SCSS-Variablen oder ein Theme im echten Projekt) ----------
 const readSite = (f) => { try { return fs.readFileSync(path.join(siteDir, f), 'utf8'); } catch { return null; } };
 const cell = (v) => String(v ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
@@ -109,6 +128,7 @@ for (const line of log) {
   if (ann.page) out.push(`- Seite: \`${ann.page}\``);
   if (ann.selector) out.push(`- Selektor: \`${ann.selector.replace(/`/g, "'")}\``);
   if (ann.thorough) out.push('- Modus: gründlich');
+  if (ann.draft) out.push(`- Aus Entwurf ${ann.draft.id}, Version ${ann.draft.version}: Komponente \`mx-${ann.draft.name}\``);
   if (ann.remember) out.push('- Als Regel gemerkt: ja');
   if (ann.followup) out.push(`- Nachbesserung${ann.followup_of ? ' zu ' + ann.followup_of : ''}`);
   if (ann.allow_token_change) out.push('- Gesperrte Tokens durften geändert werden');

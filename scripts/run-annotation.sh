@@ -148,6 +148,7 @@ $TEXT_SNIPPET
 
 Hinweise:
 - CSS ausschließlich in overrides.css, als Block mit dem Kommentar /* $ID: Kurzbeschreibung */. overrides.css wird beim Ausliefern automatisch nach allen Stylesheets eingebunden (nicht selbst im HTML verlinken); nutze passende Spezifität und nur wenn nötig !important.
+- Ausnahme: Liegt das Element in einer Komponente (Klasse mx-<name>), ändere components/mx-<name>.css innerhalb von @scope (.mx-<name>), ohne !important.
 - Die Tokens stehen als CSS-Variablen bereit (design/tokens.css wird vor overrides.css eingebunden). Verwende var(--modio-…), wenn ein passender Token existiert.
 - Texte und Struktur direkt in der HTML-Datei ändern. Das Element über Selektor und HTML-Ausschnitt in www$PAGE finden.
 P
@@ -196,6 +197,7 @@ $OPTIONS
 $BLOCKS
 Hinweise:
 - CSS ausschließlich in overrides.css, als Block mit dem Kommentar /* $ID: Kurzbeschreibung */ (bei Bedarf mehrere Blöcke mit diesem Kommentar). overrides.css wird automatisch nach allen Stylesheets eingebunden; nutze passende Spezifität und nur wenn nötig !important.
+- Ausnahme: Liegt ein Element in einer Komponente (Klasse mx-<name>), ändere components/mx-<name>.css innerhalb von @scope (.mx-<name>), ohne !important.
 - Die Tokens stehen als CSS-Variablen bereit (design/tokens.css). Verwende var(--modio-…), wenn ein passender Token existiert.
 - Texte und Struktur direkt in der jeweiligen HTML-Datei ändern. Die Elemente über Selektor und HTML-Ausschnitt finden.
 P
@@ -221,6 +223,10 @@ if [[ "$FOLLOWUP" == "true" ]]; then
     log "$ID: Nachbessern ohne gültige Session (Rücksprung oder neuer Stand), starte frisch"
   fi
 fi
+SYSTEM_EXTRA="$(mktemp "$LOG_DIR/system-XXXXXX.md")"; SYSTEM_BARE="$(mktemp "$LOG_DIR/system-XXXXXX.md")"
+trap 'rc=$?; rm -f "$SYSTEM_EXTRA" "$SYSTEM_BARE"; if (( rc != 0 && rc != 3 )); then log "Abbruch mit Exit-Code $rc"; fi' EXIT
+build_system_prompt "$SYSTEM_EXTRA" ""   # CLAUDE.md (mit Leitlinien) lädt Claude selbst, hier nur der Skill
+build_system_prompt "$SYSTEM_BARE" "$SITE/CLAUDE.md"
 RESULT_FILE="$LOG_DIR/claude-$JOB_ID.json"
 STDERR_FILE="$LOG_DIR/claude-$JOB_ID.stderr.log"
 
@@ -237,11 +243,12 @@ run_claude() {
     --strict-mcp-config
   )
   if [[ "${CLAUDE_BARE:-false}" == "true" ]]; then
-    # --bare lädt weder CLAUDE.md noch Settings selbst: Regeln und Einstellungen explizit übergeben
-    args+=(--bare --append-system-prompt-file "$SITE/CLAUDE.md")
+    # --bare lädt weder CLAUDE.md noch Settings selbst: CLAUDE.md (inkl. Leitlinien) und Skill explizit übergeben
+    args+=(--bare --append-system-prompt-file "$SYSTEM_BARE")
   else
-    # Anmeldung per Claude-Konto: globale Einstellungen, MCP-Server und Skills nicht mitladen
-    args+=(--setting-sources project,local --disable-slash-commands)
+    # Anmeldung per Claude-Konto: globale Einstellungen, MCP-Server und Skills nicht mitladen;
+    # CLAUDE.md (inkl. Gestaltungsleitlinien) lädt Claude selbst, der Skill kommt fest dazu
+    args+=(--setting-sources project,local --disable-slash-commands --append-system-prompt-file "$SYSTEM_EXTRA")
   fi
   [[ -n "${CLAUDE_MAX_TURNS:-}" ]] && args+=(--max-turns "$CLAUDE_MAX_TURNS")
   local budget="${CLAUDE_MAX_BUDGET_USD-0.50}"

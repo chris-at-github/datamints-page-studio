@@ -134,6 +134,20 @@ async function handle(job, logFile) {
       return runScript('tokens-propose.sh', [slug], logFile);
     case 'annotate':
       return runScript('run-annotation.sh', [slug, jobPath('running', job.id)], logFile);
+    case 'draft':
+      return runScript('draft-create.sh', [slug, jobPath('running', job.id)], logFile);
+    case 'draft-apply': {
+      const d = String(job.params?.draft || '');
+      if (!/^D-\d{3,}$/.test(d)) return { code: 1, result: { status: 'error', error: 'Ungültiger Entwurf' } };
+      const args = [slug, d];
+      if (Number.isInteger(job.params?.version) && job.params.version > 0) args.push(String(job.params.version));
+      return runScript('draft-apply.sh', args, logFile);
+    }
+    case 'draft-discard': {
+      const d = String(job.params?.draft || '');
+      if (!/^D-\d{3,}$/.test(d)) return { code: 1, result: { status: 'error', error: 'Ungültiger Entwurf' } };
+      return runScript('draft-discard.sh', [slug, d], logFile);
+    }
     case 'rollback':
       return runScript('rollback.sh', [slug, job.params.target], logFile);
     case 'report':
@@ -191,14 +205,14 @@ async function processJob(id) {
   job.exitCode = r.code;
   let status;
   if (r.code === 0) status = 'done';
-  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply'].includes(job.type)) status = 'review';
+  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply', 'draft-apply'].includes(job.type)) status = 'review';
   else {
     status = 'failed';
     job.error = r.result?.error || `Skript endete mit Exit-Code ${r.code} (siehe ${job.log})`;
   }
 
   // Hochgeladene Bilder werden nach Übernahme nicht mehr gebraucht
-  if (job.type === 'annotate' && status !== 'review') {
+  if ((job.type === 'annotate' || job.type === 'draft') && status !== 'review') {
     for (const ref of [...(job.params?.references || []), ...(job.params?.items || []).flatMap((it) => it.references || [])]) {
       if (ref.type === 'upload' && /^jobs\/assets\/[^/]+$/.test(ref.file)) await fsp.rm(path.join(ROOT, ref.file), { force: true });
     }

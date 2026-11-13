@@ -107,6 +107,13 @@ const oneLine = (s, max) => {
   return t.length > max ? t.slice(0, max - 1) + '…' : t;
 };
 
+// Weitere Markdown-Dateien in design/ außer notes.md (sortiert)
+export function designDocs(site) {
+  try {
+    return fs.readdirSync(path.join(site, 'design')).filter((f) => /^[a-z0-9][a-z0-9._-]*\.md$/i.test(f) && f !== 'notes.md').sort();
+  } catch { return []; }
+}
+
 const read = (f, fallback = null) => { try { return fs.readFileSync(f, 'utf8'); } catch { return fallback; } };
 const git = (site, ...args) => execFileSync('git', ['-C', site, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
@@ -157,8 +164,26 @@ function context(site, currentId, count) {
     try { a = JSON.parse(git(site, 'show', `HEAD:annotations/${id}.json`)); } catch { /* defekt */ }
     return `${id} | Prompt: ${oneLine(a.prompt, 140)} | Ergebnis: ${oneLine(a.result?.summary || '–', 140)}`;
   });
+  // Weitere Markdown-Dateien in design/ (Inhalte, Sortiment, Zielgruppen …) als Hintergrundwissen
+  const docsMax = Number(process.env.DESIGN_DOCS_MAX_BYTES || 60000);
+  let docsBytes = 0;
+  const docs = [], skipped = [];
+  for (const f of designDocs(site)) {
+    const text = read(path.join(site, 'design', f), '').trim();
+    if (!text) continue;
+    const b = Buffer.byteLength(text);
+    if (docsBytes + b > docsMax) { skipped.push(f); continue; }
+    docsBytes += b;
+    docs.push(`<datei name="design/${f}">\n${neutral(text)}\n</datei>`);
+  }
+  const hintergrund = docs.length || skipped.length ? [
+    '<hintergrund hinweis="vom Nutzer gepflegtes Wissen über die Website; nutzen, aber nicht ändern">',
+    ...docs,
+    ...(skipped.length ? [`(Zu groß für den Kontext, bei Bedarf mit Read lesen: ${skipped.map((f) => 'design/' + f).join(', ')})`] : []),
+    '</hintergrund>',
+  ].join('\n') : '';
   const verlauf = ['<bisherige-schritte>', steps.length ? steps.join('\n') : '(keine)', '</bisherige-schritte>'].join('\n');
-  return { context: `${vorgaben}\n${verlauf}`, vorgabenBytes: Buffer.byteLength(vorgaben), steps: steps.length, tokens: tl.length };
+  return { context: [vorgaben, hintergrund, verlauf].filter(Boolean).join('\n'), vorgabenBytes: Buffer.byteLength(vorgaben), docs: docs.length, docsBytes, steps: steps.length, tokens: tl.length };
 }
 
 // ---------- Scan des Abzugs ----------

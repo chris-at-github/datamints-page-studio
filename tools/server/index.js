@@ -9,6 +9,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import busboy from 'busboy';
 import { renderStartPage } from './startpage.js';
+import { loadCheerio } from '../../scripts/lib/consistency.mjs';
+import { loadVersion, replaceElement, layerLegacyCss, readText } from '../../scripts/lib/draft.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
@@ -148,20 +150,85 @@ async function createJob(type, slug, params, id = newJobId()) {
 
 // ---------- Auslieferung der Abzüge ----------
 
-function injectHtml(buf, slug) {
-  const cfg = JSON.stringify({ slug, token: TOKEN, base: `/s/${slug}`, imageMaxCount: IMAGE_MAX_COUNT, imageMaxMb: IMAGE_MAX_MB })
+// opts.layered: Alt-CSS (samt tokens.css und overrides.css) in @layer legacy, Komponenten ohne Ebene darüber.
+// opts.preview: { draft, version, name } – Vorschau eines Entwurfs (dessen CSS statt der gleichnamigen Komponente)
+function injectHtml(buf, slug, opts = {}) {
+  const { layered = false, preview = null } = opts;
+  const cfg = JSON.stringify({ slug, token: TOKEN, base: `/s/${slug}`, imageMaxCount: IMAGE_MAX_COUNT, imageMaxMb: IMAGE_MAX_MB,
+    preview: preview ? { draft: preview.draft, version: preview.version } : null })
     .replace(/</g, '\\u003c');
-  // Tokens vor overrides.css, damit overrides.css die Variablen verwenden kann
-  const head = `<link rel="stylesheet" href="/s/${slug}/__tokens.css" data-modio="tokens"><link rel="stylesheet" href="/s/${slug}/__overrides.css" data-modio="overrides">` +
-    '<link rel="icon" href="/favicon.svg" type="image/svg+xml" data-modio="favicon">';
+  const b = `/s/${slug}`;
+  let head;
+  if (layered) {
+    const exclude = preview ? `?exclude=${encodeURIComponent(preview.name)}` : '';
+    head = `<style data-modio="layers">@import url("${b}/__tokens.css") layer(legacy);@import url("${b}/__overrides.css") layer(legacy);</style>` +
+      `<link rel="stylesheet" href="${b}/__components.css${exclude}" data-modio="components">` +
+      (preview ? `<link rel="stylesheet" href="${b}/__draft.css?d=${preview.draft}&amp;v=${preview.version}" data-modio="draft">` : '');
+  } else {
+    // Tokens vor overrides.css, damit overrides.css die Variablen verwenden kann
+    head = `<link rel="stylesheet" href="${b}/__tokens.css" data-modio="tokens"><link rel="stylesheet" href="${b}/__overrides.css" data-modio="overrides">`;
+  }
+  head += '<link rel="icon" href="/favicon.svg" type="image/svg+xml" data-modio="favicon">';
   const body = `<script data-modio="config">window.__MODIO__=${cfg}</script><script src="/__modio/overlay.js" defer data-modio="overlay"></script>`;
   let html = buf.toString('latin1'); // byte-treu, Injektion ist reines ASCII
+  if (layered) html = layerLegacyCss(html);
   const hi = html.search(/<\/head\s*>/i);
   html = hi >= 0 ? html.slice(0, hi) + head + html.slice(hi) : head + html;
   const bodyMatches = [...html.matchAll(/<\/body\s*>/gi)];
   const bi = bodyMatches.length ? bodyMatches.at(-1).index : -1;
   html = bi >= 0 ? html.slice(0, bi) + body + html.slice(bi) : html + body;
   return Buffer.from(html, 'latin1');
+}
+
+// ---------- Komponenten und Entwürfe ----------
+
+const validDraftId = (s) => typeof s === 'string' && /^D-\d{3,}$/.test(s);
+async function componentFiles(slug) {
+  return (await fsp.readdir(path.join(siteDir(slug), 'components')).catch(() => []))
+    .filter((f) => /^mx-[a-z0-9-]+\.css$/.test(f)).sort();
+}
+
+// Status wie draft_status in common.sh: übernommen, solange der Schritt im Abzug liegt
+function draftStatus(slug, d) {
+  if (d.status === 'discarded') return 'discarded';
+  if (d.appliedAs && /^A-\d{3,}$/.test(d.appliedAs) && fs.existsSync(path.join(siteDir(slug), 'annotations', `${d.appliedAs}.json`))) return 'applied';
+  return 'open';
+}
+
+async function readDraft(slug, id) {
+  if (!validDraftId(id)) return null;
+  const dir = path.join(siteDir(slug), 'drafts', id);
+  const d = await readJson(path.join(dir, 'draft.json'), null);
+  if (!d) return null;
+  const versions = await Promise.all((d.versions || []).map(async (v) => {
+    const meta = await readJson(path.join(dir, `v${v.v}`, 'meta.json'), {});
+    return { v: v.v, prompt: v.prompt, created: v.created, summary: v.summary, name: v.name, title: v.title, costUsd: v.costUsd, warnings: v.warnings || [],
+      bausteine: Array.isArray(meta.bausteine) ? meta.bausteine.slice(0, 30) : [] };
+  }));
+  return { id: d.id, page: d.page, selector: d.selector, prompt: d.prompt, created: d.created, status: draftStatus(slug, d),
+    appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, versions };
+}
+
+async function listDrafts(slug) {
+  const ids = (await fsp.readdir(path.join(siteDir(slug), 'drafts')).catch(() => [])).filter(validDraftId)
+    .sort((a, b) => Number(b.slice(2)) - Number(a.slice(2)));
+  return (await Promise.all(ids.map((id) => readDraft(slug, id)))).filter(Boolean);
+}
+
+// Vorschau: Seite mit dem Element durch die Komponente ersetzt. Gibt { buf, preview } oder { error } zurück.
+async function draftPreview(slug, file, rel, draftId, versionArg) {
+  const d = await readDraft(slug, draftId);
+  if (!d) return { error: 'Entwurf nicht gefunden' };
+  const version = Number(versionArg) || Math.max(0, ...d.versions.map((v) => v.v));
+  if (!d.versions.some((v) => v.v === version)) return { error: `Version ${versionArg} nicht gefunden` };
+  if ('/' + rel.replace(/^\/+/, '') !== d.page) return { error: 'Der Entwurf gehört zu einer anderen Seite' };
+  const dir = siteDir(slug);
+  const v = await loadVersion(dir, path.join(dir, 'drafts', draftId), version);
+  if (v.errors.length) return { error: `Entwurf ungültig: ${v.errors.join('; ')}` };
+  const src = readText(file);
+  const r = replaceElement(await loadCheerio(), src.text, d.selector, v.html);
+  if (r.error) return { error: r.error };
+  return { buf: Buffer.from(r.text, src.enc), preview: { draft: draftId, version, name: v.name } };
 }
 
 async function serveSite(req, res, slug, rest, search) {
@@ -181,6 +248,28 @@ async function serveSite(req, res, slug, rest, search) {
   if (rest === '/__tokens.css') {
     const css = await fsp.readFile(path.join(dir, 'design', 'tokens.css')).catch(() => Buffer.alloc(0));
     return send(res, 200, css, { 'Content-Type': 'text/css; charset=utf-8' });
+  }
+  const sp = new URLSearchParams(search || '');
+  if (rest === '/__components.css') {
+    const exclude = `mx-${sp.get('exclude') || ''}.css`;
+    const parts = [];
+    for (const f of await componentFiles(slug)) if (f !== exclude) parts.push(await fsp.readFile(path.join(dir, 'components', f), 'utf8').catch(() => ''));
+    return send(res, 200, parts.join('\n'), { 'Content-Type': 'text/css; charset=utf-8' });
+  }
+  if (rest === '/__draft.css') {
+    const id = sp.get('d') || '';
+    const version = Number(sp.get('v'));
+    if (!validDraftId(id) || !Number.isInteger(version) || version < 1) return sendError(res, 400, 'Ungültiger Entwurf');
+    const v = await loadVersion(dir, path.join(dir, 'drafts', id), version).catch(() => null);
+    if (!v || v.errors.length) return sendError(res, 404, 'Entwurf nicht gefunden oder ungültig');
+    return send(res, 200, v.css, { 'Content-Type': 'text/css; charset=utf-8' });
+  }
+  // Vorschau eines Entwurfs: ?__modio_draft=D-001&__modio_v=2 (nicht Teil des wget-Dateinamens)
+  const previewId = sp.get('__modio_draft');
+  const previewV = sp.get('__modio_v');
+  if (previewId !== null) {
+    sp.delete('__modio_draft'); sp.delete('__modio_v');
+    search = sp.toString() ? '?' + sp.toString() : '';
   }
 
   const www = path.join(dir, 'www');
@@ -210,7 +299,15 @@ async function serveSite(req, res, slug, rest, search) {
     }
     let buf = await fsp.readFile(file);
     const headers = { 'Content-Type': type, 'Cache-Control': 'no-store', 'Content-Security-Policy': SITE_CSP };
-    if (type === 'text/html') buf = injectHtml(buf, slug);
+    if (type === 'text/html') {
+      let preview = null;
+      if (previewId !== null) {
+        const p = await draftPreview(slug, file, rel, previewId, previewV);
+        if (p.error) return sendError(res, 409, `Vorschau nicht möglich: ${p.error}`);
+        buf = p.buf; preview = p.preview;
+      }
+      buf = injectHtml(buf, slug, { layered: !!preview || (await componentFiles(slug)).length > 0, preview });
+    }
     res.writeHead(200, { ...headers, 'Content-Length': buf.length });
     return res.end(req.method === 'HEAD' ? undefined : buf);
   }
@@ -232,6 +329,22 @@ function checkAuth(req, url) {
   const a = Buffer.from(String(given));
   const b = Buffer.from(TOKEN);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return 'Token fehlt oder ist falsch';
+  return null;
+}
+
+// Entwürfe ändern den Abzug nicht: nur blockieren, wenn gerade ein Auftrag läuft oder wartet (Prüfung ist egal)
+async function draftBusyCheck(res, slug) {
+  const active = (await activeJobsFor(slug)).filter((j) => j.status !== 'review');
+  if (active.length) {
+    sendError(res, 409, `Für ${slug} läuft bereits ein Auftrag (${active[0].type}). Der Entwurf ist erst danach möglich.`);
+    return true;
+  }
+  return false;
+}
+
+function validateBausteine(a) {
+  if (a.bausteine !== undefined && (!Array.isArray(a.bausteine) || a.bausteine.length > 40 || JSON.stringify(a.bausteine).length > 40000)) return 'Ungültige Bausteine';
+  if (a.rect !== undefined && a.rect !== null && (typeof a.rect !== 'object' || !Number.isFinite(Number(a.rect.width)))) return 'Ungültige Elementgröße';
   return null;
 }
 
@@ -503,6 +616,35 @@ async function handleApi(req, res, url) {
     return send(res, 200, { jobs: [...finished, ...active].map(slimJob) });
   }
 
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/drafts\/(D-\d{3,})(?:\/(versions|apply|discard))?$/))) {
+    const [, slug, id, action] = m;
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
+    if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    const draft = await readDraft(slug, id);
+    if (!draft) return sendError(res, 404, 'Entwurf nicht gefunden');
+    if (!action && req.method === 'GET') return send(res, 200, { draft });
+    if (!action || req.method !== 'POST') return sendError(res, 405, 'Methode nicht erlaubt');
+    if (draft.status !== 'open') return sendError(res, 409, `${id} ist nicht mehr offen`);
+    const body = await readBody(req);
+    if (action === 'versions') {
+      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+      if (!prompt) return sendError(res, 400, 'Prompt fehlt');
+      if (prompt.length > 10000) return sendError(res, 400, 'Prompt zu lang');
+      if (await draftBusyCheck(res, slug)) return;
+      return send(res, 202, { job: await createJob('draft', slug, { draft: id, prompt }) });
+    }
+    if (action === 'apply') {
+      const version = body.version === undefined ? undefined : Number(body.version);
+      if (version !== undefined && !draft.versions.some((v) => v.v === version)) return sendError(res, 400, 'Version nicht gefunden');
+      if (await busyCheck(res, slug, 'Das Übernehmen des Entwurfs')) return;
+      return send(res, 202, { job: await createJob('draft-apply', slug, { draft: id, version, page: draft.page, selector: draft.selector }) });
+    }
+    if (action === 'discard') {
+      if (await draftBusyCheck(res, slug)) return;
+      return send(res, 202, { job: await createJob('draft-discard', slug, { draft: id }) });
+    }
+  }
+
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/queue\/(job-\d{14}-[0-9a-f]{6})$/)) && req.method === 'DELETE') {
     const [, slug, qid] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
@@ -516,7 +658,7 @@ async function handleApi(req, res, url) {
     sse.emit('queue', { slug });
     return send(res, 200, { items: await readQueue(slug) });
   }
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -526,6 +668,7 @@ async function handleApi(req, res, url) {
     }
     if (action === 'design' && req.method === 'GET') return send(res, 200, await readDesign(slug));
     if (action === 'queue' && req.method === 'GET') return send(res, 200, { items: await readQueue(slug) });
+    if (action === 'drafts' && req.method === 'GET') return send(res, 200, { drafts: await listDrafts(slug), components: (await componentFiles(slug)).map((f) => f.slice(0, -4)) });
     if (action === 'pages' && req.method === 'GET') return send(res, 200, await listSitePages(slug));
     if (action === 'status' && req.method === 'GET') {
       // Nur lesend: ungespeicherte Änderungen im Abzug (für „Änderungen übernehmen“ im Overlay)
@@ -566,6 +709,21 @@ async function handleApi(req, res, url) {
       }
       const params = annotationParams(slug, annotation, files);
       return send(res, 202, { job: await createJob('annotate', slug, params, id) });
+    }
+    if (action === 'drafts') {
+      if (await draftBusyCheck(res, slug)) return req.resume();
+      const id = newJobId();
+      const { annotation, files } = await parseAnnotationUpload(req, id);
+      const err = validateAnnotation(annotation, files.length) || validateBausteine(annotation);
+      if (err) {
+        await Promise.all(files.map((f) => fsp.rm(path.join(ROOT, f), { force: true })));
+        return sendError(res, 400, err);
+      }
+      const { page, selector, html, text, viewport, prompt, references } = annotationParams(slug, annotation, files);
+      const params = { site: slug, page, selector, html, text, viewport, prompt, references,
+        rect: annotation.rect ? { width: Math.round(Number(annotation.rect.width)) || null, height: Math.round(Number(annotation.rect.height)) || null } : null,
+        bausteine: annotation.bausteine || [] };
+      return send(res, 202, { job: await createJob('draft', slug, params, id) });
     }
     if (action === 'queue') {
       // Sammeln: kein Busy-Check, die Queue darf wachsen, während ein Schritt läuft
@@ -726,7 +884,7 @@ async function scanJobs(initial = false) {
       job.status = status;
       sse.emit('job', slimJob(job));
       const prevStatus = seen.get(id)?.split(':')[0];
-      if (status === 'done' && prevStatus !== 'done' && ['annotate', 'rollback', 'decision', 'site-recrawl'].includes(job.type)) {
+      if (status === 'done' && prevStatus !== 'done' && ['annotate', 'rollback', 'decision', 'site-recrawl', 'draft-apply'].includes(job.type)) {
         sse.emit('reload', { slug: job.slug, job: job.id });
       }
     }

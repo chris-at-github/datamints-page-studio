@@ -19,7 +19,7 @@ if ! curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then
   SERVER_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.3; done
 fi
-cleanup() { [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; rm -rf "$S"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
+cleanup() { [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; [[ -n "${SRV_PID:-}" ]] && kill "$SRV_PID" 2>/dev/null; rm -rf "$S"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 rm -rf "$S"
 
@@ -272,6 +272,81 @@ set +e; OUT="$(./scripts/add-reference.sh "$SLUG" A-005 "http://127.0.0.1:$PORT/
 check "HTML statt Bild abgelehnt" '(( rc != 0 )) && grep -q "Seite statt eines Bildes" <<<"$OUT"'
 rm -f sites/ref-test.jpg sites/ref-test.svg
 ./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+
+echo "Entwurf und Integration (draft.mjs, draft-apply.sh)"
+D="$S/drafts/D-001"
+mkdir -p "$D/v1"
+printf '<section class="hero"><h1 class="hero__title">Willkommen</h1></section>' >"$D/source.html"
+jq -n --arg page "$ENTRY" '{id:"D-001", page:$page, selector:"section.hero", prompt:"Hero neu gestalten", status:"open", appliedAs:null, versions:[{v:1, prompt:"Hero neu gestalten", name:"hero", title:"Hero", summary:"Neu gestaltet."}]}' >"$D/draft.json"
+printf '<section class="mx-hero"><h1>Willkommen</h1><a class="btn" href="/leistungen/">Mehr</a></section>\n' >"$D/v1/component.html"
+printf '@scope (.mx-hero) {\n  :scope { padding: var(--modio-space-l, 4rem); }\n  h1 { font-size: clamp(2rem, 5vw, 4rem); color: #fff; }\n}\n@media (min-width: 60em) {\n  @scope (.mx-hero) { :scope { display: grid; } }\n}\n' >"$D/v1/component.css"
+echo '{"name":"hero","title":"Hero","bausteine":[{"key":"button","label":"Button","source":"bestand"}]}' >"$D/v1/meta.json"
+set +e; OUT="$(node scripts/lib/draft.mjs validate "$S" "$D" 1 2>/dev/null)"; rc=$?; set -e
+check "Gültige Komponente besteht die Prüfung" '(( rc == 0 )) && [[ "$(jq -r .name <<<"$OUT")" == hero ]]'
+check "drafts/ ist nicht versioniert" '[[ -z "$(git -C "$S" status --porcelain)" ]]'
+mkdir -p "$D/v2"; cp "$D/v1/meta.json" "$D/v2/"
+printf '<div class="mx-hero" onclick="x()"><script>alert(1)</script><img src="https://evil.example/x.png"></div>' >"$D/v2/component.html"
+printf '.hero { color: red; }\n@import url(x.css);\n' >"$D/v2/component.css"
+set +e; OUT="$(node scripts/lib/draft.mjs validate "$S" "$D" 2 2>/dev/null)"; rc=$?; set -e
+check "Ungültige Komponente: Exit 3" '(( rc == 3 ))'
+check "Erkennt Script, Handler, fremde Domain, Regel ohne @scope, @import" 'jq -e ".errors | (map(test(\"script-tag\")) | any) and (map(test(\"event-handler\")) | any) and (map(test(\"evil.example\")) | any) and (map(test(\"außerhalb von @scope\")) | any) and (map(test(\"css-import\")) | any)" <<<"$OUT" >/dev/null'
+rm -rf "$D/v2"
+SPORT="${TEST_SERVER_PORT:-3998}"; STOKEN="test-token-0123456789abcdef"
+MODIO_API_TOKEN="$STOKEN" BRIDGE_PORT="$SPORT" node tools/server/index.js >/dev/null 2>&1 &
+SRV_PID=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$SPORT/" && break; sleep 0.3; done
+check "Server: Vorschau und Entwurfs-API" 'node tests/draft-server-test.mjs "http://127.0.0.1:$SPORT" "$SLUG" "$ENTRY" "$STOKEN" before'
+if [[ "${SKIP_BROWSER:-}" != "1" ]]; then
+  check "Overlay: Vorschau, Ebenen und Entwurf erstellen (Browser)" 'node tests/draft-overlay-test.mjs "http://127.0.0.1:$SPORT" "$SLUG" "$ENTRY"'
+fi
+PREV="$(git -C "$S" rev-parse HEAD)"
+set +e; OUT="$(./scripts/draft-apply.sh "$SLUG" D-001 2>/dev/null)"; rc=$?; set -e
+check "draft-apply.sh committet" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT")" == committed ]]'
+check "Element ersetzt, Rest der Seite unverändert" 'grep -q "<section class=\"mx-hero\">" "$P" && ! grep -q "hero__title" "$P" && grep -q "<footer" "$P"'
+check "components/mx-hero.css versioniert" 'git -C "$S" cat-file -e HEAD:components/mx-hero.css && grep -q "@scope (.mx-hero)" "$S/components/mx-hero.css"'
+A="$(jq -r .annotationId <<<"$OUT")"
+check "Annotation mit Entwurfsbezug" 'jq -e ".source == \"draft\" and .draft.id == \"D-001\"" "$S/annotations/$A.json" >/dev/null'
+set +e; OUT="$(./scripts/draft-apply.sh "$SLUG" D-001 2>/dev/null)"; rc=$?; set -e
+check "Übernommener Entwurf nicht noch einmal übernehmbar" '(( rc != 0 )) && grep -q "nicht mehr offen" <<<"$OUT"'
+check "Server: CSS-Ebenen nach Übernahme" 'node tests/draft-server-test.mjs "http://127.0.0.1:$SPORT" "$SLUG" "$ENTRY" "$STOKEN" after'
+kill "$SRV_PID" 2>/dev/null || true
+OUT="$(node --input-type=module -e "
+import { layerLegacyCss } from './scripts/lib/draft.mjs';
+const h = '<link rel=\"stylesheet\" href=\"/css/a.css?x=1&amp;y=2\" media=\"screen\"><link rel=\"icon\" href=\"/f.ico\"><style>@import url(b.css);h1{color:red}</style><style data-modio>x{}</style>';
+process.stdout.write(layerLegacyCss(h));")"
+check "Alt-CSS in @layer legacy (link, style, @import)" 'grep -qF "@import url(\"/css/a.css?x=1&y=2\") layer(legacy) screen;" <<<"$OUT" && grep -qF "@import url(b.css) layer(legacy);@layer legacy{" <<<"$OUT" && grep -qF "<link rel=\"icon\"" <<<"$OUT" && grep -qF "<style data-modio>x{}</style>" <<<"$OUT"'
+./scripts/rollback.sh "$SLUG" "$PREV" >/dev/null 2>&1
+set +e; OUT="$(./scripts/draft-discard.sh "$SLUG" D-001 2>/dev/null)"; rc=$?; set -e
+check "Nach Rücksprung ist der Entwurf wieder offen (verwerfbar)" '(( rc == 0 )) && [[ ! -f "$S/components/mx-hero.css" ]] && [[ ! -f "$S/annotations/$A.json" ]]'
+check "draft-discard.sh verwirft" '[[ "$(jq -r .status "$D/draft.json")" == discarded ]]'
+
+echo "Entwurf anlegen (draft-create.sh mit simuliertem Claude)"
+JOBF="$(mktemp)"
+jq -n --arg page "$ENTRY" '{id:"job-test-draft", params:{page:$page, selector:"footer", html:"<footer>© Testfirma</footer>", text:"© Testfirma", prompt:"Footer modern", bausteine:[{key:"button",classes:"btn"}], viewport:{width:1440,height:900}, rect:{width:1200}}}' >"$JOBF"
+SKILLF="$(mktemp)"; printf -- '---\nname: frontend-design\ndescription: x\n---\n\n# Frontend Design\nTEST-SKILL-INHALT\n' >"$SKILLF"
+printf '# Sortiment\nWir verkaufen Testdinge.\n' >"$S/design/sortiment.md"
+git -C "$S" add design/sortiment.md && git -C "$S" commit -q -m "[design] Sortiment" -- design/sortiment.md
+OUT="$(DESIGN_SKILL_FILE="$SKILLF" PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
+DN="$(jq -r .draft <<<"$OUT")"
+check "Systemprompt mit Entwurfsregeln, Leitlinien und Skill (ohne Frontmatter)" 'F="$S/drafts/$DN/SYSTEM.md"; grep -q "Regeln für Entwürfe" "$F" && grep -q "Gestaltungsleitlinien" "$F" && grep -q "Kein typischer KI-Look" "$F" && grep -q "TEST-SKILL-INHALT" "$F" && ! grep -q "^name: frontend-design" "$F"'
+check "Weitere design/*.md als Hintergrund im Kontext" 'node scripts/lib/design.mjs context "$S" A-000 0 | jq -r .context | grep -q "<datei name=\"design/sortiment.md\">"'
+echo "Neu: alles" >>"$S/design/sortiment.md"
+set +e; OUT2="$(./scripts/check-diff.sh "$SLUG" 2>/dev/null)"; rc=$?; set -e
+check "Änderung an design/sortiment.md ohne „merken“ blockiert" '(( rc == 3 )) && jq -e ".hits | map(.rule) | index(\"docs-changed\")" <<<"$OUT2" >/dev/null'
+./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+rm -f "$SKILLF"
+OUT2="$(DESIGN_SKILL_FILE="" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" --leitlinien' 2>/dev/null)"
+check "Ohne Skill nur Leitlinien" 'grep -q "Gestaltungsleitlinien" <<<"$OUT2" && ! grep -q "Skill „frontend-design“ (nachrangig" <<<"$OUT2"'
+check "Neuer Entwurf mit Version 1" '[[ "$(jq -r .status <<<"$OUT")" == ok && "$(jq -r .version <<<"$OUT")" == 1 && -f "$S/drafts/$DN/v1/component.html" ]]'
+check "Ausgangsmaterial und Regeln im Entwurf" '[[ -f "$S/drafts/$DN/source.html" && -f "$S/drafts/$DN/CLAUDE.md" ]] && jq -e ".[0].classes == \"btn\"" "$S/drafts/$DN/bausteine.json" >/dev/null'
+check "Abzug unverändert" '[[ -z "$(git -C "$S" status --porcelain)" ]]'
+jq -n --arg d "$DN" '{id:"job-test-draft2", params:{draft:$d, prompt:"Etwas ruhiger"}}' >"$JOBF"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
+check "Neue Version 2 mit Session" '[[ "$(jq -r .version <<<"$OUT")" == 2 ]] && jq -e ".versions | length == 2" "$S/drafts/$DN/draft.json" >/dev/null && [[ "$(jq -r .sessionId "$S/drafts/$DN/draft.json")" == fake-session ]]'
+set +e; OUT="$(FAKE_CLAUDE_BAD=1 PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)"; rc=$?; set -e
+check "Ungültiger Entwurf: Fehler, keine Version 3" '(( rc != 0 )) && grep -q "Entwurf ungültig" <<<"$OUT" && [[ ! -d "$S/drafts/$DN/v3" ]]'
+./scripts/draft-discard.sh "$SLUG" "$DN" >/dev/null 2>&1
+rm -f "$JOBF" logs/claude-job-test-draft*.json logs/claude-job-test-draft*.stderr.log
 
 echo "Report und Liste"
 OUT="$(./scripts/report.sh "$SLUG" 2>/dev/null)"

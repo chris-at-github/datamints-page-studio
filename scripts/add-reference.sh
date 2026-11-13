@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# Übernimmt ein Referenzbild (URL oder Datei) geprüft und normalisiert in annotations/assets/.
-# Aufruf: add-reference.sh <slug> <annotation-id> <url|datei>
+# Übernimmt ein Referenzbild (URL oder Datei) geprüft und normalisiert in annotations/assets/
+# (bei einem Entwurf D-xxx in drafts/D-xxx/refs/).
+# Aufruf: add-reference.sh <slug> <annotation-id|entwurf-id> <url|datei>
 source "$(dirname "$0")/lib/common.sh"
 require_cmd file node curl jq
 require_site "${1:-}"
 ID="${2:-}"; SRC="${3:-}"
-valid_annotation_id "$ID" || usage "add-reference.sh <slug> <annotation-id> <url|datei>"
-[[ -n "$SRC" ]] || usage "add-reference.sh <slug> <annotation-id> <url|datei>"
+valid_annotation_id "$ID" || valid_draft_id "$ID" || usage "add-reference.sh <slug> <annotation-id|entwurf-id> <url|datei>"
+[[ -n "$SRC" ]] || usage "add-reference.sh <slug> <annotation-id|entwurf-id> <url|datei>"
 
 MAX_MB="${IMAGE_MAX_MB:-10}"; MAX_PX="${IMAGE_MAX_PX:-2000}"
 MAX_BYTES=$((MAX_MB * 1024 * 1024))
-ASSETS="$SITE/annotations/assets"; mkdir -p "$ASSETS"
+ASSETS="$SITE/annotations/assets"; REL_DIR="annotations/assets"
+if valid_draft_id "$ID"; then ASSETS="$SITE/drafts/$ID/refs"; REL_DIR="drafts/$ID/refs"; fi
+mkdir -p "$ASSETS"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 SOURCE_URL=""
 
@@ -43,5 +46,5 @@ N=1; while compgen -G "$ASSETS/$ID-ref-$N.*" >/dev/null; do N=$((N + 1)); done
 OUT_JSON="$(node "$LIB_DIR/image.mjs" "$INPUT" "$ASSETS/$ID-ref-$N" "$MAX_PX")" || die "Bild konnte nicht verarbeitet werden"
 FILE="$(jq -r .file <<<"$OUT_JSON")"
 log "Referenzbild gespeichert: ${FILE#$MODIO_ROOT/}"
-emit_json "$(jq -c --arg src "$SOURCE_URL" --arg rel "annotations/assets/$(basename "$FILE")" \
+emit_json "$(jq -c --arg src "$SOURCE_URL" --arg rel "$REL_DIR/$(basename "$FILE")" \
   '{status:"ok", path:.file, relPath:$rel, sourceUrl:(if $src=="" then null else $src end), width, height, format}' <<<"$OUT_JSON")"

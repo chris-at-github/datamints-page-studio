@@ -1,7 +1,7 @@
 /*
  * Modio Overlay
  * Wird vom Bridge-Server in jede ausgelieferte HTML-Seite eingeschleust.
- * Konfiguration: window.__MODIO__ = { slug, token, base, imageMaxCount, imageMaxMb }
+ * Konfiguration: window.__MODIO__ = { slug, token, base, imageMaxCount, imageMaxMb, preview: { draft, version } | null }
  * Schnittstellen: siehe docs/api.md
  */
 (function () {
@@ -18,13 +18,16 @@
   var IMAGE_MAX_COUNT = Number(CFG.imageMaxCount) || 3;
   var IMAGE_MAX_MB = Number(CFG.imageMaxMb) || 10;
   var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  // Vorschau eines Entwurfs: Seite mit ersetztem Element, nur ansehen (keine Auswahl, keine Änderungserkennung)
+  var PREVIEW = CFG.preview && CFG.preview.draft ? { draft: String(CFG.preview.draft), version: Number(CFG.preview.version) } : null;
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1 };
+  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1 };
+  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
+  var DRAFT_OPEN_KEY = 'modio-draft-open-' + SLUG;
 
   // ---------------------------------------------------------------- Hilfen
 
@@ -77,6 +80,9 @@
     layers: ['path:m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z',
       'path:m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65', 'path:m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65'],
     files: ['path:M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'path:M14 2v4a2 2 0 0 0 2 2h4', 'path:M10 13H8', 'path:M16 17H8'],
+    pencilSparkles: ['path:M10 3H8', 'path:m15.007 5.008 3.987 3.986', 'path:M20 15v4',
+      'path:M21.174 6.813a2.82 2.82 0 0 0-3.986-3.987L3.842 16.175a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z',
+      'path:M22 17h-4', 'path:M4 5v4', 'path:M6 7H2', 'path:M9 2v2'],
     pencil: ['path:M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'path:m15 5 4 4'],
   };
   var SVGNS = 'http://www.w3.org/2000/svg';
@@ -293,7 +299,7 @@
     '.sel-full.editable{cursor:text;display:flex;align-items:center}' +
     '.sel-full.editable .sel-edit{margin-left:auto;width:22px;height:22px;padding:3px;flex:none}' +
     '.sel-full .textin{margin-top:4px}' +
-    '.sel-lbl{display:inline-block;font:600 10px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:#6b7280;border-radius:3px;padding:0 5px;margin-right:6px}' +
+    '.sel-lbl{display:inline-block;font:600 10px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:#6b7280;border-radius:3px;padding:0 5px;margin-right:6px;white-space:nowrap;flex:none}' +
     '.hl-label{position:absolute;left:-2px;top:-24px;background:#2563eb;color:#fff;font:12px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:4px 6px;border-radius:3px;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}' +
     '.hl.sel .hl-label{background:#d97706}' +
     '.hl.below .hl-label{top:auto;bottom:-24px}' +
@@ -502,7 +508,35 @@
     'ul.areas li{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f1f2f4;font-size:13px}' +
     'ul.areas li strong{flex:none}' +
     'ul.areas li code{flex:1;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b7280;word-break:break-all}' +
-    'ul.areas li button{padding:3px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center}';
+    'ul.areas li button{padding:3px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center}' +
+    /* Entwürfe */
+    'ul.dlist{list-style:none;margin:8px 0 0;padding:0}' +
+    'ul.dlist li{margin-bottom:6px}' +
+    'button.ditem{width:100%;text-align:left;display:flex;flex-direction:column;gap:2px;background:#fff;padding:8px 10px}' +
+    'button.ditem:hover:not([disabled]){background:#f5f3ff;border-color:#c4b5fd}' +
+    'button.ditem.applied{opacity:.7}' +
+    '.ditem-head{display:flex;gap:8px;align-items:baseline;width:100%}' +
+    '.ditem-head .badge{font-size:11px;color:#065f46;background:#d1fae5;border-radius:10px;padding:1px 7px}' +
+    '.dver{font-size:11px;color:#6b7280}' +
+    '.vtabs{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0 2px}' +
+    '.vtabs button,.seg button{padding:3px 9px;font-size:12px}' +
+    '.vtabs button[aria-pressed=true],.seg button[aria-pressed=true]{background:#ede9fe;border-color:#7c3aed;color:#5b21b6;font-weight:600}' +
+    '.vprompt{font-size:12px;color:#4b5563;margin-top:8px;white-space:pre-wrap}' +
+    '.dsum{white-space:pre-wrap;font-size:13px;margin:6px 0 0}' +
+    '.bst-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f1f2f4;font-size:13px}' +
+    '.bst-row > span:first-child{flex:1}' +
+    '.bst-row.changed > span:first-child{font-weight:600;color:#5b21b6}' +
+    '.seg{display:inline-flex;gap:0}' +
+    '.seg button{border-radius:0;margin-left:-1px}' +
+    '.seg button:first-child{border-radius:6px 0 0 6px;margin-left:0}' +
+    '.seg button:last-child{border-radius:0 6px 6px 0}' +
+    '.dactions{margin-top:14px;padding-top:10px;border-top:1px solid #e5e7eb}' +
+    '.pvband{position:fixed;top:12px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:10px;pointer-events:auto;background:#5b21b6;color:#fff;border-radius:10px;padding:6px 8px 6px 12px;box-shadow:0 8px 28px rgba(0,0,0,.3);font-size:13px;max-width:calc(100vw - 24px);flex-wrap:wrap}' +
+    '.pvband.open{display:flex}' +
+    '.pv-label{display:inline-flex;align-items:center;gap:6px;font-weight:600}' +
+    '.pvband button{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.35);color:#fff;padding:3px 9px;font-size:12px}' +
+    '.pvband button:hover:not([disabled]){background:rgba(255,255,255,.28)}' +
+    '.pvband .seg button[aria-pressed=true]{background:#fff;color:#5b21b6;border-color:#fff}';
 
   root.appendChild(el('style', { text: STYLE }));
   var ui = el('div', { class: 'ui' });
@@ -581,6 +615,7 @@
   var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var pSend = el('button', { type: 'button', text: 'Direkt umsetzen', title: 'Sofort als eigenen Schritt mit Claude umsetzen (Strg+Umschalt+Enter)' });
   var pQueue = el('button', { type: 'button', class: 'primary', text: 'In die Queue aufnehmen', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)' });
+  var pDraft = iconButton('pencilSparkles', 'Entwurf erstellen', { title: 'Claude gestaltet das Element ohne Altlasten als eigene Komponente neu. Erst „Übernehmen“ ändert die Website. (Strg+Alt+Enter)' });
   var pTokBtn = iconButton('palette', 'Token einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
@@ -600,7 +635,7 @@
       el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet: besser bei kniffligen oder seitenübergreifenden Änderungen, aber langsamer und teurer' }, [pThorough, 'Stärkeres Modell für komplexe Änderungen']),
     ]),
     pErr,
-    el('div', { class: 'row end' }, [pCancel, pSend, pQueue]),
+    el('div', { class: 'row end' }, [pCancel, el('span', { class: 'spacer' }), pDraft, pSend, pQueue]),
   ]);
   ui.appendChild(promptPanel);
 
@@ -774,6 +809,9 @@
     'areas-sync': 'Bereiche angleichen',
     'local-commit': 'Lokale Änderungen',
     'inspect-apply': 'Inspektor-Änderung',
+    draft: 'Entwurf',
+    'draft-apply': 'Entwurf übernehmen',
+    'draft-discard': 'Entwurf verwerfen',
   };
 
   var followupJob = null; // Annotation, die gerade nachgebessert wird
@@ -806,7 +844,7 @@
       var label = TYPE_LABEL[job.type] || job.type;
       var txt;
       if (job.status === 'pending') txt = label + ': in Warteschlange';
-      else if (job.status === 'running') txt = job.type === 'annotate' ? 'Claude arbeitet …' : label + ' läuft …';
+      else if (job.status === 'running') txt = job.type === 'annotate' ? 'Claude arbeitet …' : job.type === 'draft' ? 'Claude entwirft …' : label + ' läuft …';
       else txt = 'Prüfung nötig – anzeigen';
       statusEl.classList.add(job.status);
       statusEl.appendChild(el('span', { class: 'dot', 'aria-hidden': 'true' }));
@@ -833,6 +871,8 @@
     btnSelect.title = busy ? 'Element auswählen (Alt+A) – während der Schritt läuft nur in die Queue' : 'Element auswählen (Alt+A)';
     pSend.disabled = busy;
     pQueue.style.display = followupJob ? 'none' : '';
+    pDraft.style.display = followupJob ? 'none' : '';
+    if (PREVIEW) { btnSelect.disabled = true; btnSelect.title = 'In der Vorschau eines Entwurfs nicht möglich'; }
     pSend.classList.toggle('primary', !!followupJob);
     if (typeof renderQueueButton === 'function' && qRun) renderQueueButton();
     var fj = followupCandidate();
@@ -1037,6 +1077,7 @@
     if (typeof closePages === 'function' && pagesPanel) closePages();
     if (typeof closeQueue === 'function' && queuePanel) closeQueue();
     if (typeof closeChanges === 'function') closeChanges();
+    if (typeof closeDrafts === 'function' && draftsPanel) closeDrafts();
     closePrompt();
     closeAreaDialog();
     closeHistory();
@@ -1421,11 +1462,13 @@
   pText.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
+      if (e.altKey && !followupJob) { submit('draft'); return; }
       submit(e.shiftKey || followupJob ? 'direct' : 'queue');
     }
   });
   pSend.addEventListener('click', function () { submit('direct'); });
   pQueue.addEventListener('click', function () { submit('queue'); });
+  pDraft.addEventListener('click', function () { submit('draft'); });
 
 
   // Zeilenweiser Unterschied (LCS) zweier HTML-Fassungen, Tags je Zeile
@@ -1549,7 +1592,12 @@
   function submit(mode) {
     if (!selected && !followupJob) return;
     var toQueue = mode === 'queue' && !followupJob;
-    if (!toQueue && isBusy()) {
+    var toDraft = mode === 'draft' && !followupJob;
+    if (toDraft && activeJob() && activeJob().status !== 'review') {
+      pErr.textContent = 'Es läuft noch ein Auftrag. Der Entwurf ist erst danach möglich.';
+      return;
+    }
+    if (!toQueue && !toDraft && isBusy()) {
       pErr.textContent = 'Es läuft noch ein Schritt. Bitte warten oder in die Queue aufnehmen.';
       return;
     }
@@ -1580,27 +1628,33 @@
         return { type: 'url', url: r.url };
       }),
     };
+    if (toDraft) {
+      var rect = selected.getBoundingClientRect();
+      annotation.rect = { width: Math.round(rect.width), height: Math.round(rect.height) };
+      try { annotation.bausteine = collectBausteine(); } catch (e) { annotation.bausteine = []; }
+      delete annotation.followup; delete annotation.followup_of;
+    }
     var fd = new FormData();
     fd.append('annotation', JSON.stringify(annotation));
     refs.forEach(function (r) {
       if (r.kind === 'file') fd.append('images', r.file, r.file.name || 'bild');
     });
-    pSend.disabled = pQueue.disabled = true;
+    pSend.disabled = pQueue.disabled = pDraft.disabled = true;
     pErr.textContent = '';
-    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + (toQueue ? '/queue' : '/annotations'), fd)
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + (toDraft ? '/drafts' : toQueue ? '/queue' : '/annotations'), fd)
       .then(function (data) {
         if (data && data.job) trackJob(data.job);
         if (data && data.items) { queueItems = data.items; renderQueueButton(); }
         resetPrompt();
         closePrompt();
-        showToast(toQueue ? 'In die Queue aufgenommen (' + queueItems.length + ').' : 'Annotation gesendet.', false);
+        showToast(toDraft ? 'Claude entwirft das Element als Komponente … Die Vorschau öffnet sich, sobald der Entwurf fertig ist.' : toQueue ? 'In die Queue aufgenommen (' + queueItems.length + ').' : 'Annotation gesendet.', false);
       })
       .catch(function (err) {
         pErr.textContent =
           err.status === 409 ? 'Für diese Website läuft bereits ein Schritt oder wartet auf Prüfung.' : 'Senden fehlgeschlagen: ' + err.message;
       })
       .then(function () {
-        pQueue.disabled = false;
+        pQueue.disabled = pDraft.disabled = false;
         renderStatus();
       });
   }
@@ -1827,7 +1881,16 @@
     lastFailed = null;
     var r = job.result || {};
     var msg = '';
-    if (job.type === 'annotate' || job.type === 'local-commit' || job.type === 'inspect-apply') {
+    if (job.type === 'draft') {
+      loadDrafts();
+      if (r.draft && r.version) {
+        try { sessionStorage.setItem(FLASH_KEY, 'Entwurf ' + r.draft + ' v' + r.version + (r.title ? ' („' + r.title + '“)' : '') + ' fertig. Mit „Aktuell“ und den Versionen oben vergleichen, rechts nachbessern oder übernehmen.'); sessionStorage.setItem(DRAFT_OPEN_KEY, r.draft); } catch (e) { /* ignorieren */ }
+        location.href = previewUrl({ id: r.draft, page: r.page }, r.version);
+      }
+      return;
+    }
+    if (job.type === 'draft-discard') { loadDrafts(); showToast('Entwurf verworfen.', false); return; }
+    if (job.type === 'annotate' || job.type === 'local-commit' || job.type === 'inspect-apply' || job.type === 'draft-apply') {
       msg = r.status === 'nochange' && job.type !== 'annotate' ? (r.summary || 'Keine Änderungen.') : r.status === 'nochange' ? 'Keine Änderung (' + (r.annotationId || '') + ').' : 'Fertig: ' + (r.annotationId || '');
       if (r.summary) msg += '\n' + truncate(r.summary, 600);
       if (r.synced && r.synced.changed && r.synced.changed.length) msg += '\n\n' + (r.synced.areas || []).join(', ') + ' auf ' + r.synced.changed.length + ' weitere Seite(n) übertragen.';
@@ -1873,7 +1936,7 @@
     if (reloading) return;
     reloading = true;
     if (typeof renderChangesButton === 'function' && btnChanges) renderChangesButton();
-    setTimeout(function () { location.reload(); }, 600);
+    setTimeout(function () { if (PREVIEW) location.href = location.pathname + cleanSearch(); else location.reload(); }, 600);
   }
 
   function loadJobs() {
@@ -2730,7 +2793,8 @@
     var snap = new Map();
     Array.prototype.forEach.call(document.styleSheets, function (sheet, si) {
       var owner = sheet.ownerNode;
-      if (owner && owner.getAttribute && owner.getAttribute('data-modio') === 'tokens') return;
+      var om = owner && owner.getAttribute ? owner.getAttribute('data-modio') : null;
+      if (om === 'tokens' || om === 'components' || om === 'draft') return;
       var rules;
       try { rules = sheet.cssRules; } catch (e) { return; }
       var base = (sheet.href || 'inline-' + si);
@@ -2745,6 +2809,8 @@
             }
             snap.set(key, { selector: r.selectorText, media: media, style: st });
           } else if (r.type === 4) walk(r.cssRules, key, r.conditionText || (r.media && r.media.mediaText) || '');
+          else if (r.type === 3) { try { if (r.styleSheet && !/__tokens\.css/.test(r.href)) walk(r.styleSheet.cssRules, key, media); } catch (e) { /* fremde Herkunft */ } }
+          else if (window.CSSLayerBlockRule && r instanceof window.CSSLayerBlockRule) walk(r.cssRules, key, media);
         });
       })(rules, base, '');
     });
@@ -2803,6 +2869,7 @@
 
   // Grundzustand: Datei laden, Unterschiede und CSS kurz nach dem Laden als „Scripts der Website“ merken
   function initChanges() {
+    if (PREVIEW) return; // Vorschau weicht absichtlich von der Datei ab
     fetch(location.pathname + location.search, { cache: 'no-store', credentials: 'same-origin' })
       .then(function (r) { return r.text(); })
       .then(function (text) {
@@ -2955,6 +3022,280 @@
   cClose.addEventListener('click', closeChanges);
   btnChanges.addEventListener('click', function () { if (changesPanel.classList.contains('open')) closeChanges(); else openChanges(); });
 
+  // ------------------------------------------------------------- Entwürfe (Komponenten)
+  // Ein Entwurf entsteht ohne Altlasten als Komponente; die Vorschau zeigt die echte Seite mit ersetztem Element.
+
+  var drafts = [];
+  var draftCurrent = null; // id des geöffneten Entwurfs
+  var draftVersion = null; // gewählte Version im Panel
+  var draftToggles = {}; // key -> 'neu' | 'bestand' (geänderte Bausteine)
+  var btnDrafts = iconButton('pencilSparkles', 'Entwürfe', { 'aria-expanded': 'false', 'aria-controls': 'modio-drafts' }, true);
+  btnDrafts.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
+  btnDrafts.appendChild(btnDrafts.modioCount);
+  bar.insertBefore(btnDrafts, btnFollowup);
+  var dBody = el('div');
+  var dErr = el('div', { class: 'err', role: 'alert' });
+  var dClose = iconButton('x', 'Entwürfe schließen', { class: 'ghost' }, true);
+  var dReload = iconButton('refresh', 'Entwürfe aktualisieren', { class: 'ghost' }, true);
+  var dBack = iconButton('undo', 'Zur Liste', { class: 'ghost' }, true);
+  var dTitle = el('span', { text: 'Entwürfe' });
+  var draftsPanel = el('aside', { id: 'modio-drafts', class: 'sidebar drafts', role: 'complementary', 'aria-labelledby': 'modio-dh' }, [
+    el('div', { class: 'sb-head' }, [dBack, el('h2', { id: 'modio-dh' }, [icon('pencilSparkles', 18), dTitle]), el('span', { class: 'spacer' }), dReload, dClose]),
+    el('div', { class: 'sb-body' }, [dErr, dBody]),
+  ]);
+  ui.appendChild(draftsPanel);
+
+  // Hinweisband in der Vorschau
+  var pvBand = el('div', { class: 'pvband', role: 'region', 'aria-label': 'Vorschau eines Entwurfs' });
+  ui.appendChild(pvBand);
+
+  var DRAFT_PARAM = '__modio_draft', DRAFT_V_PARAM = '__modio_v';
+  function cleanSearch() {
+    var sp = new URLSearchParams(location.search);
+    sp.delete(DRAFT_PARAM); sp.delete(DRAFT_V_PARAM);
+    var s = sp.toString();
+    return s ? '?' + s : '';
+  }
+  function pageUrl(page) { return BASE + page.split('/').map(encodeURIComponent).join('/'); }
+  function previewUrl(d, v) {
+    var sp = new URLSearchParams(d.page === currentPage() ? cleanSearch() : '');
+    sp.set(DRAFT_PARAM, d.id); sp.set(DRAFT_V_PARAM, String(v));
+    return (d.page === currentPage() ? location.pathname : pageUrl(d.page)) + '?' + sp.toString();
+  }
+  function currentUrl(d) { return d.page === currentPage() ? location.pathname + cleanSearch() : pageUrl(d.page); }
+  function latest(d) { return d.versions.length ? d.versions[d.versions.length - 1] : null; }
+  function versionOf(d, v) { return d.versions.filter(function (x) { return x.v === v; })[0] || null; }
+  function draftLabel(d) { var l = latest(d); return (l && l.title) || truncate(d.prompt, 60); }
+  function draftsApi(path, body) { return api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/drafts' + path, body || {}); }
+
+  function renderDraftsButton() {
+    var open = drafts.filter(function (d) { return d.status === 'open'; }).length;
+    btnDrafts.modioCount.textContent = String(open);
+    btnDrafts.modioCount.style.display = open ? '' : 'none';
+    btnDrafts.title = btnDrafts.modioLabel.textContent = 'Entwürfe' + (open ? ' (' + open + ' offen)' : '');
+  }
+
+  function loadDrafts() {
+    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/drafts')
+      .then(function (d) {
+        drafts = (d && d.drafts) || [];
+        renderDraftsButton();
+        if (draftsPanel.classList.contains('open')) renderDrafts();
+        renderPreviewBand();
+      })
+      .catch(function (err) { dErr.textContent = 'Entwürfe nicht ladbar: ' + err.message; });
+  }
+
+  function renderDrafts() {
+    clear(dBody);
+    var d = draftCurrent && drafts.filter(function (x) { return x.id === draftCurrent; })[0];
+    dBack.style.display = d ? '' : 'none';
+    if (d) return renderDraftDetail(d);
+    dTitle.textContent = 'Entwürfe';
+    dBody.appendChild(el('p', { class: 'hint', text: 'Element auswählen und im Dialog „Entwurf erstellen“ wählen. Claude gestaltet es ohne Altlasten als eigene Komponente; erst „Übernehmen“ ändert die Website.' }));
+    var open = drafts.filter(function (x) { return x.status === 'open'; });
+    var doneList = drafts.filter(function (x) { return x.status === 'applied'; }).slice(0, 10);
+    if (!open.length) dBody.appendChild(el('p', { class: 'hint', text: 'Keine offenen Entwürfe.' }));
+    var ul = el('ul', { class: 'dlist' });
+    open.concat(doneList).forEach(function (x) {
+      var l = latest(x);
+      var b = el('button', { type: 'button', class: 'ditem' + (x.status === 'applied' ? ' applied' : '') }, [
+        el('span', { class: 'ditem-head' }, [
+          el('strong', { text: x.id }),
+          el('span', { text: draftLabel(x) }),
+          el('span', { class: 'spacer' }),
+          x.status === 'applied' ? el('span', { class: 'badge', text: 'übernommen ' + (x.appliedAs || '') }) : el('span', { class: 'dver', text: x.versions.length + ' Version(en)' }),
+        ]),
+        el('span', { class: 'step-sel', text: [x.page === currentPage() ? 'diese Seite' : x.page, x.selector].join(' · ') }),
+        el('span', { class: 'step-date', text: fmtDate((l && l.created) || x.created) }),
+      ]);
+      b.addEventListener('click', function () { draftCurrent = x.id; draftVersion = null; draftToggles = {}; renderDrafts(); });
+      ul.appendChild(el('li', {}, [b]));
+    });
+    dBody.appendChild(ul);
+  }
+
+  function renderDraftDetail(d) {
+    var isOpen = d.status === 'open';
+    var v = versionOf(d, draftVersion) || latest(d);
+    if (v) draftVersion = v.v;
+    dTitle.textContent = d.id + (v && v.title ? ' · ' + v.title : '');
+    dBody.appendChild(el('div', { class: 'step-sel', text: (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector }));
+    dBody.appendChild(el('div', { class: 'step-prompt', text: d.prompt }));
+    if (!isOpen) dBody.appendChild(el('p', { class: 'hint', text: d.status === 'applied' ? 'Übernommen als ' + d.appliedAs + ' (Version ' + d.appliedVersion + '). Spätere Änderungen per Annotation.' : 'Verworfen.' }));
+    if (!v) { dBody.appendChild(el('p', { class: 'hint', text: 'Noch keine Version.' })); return; }
+
+    // Versionen und Vorschau
+    var vrow = el('div', { class: 'vtabs', role: 'group', 'aria-label': 'Versionen' });
+    d.versions.forEach(function (x) {
+      var b = el('button', { type: 'button', text: 'v' + x.v, title: x.prompt, 'aria-pressed': String(x.v === v.v) });
+      b.addEventListener('click', function () { draftVersion = x.v; draftToggles = {}; renderDrafts(); });
+      vrow.appendChild(b);
+    });
+    dBody.appendChild(vrow);
+    var inPreview = PREVIEW && PREVIEW.draft === d.id && PREVIEW.version === v.v;
+    var bShow = iconButton('click', inPreview ? 'Aktuelle Seite zeigen' : 'Vorschau v' + v.v + ' in der Seite', { class: inPreview ? '' : 'primary' });
+    bShow.addEventListener('click', function () { location.href = inPreview ? currentUrl(d) : previewUrl(d, v.v); });
+    if (isOpen || inPreview) dBody.appendChild(el('div', { class: 'row' }, [bShow]));
+
+    if (v.prompt && v.v > 1) dBody.appendChild(el('div', { class: 'vprompt', text: 'Auftrag v' + v.v + ': ' + v.prompt }));
+    if (v.summary) dBody.appendChild(el('details', { open: '' }, [el('summary', {}, [icon('chevron', 14), 'Gestaltungsidee von Claude']), el('p', { class: 'dsum', text: v.summary })]));
+    (v.warnings || []).forEach(function (w) { dBody.appendChild(el('div', { class: 'hint bad', text: w })); });
+
+    // Bausteine: neu oder aus dem Bestand
+    if (v.bausteine && v.bausteine.length) {
+      var tb = el('div', { class: 'bst' });
+      v.bausteine.forEach(function (b) {
+        var key = String(b.key || b.label);
+        var cur = draftToggles[key] || (b.source === 'bestand' ? 'bestand' : 'neu');
+        var seg = el('span', { class: 'seg', role: 'group', 'aria-label': b.label || key });
+        ['neu', 'bestand'].forEach(function (s) {
+          var sb = el('button', { type: 'button', text: s === 'neu' ? 'neu' : 'wie bisher', 'aria-pressed': String(cur === s), disabled: isOpen ? null : '' });
+          sb.addEventListener('click', function () {
+            var orig = b.source === 'bestand' ? 'bestand' : 'neu';
+            if (s === orig) delete draftToggles[key]; else draftToggles[key] = s;
+            renderDrafts();
+          });
+          seg.appendChild(sb);
+        });
+        tb.appendChild(el('div', { class: 'bst-row' + (draftToggles[key] ? ' changed' : '') }, [el('span', { text: b.label || key }), seg]));
+      });
+      dBody.appendChild(el('section', { class: 'dsec' }, [el('h3', { text: 'Bausteine' }), tb]));
+    }
+    if (!isOpen) return;
+
+    // Nachbessern und Aktionen
+    var ta = el('textarea', { placeholder: 'Was soll am Entwurf anders werden? (wie im Chat)', 'aria-label': 'Entwurf nachbessern' });
+    var nChanged = Object.keys(draftToggles).length;
+    var bNew = iconButton('refresh', nChanged ? 'Neue Version (' + nChanged + ' Baustein(e) geändert)' : 'Neue Version');
+    var bApply = iconButton('check', 'v' + v.v + ' übernehmen', { class: 'primary', title: 'Ersetzt das Element in der Seite durch diese Version (Schritt mit Prüfung und Verlauf)' });
+    var bDiscard = iconButton('trash', 'Verwerfen', { class: 'ghost danger' });
+    var err = el('div', { class: 'err', role: 'alert' });
+    dBody.appendChild(el('section', { class: 'dsec' }, [el('h3', { text: 'Nachbessern' }), ta, err, el('div', { class: 'row end' }, [bNew])]));
+    dBody.appendChild(el('div', { class: 'row dactions' }, [bDiscard, el('span', { class: 'spacer' }), bApply]));
+    bNew.disabled = bApply.disabled = isBusy();
+    if (isBusy()) err.textContent = 'Es läuft noch ein Auftrag – danach möglich.';
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); bNew.click(); } });
+
+    bNew.addEventListener('click', function () {
+      var lines = [];
+      v.bausteine.forEach(function (b) {
+        var key = String(b.key || b.label), s = draftToggles[key];
+        if (!s) return;
+        lines.push('- ' + (b.label || key) + ': ' + (s === 'bestand' ? 'aus dem Bestand verwenden (passende Klassen aus bausteine.json, kein eigenes CSS dafür)' : 'neu gestalten (nicht mehr aus dem Bestand)'));
+      });
+      var prompt = ta.value.trim();
+      if (lines.length) prompt = (prompt ? prompt + '\n\n' : '') + 'Bausteine anpassen:\n' + lines.join('\n') + '\nAlles andere unverändert lassen.';
+      if (!prompt) { err.textContent = 'Bitte beschreiben, was anders werden soll, oder Bausteine umschalten.'; ta.focus(); return; }
+      bNew.disabled = true;
+      draftsApi('/' + d.id + '/versions', { prompt: prompt })
+        .then(function (data) { if (data && data.job) trackJob(data.job); draftToggles = {}; showToast('Neue Version von ' + d.id + ' wird entworfen …', false); renderDrafts(); })
+        .catch(function (e) { err.textContent = e.status === 409 ? 'Es läuft noch ein Auftrag.' : 'Fehlgeschlagen: ' + e.message; bNew.disabled = false; });
+    });
+    bApply.addEventListener('click', function () {
+      if (!confirm('Version ' + v.v + ' von ' + d.id + ' übernehmen? Das Element auf ' + d.page + ' wird durch die Komponente ersetzt (als Schritt im Verlauf, Rücksprung möglich).')) return;
+      bApply.disabled = true;
+      draftsApi('/' + d.id + '/apply', { version: v.v })
+        .then(function (data) { if (data && data.job) trackJob(data.job); showToast(d.id + ' v' + v.v + ' wird übernommen …', false); })
+        .catch(function (e) { err.textContent = e.status === 409 ? 'Es läuft noch ein Schritt oder wartet auf Prüfung.' : 'Fehlgeschlagen: ' + e.message; bApply.disabled = false; });
+    });
+    bDiscard.addEventListener('click', function () {
+      if (!confirm(d.id + ' verwerfen?')) return;
+      bDiscard.disabled = true;
+      draftsApi('/' + d.id + '/discard')
+        .then(function (data) { if (data && data.job) trackJob(data.job); draftCurrent = null; })
+        .catch(function (e) { err.textContent = 'Fehlgeschlagen: ' + e.message; bDiscard.disabled = false; });
+    });
+  }
+
+  function renderPreviewBand() {
+    clear(pvBand);
+    if (!PREVIEW) { pvBand.classList.remove('open'); return; }
+    var d = drafts.filter(function (x) { return x.id === PREVIEW.draft; })[0];
+    var v = d && versionOf(d, PREVIEW.version);
+    pvBand.classList.add('open');
+    pvBand.appendChild(el('span', { class: 'pv-label' }, [icon('pencilSparkles', 14), 'Vorschau ' + PREVIEW.draft + ' · v' + PREVIEW.version + (v && v.title ? ' · ' + v.title : '')]));
+    if (d) {
+      var seg = el('span', { class: 'seg', role: 'group', 'aria-label': 'Ansicht' });
+      var cur = el('button', { type: 'button', text: 'Aktuell', 'aria-pressed': 'false', title: 'Seite ohne Entwurf (Taste V)' });
+      cur.addEventListener('click', function () { location.href = currentUrl(d); });
+      seg.appendChild(cur);
+      d.versions.forEach(function (x) {
+        var b = el('button', { type: 'button', text: 'v' + x.v, 'aria-pressed': String(x.v === PREVIEW.version), title: x.prompt });
+        b.addEventListener('click', function () { if (x.v !== PREVIEW.version) location.href = previewUrl(d, x.v); });
+        seg.appendChild(b);
+      });
+      pvBand.appendChild(seg);
+    }
+    var bOpen = el('button', { type: 'button', text: 'Bearbeiten' });
+    bOpen.addEventListener('click', function () { openDrafts(PREVIEW.draft, PREVIEW.version); });
+    pvBand.appendChild(bOpen);
+  }
+
+  function openDrafts(id, version) {
+    if (selecting) stopSelecting();
+    closePanels();
+    if (id) { draftCurrent = id; draftVersion = version || null; draftToggles = {}; }
+    draftsPanel.classList.add('open');
+    ui.classList.add('sb-open');
+    btnDrafts.classList.add('on');
+    btnDrafts.setAttribute('aria-expanded', 'true');
+    dErr.textContent = '';
+    renderDrafts();
+    loadDrafts();
+    setTimeout(function () { dClose.focus(); }, 0);
+  }
+  function closeDrafts() {
+    draftsPanel.classList.remove('open');
+    ui.classList.remove('sb-open');
+    btnDrafts.classList.remove('on');
+    btnDrafts.setAttribute('aria-expanded', 'false');
+  }
+  btnDrafts.addEventListener('click', function () { if (draftsPanel.classList.contains('open')) closeDrafts(); else openDrafts(); });
+  dClose.addEventListener('click', closeDrafts);
+  dReload.addEventListener('click', loadDrafts);
+  dBack.addEventListener('click', function () { draftCurrent = null; renderDrafts(); });
+  document.addEventListener('keydown', function (e) {
+    // V: in der Vorschau zwischen Entwurf und aktueller Seite wechseln
+    if (!PREVIEW || e.ctrlKey || e.metaKey || e.altKey || (e.key !== 'v' && e.key !== 'V')) return;
+    var t = e.composedPath ? e.composedPath()[0] : e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    var d = drafts.filter(function (x) { return x.id === PREVIEW.draft; })[0];
+    if (d) location.href = currentUrl(d);
+  }, true);
+
+  // Bausteine der Seite messen (für „wie bisher“): typische Elemente gruppiert nach Tag und Klassen
+  function collectBausteine() {
+    var groups = {}, list = [];
+    var nodes = document.querySelectorAll('button, a, input[type=submit], input[type=button], h1, h2, h3, h4, p, input[type=text], input[type=email], select, textarea');
+    var PROPS = ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'text-transform', 'color', 'background-color', 'border', 'border-radius', 'padding', 'box-shadow', 'text-decoration-line'];
+    for (var i = 0; i < nodes.length && i < 4000; i++) {
+      var n = nodes[i];
+      if (host.contains(n) || n.closest('[data-modio]')) continue;
+      var r = n.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      var tag = n.tagName.toLowerCase();
+      var cls = Array.prototype.filter.call(n.classList, function (c) { return !looksGenerated(c); }).sort();
+      var clsText = cls.join(' ');
+      var kind = /^h[1-4]$/.test(tag) ? 'heading' : tag === 'p' ? 'text'
+        : (tag === 'button' || tag === 'input' && /submit|button/.test(n.type) || n.getAttribute('role') === 'button' || /(^|[-_ ])(btn|button|cta)/i.test(clsText)) ? 'button'
+        : tag === 'a' ? 'link' : 'field';
+      var key = kind + '|' + tag + '|' + clsText;
+      var g = groups[key];
+      if (!g) { g = groups[key] = { kind: kind, tag: tag, classes: clsText, count: 0, node: n }; list.push(g); }
+      g.count++;
+    }
+    var rank = { button: 0, heading: 1, link: 2, field: 3, text: 4 };
+    list.sort(function (a, b) { return rank[a.kind] - rank[b.kind] || b.count - a.count; });
+    var perKind = {};
+    return list.filter(function (g) { perKind[g.kind] = (perKind[g.kind] || 0) + 1; return perKind[g.kind] <= (g.kind === 'button' ? 10 : 6); })
+      .slice(0, 30).map(function (g) {
+        var cs = getComputedStyle(g.node), style = {};
+        PROPS.forEach(function (p) { var val = cs.getPropertyValue(p); if (val && val !== 'none' && val !== 'normal') style[p] = truncate(val, 120); });
+        return { kind: g.kind, tag: g.tag, classes: g.classes, count: g.count, sample: truncate((g.node.innerText || g.node.value || '').trim().replace(/\s+/g, ' '), 50), style: style };
+      });
+  }
+
   // ----------------------------------------------------------------- Start
 
   try {
@@ -2987,6 +3328,11 @@
   renderStatus();
   loadJobs();
   loadQueue();
+  loadDrafts().then(function () {
+    var openId = null;
+    try { openId = sessionStorage.getItem(DRAFT_OPEN_KEY); sessionStorage.removeItem(DRAFT_OPEN_KEY); } catch (e) { /* ignorieren */ }
+    if (openId) openDrafts(openId, PREVIEW && PREVIEW.draft === openId ? PREVIEW.version : null);
+  });
   connectEvents();
   if (document.readyState === 'complete') initChanges();
   else window.addEventListener('load', initChanges);

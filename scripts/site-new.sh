@@ -38,6 +38,7 @@ cat >"$SITE/.gitignore" <<'GI'
 .history.json
 CHANGES.md
 .scan.json
+drafts/
 GI
 
 # Design-Gedächtnis: übernommene Vorgaben (Neu einlesen) oder leere Vorlagen

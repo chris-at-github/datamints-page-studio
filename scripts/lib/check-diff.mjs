@@ -29,7 +29,7 @@ try {
 const site = JSON.parse(fs.readFileSync(path.join(siteDir, 'site.json'), 'utf8'));
 if (site.host) known.add(site.host.toLowerCase());
 
-const allowedPath = (f) => f.startsWith('www/') || f === 'overrides.css' || f.startsWith('annotations/') || f.startsWith('design/');
+const allowedPath = (f) => f.startsWith('www/') || f === 'overrides.css' || f.startsWith('annotations/') || f.startsWith('design/') || /^components\/mx-[a-z0-9-]+\.css$/.test(f);
 
 const rules = [
   { rule: 'script-tag', re: /<\s*script\b/i },
@@ -46,7 +46,7 @@ const rules = [
 // Geänderte Pfade (auch Binärdateien und Löschungen)
 for (const f of fs.readFileSync(namesFile, 'utf8').split('\0').filter(Boolean)) {
   files.add(f);
-  if (!allowedPath(f)) hits.push({ rule: 'path-outside', file: f, line: 0, text: 'Änderung außerhalb von www/, overrides.css, design/ und annotations/' });
+  if (!allowedPath(f)) hits.push({ rule: 'path-outside', file: f, line: 0, text: 'Änderung außerhalb von www/, overrides.css, components/, design/ und annotations/' });
 }
 
 // Hunks sammeln: entfernte und hinzugefügte Zeilen je Abschnitt. Gemeldet wird nur, was eine Änderung neu
@@ -137,12 +137,19 @@ if (files.has('design/notes.md')) {
   if (notes !== null) for (const e of validateNotes(notes, NOTES_MAX_LINES)) hits.push({ rule: 'notes-content', file: 'design/notes.md', line: 0, text: e });
 }
 
+// Weitere Markdown-Dateien in design/ sind Hintergrundwissen des Nutzers: nur mit „Als Regel merken“ änderbar
+for (const f of files) {
+  if (/^design\/[^/]+\.md$/i.test(f) && f !== 'design/notes.md' && !REMEMBER) {
+    hits.push({ rule: 'docs-changed', file: f, line: 0, text: `${f} geändert, obwohl „Als Regel merken“ nicht gesetzt war` });
+  }
+}
+
 // consistency.json steuert die Konsistenzprüfung: nur mit „Als Regel merken“ änderbar
 if (files.has('design/consistency.json') && !REMEMBER) {
   hits.push({ rule: 'consistency-changed', file: 'design/consistency.json', line: 0, text: 'consistency.json geändert, obwohl „Als Regel merken“ nicht gesetzt war' });
 }
 
-// Hinweis: Literalwert in overrides.css, für den es einen Token gibt (nur Farben und Schriften)
+// Hinweis: Literalwert in overrides.css oder einer Komponente, für den es einen Token gibt (nur Farben und Schriften)
 if (!newTokens.errors.length) {
   const candidates = Object.entries(newTokens.tokens)
     .filter(([k]) => k.startsWith('color.') || k.startsWith('font.'))
@@ -154,7 +161,7 @@ if (!newTokens.errors.length) {
     if (fm) { f = fm[1]; continue; }
     const hm = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
     if (hm) { ln = Number(hm[1]); continue; }
-    if (f !== 'overrides.css' || !raw.startsWith('+') || raw.startsWith('+++')) continue;
+    if ((f !== 'overrides.css' && !/^components\/.*\.css$/.test(f || '')) || !raw.startsWith('+') || raw.startsWith('+++')) continue;
     const text = raw.slice(1);
     const lower = text.toLowerCase();
     for (const c of candidates) {

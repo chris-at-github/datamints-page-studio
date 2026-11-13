@@ -94,6 +94,8 @@ valid_slug() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]; }
 
 valid_annotation_id() { [[ "$1" =~ ^A-[0-9]{3,}$ ]]; }
 
+valid_draft_id() { [[ "$1" =~ ^D-[0-9]{3,}$ ]]; }
+
 # Setzt SLUG und SITE und prüft, ob die Website existiert.
 require_site() {
   SLUG="${1:-}"
@@ -127,6 +129,56 @@ next_annotation_number() {
   c="$(state_get counter)"; c="${c:-0}"
   max="$(ls "$SITE/annotations" 2>/dev/null | sed -nE 's/^A-0*([0-9]+)\.json$/\1/p' | sort -n | tail -1)"; max="${max:-0}"
   echo $(( c > max ? c + 1 : max + 1 ))
+}
+
+# Nächste freie Entwurfsnummer: höher als Zähler und als jeder vorhandene drafts/D-xxx
+next_draft_number() {
+  local c max
+  c="$(state_get draftCounter)"; c="${c:-0}"
+  max="$( (ls "$SITE/drafts" 2>/dev/null || true) | sed -nE 's/^D-0*([0-9]+)$/\1/p' | sort -n | tail -1)"; max="${max:-0}"
+  echo $(( c > max ? c + 1 : max + 1 ))
+}
+
+# drafts/ ist nicht versioniert; ältere Abzüge einmalig nachrüsten (eigener Commit nur für .gitignore)
+ensure_drafts_ignored() {
+  grep -qxF 'drafts/' "$SITE/.gitignore" 2>/dev/null && return 0
+  printf 'drafts/\n' >>"$SITE/.gitignore"
+  git_site add -- .gitignore
+  git_site commit -q -m "[design] Entwürfe (drafts/) nicht versionieren" -- .gitignore
+  log "$SLUG: drafts/ in .gitignore aufgenommen"
+}
+
+# Status eines Entwurfs: discarded, applied (Schritt liegt im aktuellen Stand) oder open.
+# "applied" ergibt sich aus dem Abzug: nach Verwerfen der Prüfung oder einem Rücksprung ist er wieder offen.
+draft_status() {
+  local f="$SITE/drafts/$1/draft.json" a
+  [[ -f "$f" ]] || { echo missing; return; }
+  [[ "$(jq -r .status "$f")" == "discarded" ]] && { echo discarded; return; }
+  a="$(jq -r '.appliedAs // ""' "$f")"
+  if [[ -n "$a" && -f "$SITE/annotations/$a.json" ]]; then echo applied; else echo open; fi
+}
+
+# Systemprompt für Claude-Läufe zusammensetzen: Grundregeln (z. B. DRAFT.md oder CLAUDE.md bei --bare),
+# optional die Gestaltungsleitlinien aus templates/CLAUDE.md (für Entwürfe; bei Annotationen stehen sie schon
+# in der CLAUDE.md des Abzugs) und – falls vorhanden – der Skill „frontend-design“.
+# DESIGN_SKILL_FILE in der .env überschreibt den Pfad; leer gesetzt schaltet den Skill ab.
+# Aufruf: build_system_prompt <ziel> [grundregeln-datei] [--leitlinien]
+DEFAULT_DESIGN_SKILL="$HOME/.claude/plugins/marketplaces/claude-plugins-official/plugins/frontend-design/skills/frontend-design/SKILL.md"
+build_system_prompt() {
+  local out="$1" base="${2:-}" guide="${3:-}" skill="${DESIGN_SKILL_FILE-$DEFAULT_DESIGN_SKILL}"
+  {
+    if [[ -n "$base" && -f "$base" ]]; then cat "$base"; printf '\n\n'; fi
+    if [[ "$guide" == "--leitlinien" ]]; then
+      # Abschnitt „## Gestaltungsleitlinien …“ bis zur nächsten Überschrift der Ebene 2
+      awk '/^## Gestaltungsleitlinien/ {on=1} on && /^## / && !/^## Gestaltungsleitlinien/ {exit} on' "$MODIO_ROOT/templates/CLAUDE.md"
+    fi
+    if [[ -n "$skill" && -f "$skill" ]]; then
+      printf '\n\n# Skill „frontend-design“ (nachrangig, siehe Rangfolge in den Gestaltungsleitlinien)\n\n'
+      # Frontmatter weglassen
+      awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm' "$skill"
+    fi
+  } >"$out"
+  if [[ -n "$skill" && ! -f "$skill" ]]; then log "Hinweis: Skill-Datei nicht gefunden ($skill), Lauf ohne Skill"; fi
 }
 
 state_get() {
