@@ -26,7 +26,7 @@ if (MODE === 'before') {
 
   const list = await (await fetch(`${BASE}/api/sites/${SLUG}/drafts`, { headers: auth })).json();
   const d = list.drafts?.find((x) => x.id === 'D-001');
-  check('API: Entwurfsliste mit Version und Bausteinen', d?.status === 'open' && d.versions[0]?.name === 'hero' && d.versions[0].bausteine[0]?.source === 'bestand', JSON.stringify(list).slice(0, 300));
+  check('API: Entwurfsliste mit Version und Bausteinen', d?.status === 'open' && d.versions[0]?.name === 'hero' && d.versions[0].bausteine[0]?.source === 'bestand' && d.versions[0].befund.length === 2 && d.versions[0].befund[1].umgesetzt === false, JSON.stringify(list).slice(0, 300));
 
   const wrong = await fetch(`${BASE}/s/${SLUG}/__draft.css?d=D-999&v=1`);
   check('Unbekannter Entwurf: 404', wrong.status === 404, wrong.status);

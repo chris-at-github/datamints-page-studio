@@ -122,3 +122,12 @@ Gilt für Entwürfe und Annotationen:
 - **Skill „frontend-design“:** Der Inhalt der `SKILL.md` wird fest an den Systemprompt angehängt (bei Annotationen nur der Skill, die Leitlinien stehen dort schon in der CLAUDE.md) (`build_system_prompt` in `common.sh`). Den Pfad legt `DESIGN_SKILL_FILE` in der `.env` fest. Standard ist das installierte Plugin unter `~/.claude/plugins/…`; ein leerer Wert schaltet den Skill ab. Entwürfe speichern ihren Systemprompt als `drafts/D-xxx/SYSTEM.md`.
 - **Hintergrundwissen:** Alle weiteren `design/*.md` außer `notes.md` kommen als Block `<hintergrund>` in den Kontext (`DESIGN_DOCS_MAX_BYTES`, Standard 60 000; was darüber hinausgeht, wird nur mit Pfad genannt). Änderungen daran blockiert `check-diff` ohne „Als Regel merken“ (Regel `docs-changed`).
 - **Gelockerte Regeln:** `templates/CLAUDE.md` verlangt keine minimale Änderung mehr, sondern eine hochwertige Umsetzung innerhalb des gewählten Elements und Auftrags. `templates/DRAFT.md` versteht den Entwurf als Weiterentwicklung des bestehenden Erscheinungsbilds.
+
+## 11. Ergänzung: Befund, Platzhalter, Textkorrekturen (13.11.2026)
+
+Damit Entwürfe so durchdacht werden wie im Chat:
+
+- **A – erst Befund, dann Entwurf:** Claude prüft das Element gegen `notes.md`, die Tokens, die Leitlinien und das Hintergrundwissen und schreibt `befund.json` in vier Gruppen (Pflicht, Inhalt, Funktionen, Feinschliff). Was eine Entscheidung braucht, bleibt offen (`umgesetzt: false`, mit möglichen Wegen). Das Panel zeigt den Befund mit Haken. Umschalten erzeugt mit „Neue Version“ einen Auftrag, Punkte umzusetzen oder zurückzunehmen.
+- **C – Platzhalter:** Funktionen, die laut Hintergrund existieren, aber im Ausgangsmaterial fehlen, darf Claude ergänzen. Sie sind mit `data-mx-platzhalter` gekennzeichnet, berechenbare Werte werden ausgerechnet, Bedienelemente sind `<button type="button">` ohne Ziel. Das Vorschau-Band hat „Platzhalter zeigen“. Beim Übernehmen stehen die Platzhalter in der Zusammenfassung und im Report.
+- **D – Textkorrekturen:** Texte, die gegen `<regeln>` verstoßen (Ansprache, Ton, Bezeichnungen, Schreibweisen), korrigiert Claude in Entwürfen und Annotationen und nennt die Korrekturen.
+- **B – Screenshots und Selbstprüfung:** zurückgestellt.

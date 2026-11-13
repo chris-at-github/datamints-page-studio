@@ -44,6 +44,12 @@ if (( rc != 0 )); then
   restore
   die "$(jq -r '.error // "Übernahme fehlgeschlagen"' <<<"$OUT" 2>/dev/null || echo "Übernahme fehlgeschlagen")"
 fi
+# Platzhalter und offene Befundpunkte in der Zusammenfassung des Schritts (Report, Verlauf)
+tmp="$(mktemp)"
+jq --argjson o "$OUT" '.result.summary += (
+    (if ($o.platzhalter | length) > 0 then "\n\nPlatzhalter (im echten Projekt anbinden, Attribut data-mx-platzhalter):\n" + ([$o.platzhalter[] | "- " + .text] | join("\n")) else "" end)
+    + (if ($o.offen | length) > 0 then "\n\nOffene Punkte aus dem Befund (Entscheidung nötig):\n" + ([$o.offen[] | "- " + .] | join("\n")) else "" end))' \
+  "$SITE/annotations/$ID.json" >"$tmp" && mv "$tmp" "$SITE/annotations/$ID.json" && chmod 644 "$SITE/annotations/$ID.json"
 tmp="$(mktemp)"
 jq --arg a "$ID" --argjson v "$VERSION" '.appliedAs = $a | .appliedVersion = $v' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
 chmod 644 "$DDIR/draft.json"

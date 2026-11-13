@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import busboy from 'busboy';
 import { renderStartPage } from './startpage.js';
 import { loadCheerio } from '../../scripts/lib/consistency.mjs';
-import { loadVersion, replaceElement, layerLegacyCss, readText } from '../../scripts/lib/draft.mjs';
+import { loadVersion, replaceElement, layerLegacyCss, readText, validateBefund } from '../../scripts/lib/draft.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
@@ -202,8 +202,10 @@ async function readDraft(slug, id) {
   if (!d) return null;
   const versions = await Promise.all((d.versions || []).map(async (v) => {
     const meta = await readJson(path.join(dir, `v${v.v}`, 'meta.json'), {});
+    const befundText = await fsp.readFile(path.join(dir, `v${v.v}`, 'befund.json'), 'utf8').catch(() => null);
     return { v: v.v, prompt: v.prompt, created: v.created, summary: v.summary, name: v.name, title: v.title, costUsd: v.costUsd, warnings: v.warnings || [],
-      bausteine: Array.isArray(meta.bausteine) ? meta.bausteine.slice(0, 30) : [] };
+      bausteine: Array.isArray(meta.bausteine) ? meta.bausteine.slice(0, 30) : [],
+      befund: befundText === null ? [] : validateBefund(befundText).befund, platzhalter: v.platzhalter || 0 };
   }));
   return { id: d.id, page: d.page, selector: d.selector, prompt: d.prompt, created: d.created, status: draftStatus(slug, d),
     appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, versions };

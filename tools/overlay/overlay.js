@@ -531,6 +531,13 @@
     '.seg button:first-child{border-radius:6px 0 0 6px;margin-left:0}' +
     '.seg button:last-child{border-radius:0 6px 6px 0}' +
     '.dactions{margin-top:14px;padding-top:10px;border-top:1px solid #e5e7eb}' +
+    '.bf-group{font-size:12px;font-weight:600;color:#374151;margin:10px 0 2px}' +
+    'label.bf-item{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #f1f2f4;font-size:13px;cursor:pointer}' +
+    'label.bf-item input{margin-top:3px;flex:none}' +
+    'label.bf-item strong{display:block;font-weight:600}' +
+    'label.bf-item .bf-text{display:block;color:#4b5563;font-size:12px;white-space:pre-wrap}' +
+    'label.bf-item.open strong{color:#b45309}' +
+    'label.bf-item.changed{background:#f5f3ff}' +
     '.pvband{position:fixed;top:12px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:10px;pointer-events:auto;background:#5b21b6;color:#fff;border-radius:10px;padding:6px 8px 6px 12px;box-shadow:0 8px 28px rgba(0,0,0,.3);font-size:13px;max-width:calc(100vw - 24px);flex-wrap:wrap}' +
     '.pvband.open{display:flex}' +
     '.pv-label{display:inline-flex;align-items:center;gap:6px;font-weight:600}' +
@@ -3028,7 +3035,8 @@
   var drafts = [];
   var draftCurrent = null; // id des geöffneten Entwurfs
   var draftVersion = null; // gewählte Version im Panel
-  var draftToggles = {}; // key -> 'neu' | 'bestand' (geänderte Bausteine)
+  var draftToggles = {}; draftBefund = {}; // key -> 'neu' | 'bestand' (geänderte Bausteine)
+  var draftBefund = {}; // Befund-ID -> true (umsetzen) | false (zurücknehmen)
   var btnDrafts = iconButton('pencilSparkles', 'Entwürfe', { 'aria-expanded': 'false', 'aria-controls': 'modio-drafts' }, true);
   btnDrafts.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
   btnDrafts.appendChild(btnDrafts.modioCount);
@@ -3109,7 +3117,7 @@
         el('span', { class: 'step-sel', text: [x.page === currentPage() ? 'diese Seite' : x.page, x.selector].join(' · ') }),
         el('span', { class: 'step-date', text: fmtDate((l && l.created) || x.created) }),
       ]);
-      b.addEventListener('click', function () { draftCurrent = x.id; draftVersion = null; draftToggles = {}; renderDrafts(); });
+      b.addEventListener('click', function () { draftCurrent = x.id; draftVersion = null; draftToggles = {}; draftBefund = {}; renderDrafts(); });
       ul.appendChild(el('li', {}, [b]));
     });
     dBody.appendChild(ul);
@@ -3129,7 +3137,7 @@
     var vrow = el('div', { class: 'vtabs', role: 'group', 'aria-label': 'Versionen' });
     d.versions.forEach(function (x) {
       var b = el('button', { type: 'button', text: 'v' + x.v, title: x.prompt, 'aria-pressed': String(x.v === v.v) });
-      b.addEventListener('click', function () { draftVersion = x.v; draftToggles = {}; renderDrafts(); });
+      b.addEventListener('click', function () { draftVersion = x.v; draftToggles = {}; draftBefund = {}; renderDrafts(); });
       vrow.appendChild(b);
     });
     dBody.appendChild(vrow);
@@ -3141,6 +3149,35 @@
     if (v.prompt && v.v > 1) dBody.appendChild(el('div', { class: 'vprompt', text: 'Auftrag v' + v.v + ': ' + v.prompt }));
     if (v.summary) dBody.appendChild(el('details', { open: '' }, [el('summary', {}, [icon('chevron', 14), 'Gestaltungsidee von Claude']), el('p', { class: 'dsum', text: v.summary })]));
     (v.warnings || []).forEach(function (w) { dBody.appendChild(el('div', { class: 'hint bad', text: w })); });
+
+    // Befund: Haken = in dieser Version umgesetzt; Umschalten setzt Punkte in der nächsten Version um oder nimmt sie zurück
+    if (v.befund && v.befund.length) {
+      var GR = { pflicht: 'Pflicht: Fehler und Barrierefreiheit', inhalt: 'Inhalt', funktionen: 'Funktionen', feinschliff: 'Feinschliff' };
+      var nOpen = v.befund.filter(function (b) { return !b.umgesetzt; }).length;
+      var bsec = el('section', { class: 'dsec' }, [
+        el('h3', { text: 'Befund (' + v.befund.length + (nOpen ? ', ' + nOpen + ' offen' : '') + ')' }),
+        el('p', { class: 'hint', text: 'Haken = in v' + v.v + ' umgesetzt. Umschalten und „Neue Version“ setzt Punkte um oder nimmt sie zurück.' }),
+      ]);
+      ['pflicht', 'inhalt', 'funktionen', 'feinschliff'].forEach(function (g) {
+        var items = v.befund.filter(function (b) { return b.gruppe === g; });
+        if (!items.length) return;
+        bsec.appendChild(el('div', { class: 'bf-group', text: GR[g] }));
+        items.forEach(function (b) {
+          var changed = Object.prototype.hasOwnProperty.call(draftBefund, b.id);
+          var cb = el('input', { type: 'checkbox', disabled: isOpen ? null : '' });
+          cb.checked = changed ? draftBefund[b.id] : b.umgesetzt;
+          cb.addEventListener('change', function () {
+            if (cb.checked === b.umgesetzt) delete draftBefund[b.id]; else draftBefund[b.id] = cb.checked;
+            renderDrafts();
+          });
+          bsec.appendChild(el('label', { class: 'bf-item' + (changed ? ' changed' : '') + (b.umgesetzt ? '' : ' open') }, [
+            cb, el('span', {}, [el('strong', { text: b.id + ' · ' + b.titel }), el('span', { class: 'bf-text', text: b.text })]),
+          ]));
+        });
+      });
+      dBody.appendChild(bsec);
+    }
+    if (v.platzhalter) dBody.appendChild(el('p', { class: 'hint', text: v.platzhalter + ' Platzhalter (ergänzte Funktionen, im echten Projekt anzubinden). In der Vorschau mit „Platzhalter zeigen“ markieren.' }));
 
     // Bausteine: neu oder aus dem Bestand
     if (v.bausteine && v.bausteine.length) {
@@ -3166,8 +3203,8 @@
 
     // Nachbessern und Aktionen
     var ta = el('textarea', { placeholder: 'Was soll am Entwurf anders werden? (wie im Chat)', 'aria-label': 'Entwurf nachbessern' });
-    var nChanged = Object.keys(draftToggles).length;
-    var bNew = iconButton('refresh', nChanged ? 'Neue Version (' + nChanged + ' Baustein(e) geändert)' : 'Neue Version');
+    var nChanged = Object.keys(draftToggles).length + Object.keys(draftBefund).length;
+    var bNew = iconButton('refresh', nChanged ? 'Neue Version (' + nChanged + ' Änderung(en) gewählt)' : 'Neue Version');
     var bApply = iconButton('check', 'v' + v.v + ' übernehmen', { class: 'primary', title: 'Ersetzt das Element in der Seite durch diese Version (Schritt mit Prüfung und Verlauf)' });
     var bDiscard = iconButton('trash', 'Verwerfen', { class: 'ghost danger' });
     var err = el('div', { class: 'err', role: 'alert' });
@@ -3184,12 +3221,19 @@
         if (!s) return;
         lines.push('- ' + (b.label || key) + ': ' + (s === 'bestand' ? 'aus dem Bestand verwenden (passende Klassen aus bausteine.json, kein eigenes CSS dafür)' : 'neu gestalten (nicht mehr aus dem Bestand)'));
       });
+      var blines = [];
+      (v.befund || []).forEach(function (b) {
+        if (!Object.prototype.hasOwnProperty.call(draftBefund, b.id)) return;
+        blines.push('- ' + b.id + ' ' + b.titel + ': ' + (draftBefund[b.id] ? 'umsetzen' : 'zurücknehmen (nicht umsetzen, Zustand wie vor diesem Punkt)'));
+      });
       var prompt = ta.value.trim();
-      if (lines.length) prompt = (prompt ? prompt + '\n\n' : '') + 'Bausteine anpassen:\n' + lines.join('\n') + '\nAlles andere unverändert lassen.';
-      if (!prompt) { err.textContent = 'Bitte beschreiben, was anders werden soll, oder Bausteine umschalten.'; ta.focus(); return; }
+      if (blines.length) prompt = (prompt ? prompt + '\n\n' : '') + 'Befund:\n' + blines.join('\n');
+      if (lines.length) prompt = (prompt ? prompt + '\n\n' : '') + 'Bausteine anpassen:\n' + lines.join('\n');
+      if (blines.length || lines.length) prompt += '\nAlles andere unverändert lassen.';
+      if (!prompt) { err.textContent = 'Bitte beschreiben, was anders werden soll, oder Befundpunkte bzw. Bausteine umschalten.'; ta.focus(); return; }
       bNew.disabled = true;
       draftsApi('/' + d.id + '/versions', { prompt: prompt })
-        .then(function (data) { if (data && data.job) trackJob(data.job); draftToggles = {}; showToast('Neue Version von ' + d.id + ' wird entworfen …', false); renderDrafts(); })
+        .then(function (data) { if (data && data.job) trackJob(data.job); draftToggles = {}; draftBefund = {}; showToast('Neue Version von ' + d.id + ' wird entworfen …', false); renderDrafts(); })
         .catch(function (e) { err.textContent = e.status === 409 ? 'Es läuft noch ein Auftrag.' : 'Fehlgeschlagen: ' + e.message; bNew.disabled = false; });
     });
     bApply.addEventListener('click', function () {
@@ -3227,6 +3271,21 @@
       });
       pvBand.appendChild(seg);
     }
+    var phs = document.querySelectorAll('[data-mx-platzhalter]');
+    if (phs.length) {
+      var phStyle = document.querySelector('style[data-modio="platzhalter"]');
+      var bPh = el('button', { type: 'button', 'aria-pressed': String(!!phStyle), text: 'Platzhalter zeigen (' + phs.length + ')', title: 'Ergänzte Funktionen markieren, die im echten Projekt anzubinden sind' });
+      bPh.addEventListener('click', function () {
+        var st = document.querySelector('style[data-modio="platzhalter"]');
+        if (st) { st.remove(); Array.prototype.forEach.call(phs, function (n) { if (n.getAttribute('data-mx-title') !== null) { n.setAttribute('title', n.getAttribute('data-mx-title')); n.removeAttribute('data-mx-title'); } else n.removeAttribute('title'); }); }
+        else {
+          document.head.appendChild(el('style', { 'data-modio': 'platzhalter', text: '[data-mx-platzhalter]{outline:2px dashed #7c3aed !important;outline-offset:2px !important;cursor:help}' }));
+          Array.prototype.forEach.call(phs, function (n) { if (n.hasAttribute('title')) n.setAttribute('data-mx-title', n.getAttribute('title')); n.setAttribute('title', 'Platzhalter: ' + n.getAttribute('data-mx-platzhalter')); });
+        }
+        renderPreviewBand();
+      });
+      pvBand.appendChild(bPh);
+    }
     var bOpen = el('button', { type: 'button', text: 'Bearbeiten' });
     bOpen.addEventListener('click', function () { openDrafts(PREVIEW.draft, PREVIEW.version); });
     pvBand.appendChild(bOpen);
@@ -3235,7 +3294,7 @@
   function openDrafts(id, version) {
     if (selecting) stopSelecting();
     closePanels();
-    if (id) { draftCurrent = id; draftVersion = version || null; draftToggles = {}; }
+    if (id) { draftCurrent = id; draftVersion = version || null; draftToggles = {}; draftBefund = {}; }
     draftsPanel.classList.add('open');
     ui.classList.add('sb-open');
     btnDrafts.classList.add('on');

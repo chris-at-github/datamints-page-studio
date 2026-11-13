@@ -278,11 +278,17 @@ D="$S/drafts/D-001"
 mkdir -p "$D/v1"
 printf '<section class="hero"><h1 class="hero__title">Willkommen</h1></section>' >"$D/source.html"
 jq -n --arg page "$ENTRY" '{id:"D-001", page:$page, selector:"section.hero", prompt:"Hero neu gestalten", status:"open", appliedAs:null, versions:[{v:1, prompt:"Hero neu gestalten", name:"hero", title:"Hero", summary:"Neu gestaltet."}]}' >"$D/draft.json"
-printf '<section class="mx-hero"><h1>Willkommen</h1><a class="btn" href="/leistungen/">Mehr</a></section>\n' >"$D/v1/component.html"
+printf '<section class="mx-hero"><h1>Willkommen</h1><a class="btn" href="/leistungen/">Mehr</a><button type="button" data-mx-platzhalter="Merkliste anbinden">Merken</button></section>\n' >"$D/v1/component.html"
+echo '[{"id":"P1","gruppe":"pflicht","titel":"Ansprache","text":"ihren -> Ihren","umgesetzt":true},{"id":"P2","gruppe":"pflicht","titel":"Kontrast Orange","text":"Gesperrter Token, klären.","umgesetzt":false}]' >"$D/v1/befund.json"
 printf '@scope (.mx-hero) {\n  :scope { padding: var(--modio-space-l, 4rem); }\n  h1 { font-size: clamp(2rem, 5vw, 4rem); color: #fff; }\n}\n@media (min-width: 60em) {\n  @scope (.mx-hero) { :scope { display: grid; } }\n}\n' >"$D/v1/component.css"
 echo '{"name":"hero","title":"Hero","bausteine":[{"key":"button","label":"Button","source":"bestand"}]}' >"$D/v1/meta.json"
 set +e; OUT="$(node scripts/lib/draft.mjs validate "$S" "$D" 1 2>/dev/null)"; rc=$?; set -e
 check "Gültige Komponente besteht die Prüfung" '(( rc == 0 )) && [[ "$(jq -r .name <<<"$OUT")" == hero ]]'
+check "Befund und Platzhalter erkannt" 'jq -e "(.befund | length == 2) and (.platzhalter[0].text == \"Merkliste anbinden\")" <<<"$OUT" >/dev/null'
+mv "$D/v1/befund.json" "$D/befund.bak"
+set +e; OUT="$(node scripts/lib/draft.mjs validate "$S" "$D" 1 2>/dev/null)"; rc=$?; set -e
+check "Ohne befund.json ungültig" '(( rc == 3 )) && jq -e ".errors | index(\"befund.json fehlt\")" <<<"$OUT" >/dev/null'
+mv "$D/befund.bak" "$D/v1/befund.json"
 check "drafts/ ist nicht versioniert" '[[ -z "$(git -C "$S" status --porcelain)" ]]'
 mkdir -p "$D/v2"; cp "$D/v1/meta.json" "$D/v2/"
 printf '<div class="mx-hero" onclick="x()"><script>alert(1)</script><img src="https://evil.example/x.png"></div>' >"$D/v2/component.html"
@@ -305,6 +311,7 @@ check "draft-apply.sh committet" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT"
 check "Element ersetzt, Rest der Seite unverändert" 'grep -q "<section class=\"mx-hero\">" "$P" && ! grep -q "hero__title" "$P" && grep -q "<footer" "$P"'
 check "components/mx-hero.css versioniert" 'git -C "$S" cat-file -e HEAD:components/mx-hero.css && grep -q "@scope (.mx-hero)" "$S/components/mx-hero.css"'
 A="$(jq -r .annotationId <<<"$OUT")"
+check "Platzhalter und offene Befundpunkte in der Zusammenfassung" 'jq -r .result.summary "$S/annotations/$A.json" | grep -q "Merkliste anbinden" && jq -r .result.summary "$S/annotations/$A.json" | grep -q "P2 Kontrast Orange"'
 check "Annotation mit Entwurfsbezug" 'jq -e ".source == \"draft\" and .draft.id == \"D-001\"" "$S/annotations/$A.json" >/dev/null'
 set +e; OUT="$(./scripts/draft-apply.sh "$SLUG" D-001 2>/dev/null)"; rc=$?; set -e
 check "Übernommener Entwurf nicht noch einmal übernehmbar" '(( rc != 0 )) && grep -q "nicht mehr offen" <<<"$OUT"'

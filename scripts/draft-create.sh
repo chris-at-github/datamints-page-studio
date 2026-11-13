@@ -65,7 +65,7 @@ else
   (( BASE > 0 )) || die "$DID hat noch keine Version"
   VERSION=$((BASE + 1))
   mkdir -p "$DDIR/v$VERSION"
-  cp "$DDIR/v$BASE/component.html" "$DDIR/v$BASE/component.css" "$DDIR/v$BASE/meta.json" "$DDIR/v$VERSION/" 2>/dev/null || true
+  cp "$DDIR/v$BASE/component.html" "$DDIR/v$BASE/component.css" "$DDIR/v$BASE/meta.json" "$DDIR/v$BASE/befund.json" "$DDIR/v$VERSION/" 2>/dev/null || true
   PAGE="$(jq -r .page "$DDIR/draft.json")"; SELECTOR="$(jq -r .selector "$DDIR/draft.json")"
   log "$DID v$VERSION (Job $JOB_ID): $(head -c 120 <<<"$PROMPT_USER" | tr '\n' ' ')"
 fi
@@ -94,9 +94,9 @@ VIEWPORT="$(jq -r 'if .viewport then "\(.viewport.width)×\(.viewport.height) px
 WIDTH="$(jq -r 'if .rect.width then "\(.rect.width|floor) px" else "unbekannt" end' "$DDIR/draft.json")"
 
 if (( VERSION == 1 )); then
-  TASK="Entwirf das gewählte Element als Komponente (Entwurf $DID, Version 1). Schreibe component.html, component.css und meta.json nach v1/."
+  TASK="Entwirf das gewählte Element als Komponente (Entwurf $DID, Version 1). Prüfe es zuerst und schreibe den Befund nach v1/befund.json, dann component.html, component.css und meta.json nach v1/."
 else
-  TASK="Überarbeite den Entwurf $DID. Version $VERSION liegt bereits als Kopie von Version $((VERSION - 1)) in v$VERSION/. Ändere ausschließlich die Dateien in v$VERSION/ gemäß Auftrag und behalte alles bei, was der Auftrag nicht betrifft. Der Name bleibt \"$NAME_HINT\"."
+  TASK="Überarbeite den Entwurf $DID. Version $VERSION liegt bereits als Kopie von Version $((VERSION - 1)) in v$VERSION/. Ändere ausschließlich die Dateien in v$VERSION/ gemäß Auftrag und behalte alles bei, was der Auftrag nicht betrifft. Aktualisiere v$VERSION/befund.json (IDs beibehalten, umgesetzt anpassen, neue Punkte mit neuen IDs). Der Name bleibt \"$NAME_HINT\"."
 fi
 
 PROMPT="$(
@@ -194,12 +194,14 @@ fi
 (( crc == 0 )) || fail "Entwurf ungültig: $(jq -r '(.errors // [.error]) | join("; ")' <<<"$CHECK" 2>/dev/null | head -c 500)"
 
 NAME="$(jq -r .name <<<"$CHECK")"; TITLE="$(jq -r .title <<<"$CHECK")"; WARN="$(jq -c '.warnings // []' <<<"$CHECK")"
+NPH="$(jq '.platzhalter | length' <<<"$CHECK")"; NOPEN="$(jq '[.befund[] | select(.umgesetzt | not)] | length' <<<"$CHECK")"; NBEF="$(jq '.befund | length' <<<"$CHECK")"
 tmp="$(mktemp)"
 jq --argjson v "$VERSION" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)" --arg summary "$SUMMARY" --arg name "$NAME" \
-   --arg title "$TITLE" --arg model "$MODEL" --argjson cost "$COST" --arg session "$SESSION" --argjson warn "$WARN" '
+   --arg title "$TITLE" --arg model "$MODEL" --argjson cost "$COST" --arg session "$SESSION" --argjson warn "$WARN" \
+   --argjson nph "$NPH" --argjson nopen "$NOPEN" --argjson nbef "$NBEF" '
   .sessionId = (if $session == "" then .sessionId else $session end)
-  | .versions += [{v:$v, prompt:$prompt, created:$created, summary:$summary, name:$name, title:$title, model:$model, costUsd:$cost, warnings:$warn}]' \
+  | .versions += [{v:$v, prompt:$prompt, created:$created, summary:$summary, name:$name, title:$title, model:$model, costUsd:$cost, warnings:$warn, befund:$nbef, offen:$nopen, platzhalter:$nph}]' \
   "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
 chmod 644 "$DDIR/draft.json"
-log "$DID v$VERSION: Komponente mx-$NAME fertig ($(printf '%.2f' "$COST") USD)"
+log "$DID v$VERSION: Komponente mx-$NAME fertig ($NBEF Befundpunkte, $NOPEN offen, $NPH Platzhalter, $(printf '%.2f' "$COST") USD)"
 emit status ok slug "$SLUG" draft "$DID" version "json:$VERSION" name "$NAME" title "$TITLE" page "$PAGE" summary "$SUMMARY" warnings "json:$WARN" costUsd "json:$COST"

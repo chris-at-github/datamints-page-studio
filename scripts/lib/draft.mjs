@@ -141,8 +141,44 @@ export function allowedHostsFor(siteDir, draftDir) {
   return set;
 }
 
-// Liest und prüft eine Version: { name, html, css, meta, errors, warnings }
-export async function loadVersion(siteDir, draftDir, version) {
+export const BEFUND_GRUPPEN = ['pflicht', 'inhalt', 'funktionen', 'feinschliff'];
+
+// Prüft befund.json; gibt { befund, errors } zurück (befund bereinigt)
+export function validateBefund(text) {
+  if (text === null || text === undefined) return { befund: [], errors: ['befund.json fehlt'] };
+  let data;
+  try { data = JSON.parse(text); } catch { return { befund: [], errors: ['befund.json ist kein gültiges JSON'] }; }
+  if (!Array.isArray(data)) return { befund: [], errors: ['befund.json muss eine Liste sein'] };
+  const errors = [];
+  if (data.length > 25) errors.push('befund.json: höchstens 25 Punkte');
+  const ids = new Set();
+  const befund = [];
+  data.slice(0, 25).forEach((b, i) => {
+    const where = `befund.json Punkt ${i + 1}`;
+    if (!b || typeof b !== 'object') { errors.push(`${where}: kein Objekt`); return; }
+    const id = String(b.id || '');
+    if (!/^P\d{1,3}$/.test(id)) errors.push(`${where}: id muss P1, P2, … sein`);
+    else if (ids.has(id)) errors.push(`${where}: id ${id} doppelt`);
+    ids.add(id);
+    if (!BEFUND_GRUPPEN.includes(b.gruppe)) errors.push(`${where}: gruppe muss ${BEFUND_GRUPPEN.join(', ')} sein`);
+    if (typeof b.titel !== 'string' || !b.titel.trim() || b.titel.length > 200) errors.push(`${where}: titel fehlt oder ist zu lang`);
+    if (typeof b.text !== 'string' || b.text.length > 1500) errors.push(`${where}: text fehlt oder ist zu lang`);
+    if (typeof b.umgesetzt !== 'boolean') errors.push(`${where}: umgesetzt muss true oder false sein`);
+    befund.push({ id, gruppe: b.gruppe, titel: String(b.titel || '').trim(), text: String(b.text || '').trim(), umgesetzt: b.umgesetzt === true });
+  });
+  return { befund, errors };
+}
+
+// Platzhalter (data-mx-platzhalter) im Markup: [{ tag, text }]
+export function placeholdersIn(cheerio, html) {
+  if (!html) return [];
+  const $ = cheerio.load(html, null, false);
+  return $('[data-mx-platzhalter]').toArray().slice(0, 50).map((n) => ({ tag: n.name, text: String($(n).attr('data-mx-platzhalter') || '').slice(0, 200) }));
+}
+
+// Liest und prüft eine Version: { name, html, css, meta, befund, platzhalter, errors, warnings }
+// requireBefund: nur beim Erzeugen (draft-create); ältere Entwürfe ohne befund.json bleiben für Vorschau und Übernahme gültig
+export async function loadVersion(siteDir, draftDir, version, { requireBefund = false } = {}) {
   const vdir = path.join(draftDir, `v${version}`);
   const read = (f) => { try { return fs.readFileSync(path.join(vdir, f), 'utf8'); } catch { return null; } };
   let meta = {};
@@ -153,7 +189,11 @@ export async function loadVersion(siteDir, draftDir, version) {
   const cheerio = await loadCheerio();
   const { errors, warnings } = validateComponent(cheerio, { html, css, name, allowedHosts: allowedHostsFor(siteDir, draftDir) });
   if (!meta.name) errors.unshift('meta.json ohne name');
-  return { name, html, css, meta, errors, warnings };
+  const befundText = read('befund.json');
+  const b = befundText === null && !requireBefund ? { befund: [], errors: [] } : validateBefund(befundText);
+  errors.push(...b.errors);
+  const platzhalter = errors.length ? [] : placeholdersIn(cheerio, html);
+  return { name, html, css, meta, befund: b.befund, platzhalter, errors, warnings };
 }
 
 // ---------- CSS-Ebenen für die Auslieferung ----------
@@ -202,8 +242,8 @@ async function main() {
   if (!['validate', 'apply'].includes(cmd) || !siteDir || !draftDir || !Number.isInteger(version) || version < 1) {
     out({ error: 'Aufruf: node draft.mjs validate|apply <site-dir> <draft-dir> <version> [seite selektor]' }, 2);
   }
-  const v = await loadVersion(siteDir, draftDir, version);
-  if (cmd === 'validate') out({ name: v.name, title: v.meta.title || '', bausteine: v.meta.bausteine || [], errors: v.errors, warnings: v.warnings }, v.errors.length ? 3 : 0);
+  const v = await loadVersion(siteDir, draftDir, version, { requireBefund: cmd === 'validate' });
+  if (cmd === 'validate') out({ name: v.name, title: v.meta.title || '', bausteine: v.meta.bausteine || [], befund: v.befund, platzhalter: v.platzhalter, errors: v.errors, warnings: v.warnings }, v.errors.length ? 3 : 0);
 
   if (v.errors.length) out({ error: `Komponente ungültig: ${v.errors.join('; ')}`, errors: v.errors }, 3);
   const page = String(pageArg || '').replace(/^\/+/, '');
@@ -219,7 +259,8 @@ async function main() {
   const cssFile = path.join(compDir, `mx-${v.name}.css`);
   const header = `/* mx-${v.name}: ${String(v.meta.title || v.name).replace(/\*\//g, '').replace(/\s+/g, ' ').slice(0, 120)} */\n`;
   fs.writeFileSync(cssFile, header + v.css.trim() + '\n');
-  out({ name: v.name, title: v.meta.title || '', page: '/' + page, cssFile: `components/mx-${v.name}.css`, warnings: v.warnings });
+  out({ name: v.name, title: v.meta.title || '', page: '/' + page, cssFile: `components/mx-${v.name}.css`, warnings: v.warnings,
+    platzhalter: v.platzhalter, offen: v.befund.filter((b) => !b.umgesetzt).map((b) => `${b.id} ${b.titel}`) });
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -10,5 +10,6 @@ else
   printf '<section class="mx-test"><h2>Neu %s</h2></section>\n' "$V" >"$V/component.html"
 fi
 printf '@scope (.mx-test) {\n  :scope { padding: 2rem; }\n}\n' >"$V/component.css"
+printf '[{"id":"P1","gruppe":"pflicht","titel":"Ansprache","text":"Sie-Form","umgesetzt":true}]\n' >"$V/befund.json"
 printf '{"name":"test","title":"Test","bausteine":[{"key":"layout","label":"Layout","source":"neu"}]}\n' >"$V/meta.json"
 printf '{"type":"result","is_error":false,"result":"Entwurf %s erstellt.","session_id":"fake-session","total_cost_usd":0.01,"num_turns":1}\n' "$V"

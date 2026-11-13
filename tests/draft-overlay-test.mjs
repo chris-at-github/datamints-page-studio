@@ -47,7 +47,12 @@ try {
   check('Vorschau: Auswählen gesperrt', await ov('.bar button[aria-pressed]').first().isDisabled());
   await ov('.pvband button:has-text("Bearbeiten")').click();
   await page.waitForTimeout(400);
-  check('Entwurfs-Panel öffnet D-001 mit Bausteinen', await ov('#modio-drafts.open').isVisible() && (await ov('#modio-drafts').textContent()).includes('Bausteine'));
+  const panelText = await ov('#modio-drafts').textContent();
+  check('Entwurfs-Panel öffnet D-001 mit Bausteinen und Befund', await ov('#modio-drafts.open').isVisible() && panelText.includes('Bausteine') && panelText.includes('P2 · Kontrast Orange') && panelText.includes('1 offen'));
+  await ov('label.bf-item:has-text("P2") input').check();
+  check('Befundpunkt umschalten zählt als Änderung', (await ov('#modio-drafts').textContent()).includes('Neue Version (1 Änderung(en) gewählt)'));
+  await ov('.pvband button:has-text("Platzhalter zeigen")').click();
+  check('Platzhalter markieren', await page.evaluate(() => !!document.querySelector('style[data-modio="platzhalter"]') && document.querySelector('[data-mx-platzhalter]').title.includes('Merkliste')));
 
   // Normale Seite: Entwurf erstellen sendet Bausteine
   await page.goto(pageUrl);
