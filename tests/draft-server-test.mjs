@@ -43,6 +43,8 @@ if (MODE === 'before') {
   check('__components.css enthält die Komponente', css.includes('@scope (.mx-hero)'));
   const list = await (await fetch(`${BASE}/api/sites/${SLUG}/drafts`, { headers: auth })).json();
   check('API: Entwurf als übernommen gemeldet', list.drafts?.find((x) => x.id === 'D-001')?.status === 'applied' && list.components.includes('mx-hero'));
+  const pr = await fetch(`${page}?__modio_draft=D-001&__modio_v=1`, { redirect: 'manual' });
+  check('Vorschau eines übernommenen Entwurfs leitet zur Seite um', pr.status === 302 && !(pr.headers.get('location') || '').includes('__modio_draft'), `${pr.status} ${pr.headers.get('location')}`);
   const ap = await fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/apply`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: '{}' });
   check('Übernommener Entwurf: apply abgewiesen (409)', ap.status === 409, ap.status);
 }

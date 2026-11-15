@@ -36,7 +36,7 @@ try {
   // Vorschau
   await page.goto(`${pageUrl}?__modio_draft=D-001&__modio_v=1`);
   await page.waitForTimeout(800);
-  check('Overlay: Vorschau-Band sichtbar', await ov('.pvband.open').isVisible() && (await ov('.pvband').innerText()).includes('D-001'));
+  check('Vorschau: Entwurfs-Panel öffnet sich, Status zeigt die Vorschau', await ov('#modio-drafts.open').isVisible() && (await ov('.bar .status').innerText()).includes('Vorschau D-001 · v1') && (await ov('.pvband').count()) === 0);
   const st = await page.evaluate(() => {
     const h = document.querySelector('.mx-hero h1');
     const cs = h && getComputedStyle(h);
@@ -47,26 +47,27 @@ try {
   check('Vorschau: Auswählen gesperrt', await ov('.bar button[aria-pressed]').first().isDisabled());
   // Live-Umschalten zwischen Versionen und „Aktuell“ ohne Neuladen
   await page.evaluate(() => { window.__noReload = 1; });
-  await ov('.pvband button:has-text("v2")').click();
+  await ov('#modio-drafts .vtabs button:has-text("v2")').click();
   await page.waitForTimeout(500);
   check('Live: v2 ohne Neuladen', await page.evaluate(() => window.__noReload === 1 && document.querySelector('.mx-hero h1').textContent === 'Version zwei' && location.search.includes('__modio_v=2')));
-  await ov('.pvband button:has-text("Aktuell")').click();
+  await ov('#modio-drafts .vtabs button:has-text("Aktuell")').click();
   await page.waitForTimeout(500);
   check('Live: „Aktuell“ zeigt das bisherige Element', await page.evaluate(() => window.__noReload === 1 && !!document.querySelector('section.hero .hero__title') && !document.querySelector('.mx-hero') && document.querySelector('link[data-modio="draft"]').disabled));
   await page.keyboard.press('v');
   await page.waitForTimeout(500);
   check('Live: Taste V zurück zur zuletzt gezeigten Version', await page.evaluate(() => window.__noReload === 1 && document.querySelector('.mx-hero h1')?.textContent === 'Version zwei'));
-  await ov('.pvband button:has-text("v1")').click();
+  await ov('#modio-drafts .vtabs button:has-text("v1")').click();
   await page.waitForTimeout(500);
-  await ov('.pvband button:has-text("Bearbeiten")').click();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(200);
   const panelText = await ov('#modio-drafts').textContent();
   check('Entwurfs-Panel öffnet D-001 mit Bausteinen und Befund', await ov('#modio-drafts.open').isVisible() && panelText.includes('Bausteine') && panelText.includes('P2 · Kontrast Orange') && panelText.includes('1 offen'));
   await ov('#modio-drafts textarea[data-fk="ta"]').fill('Etwas ruhiger bitte');
   await ov('#modio-drafts .sb-body').evaluate((n) => { n.scrollTop = 200; });
   const scBefore = await ov('#modio-drafts .sb-body').evaluate((n) => n.scrollTop);
-  await ov('label.bf-item:has-text("P2") input').check();
-  check('Befundpunkt umschalten zählt als Änderung', (await ov('#modio-drafts').textContent()).includes('Neue Version (1 Änderung(en) gewählt)'));
+  check('Befund zunächst zugeklappt', !(await ov('details.bfdet:has-text("Befund von Claude")').evaluate((n) => n.open)));
+  await ov('details.bfdet:has-text("Befund von Claude") > summary').click();
+  await ov('.bf-item:has-text("P2") button.bf-act').click();
+  check('Befundpunkt vormerken zählt als Änderung', (await ov('#modio-drafts').textContent()).includes('Neue Version (1 Änderung(en) gewählt)') && (await ov('.bf-item:has-text("P2") button.bf-act').textContent()) === 'wird umgesetzt');
   check('Text im Feld „Nachbessern“ bleibt erhalten', (await ov('#modio-drafts textarea[data-fk="ta"]').inputValue()) === 'Etwas ruhiger bitte');
   check('Scrollposition bleibt erhalten', (await ov('#modio-drafts .sb-body').evaluate((n) => n.scrollTop)) === scBefore, String(scBefore));
   // Bausteine live
@@ -82,7 +83,7 @@ try {
   check('Element im Entwurf gewählt (Hinweis mit Selektor)', noteText.includes('Willkommen'), noteText.slice(0, 120));
   await ov('textarea.ndesc').first().fill('Überschrift kleiner');
   check('Hinweis zählt als Änderung', (await ov('#modio-drafts').textContent()).includes('Neue Version (2 Änderung(en) gewählt)'));
-  await ov('.pvband button:has-text("Platzhalter zeigen")').click();
+  await ov('#modio-drafts button.phbtn').click();
   check('Platzhalter markieren', await page.evaluate(() => !!document.querySelector('style[data-modio="platzhalter"]') && document.querySelector('[data-mx-platzhalter]').title.includes('Merkliste')));
 
   // Älterer Server ohne preview.name: Live-Funktionen müssen trotzdem gehen (Name aus den Entwurfsdaten)
@@ -94,12 +95,15 @@ try {
   await page.waitForTimeout(900);
   await page.unroute('**/*__modio_draft=*');
   await page.evaluate(() => { window.__noReload2 = 1; });
-  await ov('.pvband button:has-text("v2")').click();
+  await ov('#modio-drafts .vtabs button:has-text("v2")').click();
   await page.waitForTimeout(500);
   check('Live ohne preview.name (älterer Server)', await page.evaluate(() => window.__noReload2 === 1 && document.querySelector('.mx-hero h1')?.textContent === 'Version zwei'));
-  await ov('.pvband button:has-text("Bearbeiten")').click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(200);
   check('Ohne preview.name: Element wählen möglich', !(await ov('button:has-text("Element im Entwurf wählen")').isDisabled()));
+
+  await ov('#modio-drafts button.exitbtn').click();
+  await page.waitForTimeout(800);
+  check('„Vorschau beenden“ führt zur normalen Seite', !page.url().includes('__modio_draft') && (await ov('#modio-drafts button.exitbtn').count()) === 0, page.url());
 
   // Normale Seite: Entwurf erstellen sendet Bausteine
   await page.goto(pageUrl);

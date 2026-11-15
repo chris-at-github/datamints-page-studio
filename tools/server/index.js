@@ -220,7 +220,8 @@ async function listDrafts(slug) {
 // Vorschau: Seite mit dem Element durch die Komponente ersetzt. Gibt { buf, preview } oder { error } zurück.
 async function draftPreview(slug, file, rel, draftId, versionArg) {
   const d = await readDraft(slug, draftId);
-  if (!d) return { error: 'Entwurf nicht gefunden' };
+  if (!d) return { error: 'Entwurf nicht gefunden', leave: true };
+  if (d.status !== 'open') return { error: `Entwurf ${d.status === 'applied' ? 'übernommen' : 'verworfen'}`, leave: true };
   const version = Number(versionArg) || Math.max(0, ...d.versions.map((v) => v.v));
   if (!d.versions.some((v) => v.v === version)) return { error: `Version ${versionArg} nicht gefunden` };
   if ('/' + rel.replace(/^\/+/, '') !== d.page) return { error: 'Der Entwurf gehört zu einer anderen Seite' };
@@ -305,6 +306,11 @@ async function serveSite(req, res, slug, rest, search) {
       let preview = null;
       if (previewId !== null) {
         const p = await draftPreview(slug, file, rel, previewId, previewV);
+        if (p.leave) {
+          // Verworfene oder übernommene Entwürfe: zur normalen Seite statt einer Fehlerseite
+          res.writeHead(302, { Location: `/s/${slug}${rest}${search}`, 'Cache-Control': 'no-store' });
+          return res.end();
+        }
         if (p.error) return sendError(res, 409, `Vorschau nicht möglich: ${p.error}`);
         buf = p.buf; preview = p.preview;
       }

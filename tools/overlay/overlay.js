@@ -316,6 +316,7 @@
     '.status{max-width:280px;padding:0 6px;font-size:13px;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.status.running,.status.pending{color:#1d4ed8}' +
     '.status.review{color:#b45309;font-weight:600}' +
+    '.status.preview{color:#5b21b6;font-weight:600}' +
     '.status.failed{color:#b91c1c;font-weight:600}' +
     '.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;margin-right:6px;vertical-align:middle}' +
     '.running .dot,.pending .dot{animation:pulse 1s infinite alternate}' +
@@ -480,6 +481,12 @@
     '.logbody .hint{color:#94a3b8}' +
     '.ui.sb-open .logpop{right:416px}' +
     '.ui.sb-design .logpop{right:476px}' +
+    '.sidebar.drafts{width:500px}' +
+    '.ui.sb-drafts .bar,.ui.sb-drafts .toast,.ui.sb-drafts .logpop,.ui.sb-drafts .panel{right:516px}' +
+    '@media (max-width:980px){.ui.sb-drafts .bar{right:16px;bottom:auto;top:16px;left:16px;right:auto}}' +
+    '.drafts .sb-body .dsec{border-top:1px solid #9ca3af;padding-top:14px;margin-top:14px;margin-bottom:0}' +
+    '.drafts .dhead{margin-bottom:4px}' +
+    '.drafts .dstate{display:inline-block;font-size:11px;font-weight:600;border-radius:4px;padding:1px 6px;background:#f3f4f6;color:#4b5563;margin-top:4px}' +
     'ul.pglist{list-style:none;margin:8px 0 6px;padding:0;max-height:50vh;overflow:auto}' +
     'ul.pglist li{display:flex;align-items:center;gap:6px;border-bottom:1px solid #f1f2f4}' +
     'a.pglink{flex:1;min-width:0;display:block;padding:6px 8px;border-radius:6px;color:#1d2330;text-decoration:none}' +
@@ -541,18 +548,24 @@
     '.nhead button{padding:3px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;flex:none}' +
     'textarea.ndesc{min-height:52px;margin-top:4px;font-size:13px}' +
     '.bf-group{font-size:12px;font-weight:600;color:#374151;margin:10px 0 2px}' +
-    'label.bf-item{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #f1f2f4;font-size:13px;cursor:pointer}' +
-    'label.bf-item input{margin-top:3px;flex:none}' +
-    'label.bf-item strong{display:block;font-weight:600}' +
-    'label.bf-item .bf-text{display:block;color:#4b5563;font-size:12px;white-space:pre-wrap}' +
-    'label.bf-item.open strong{color:#b45309}' +
-    'label.bf-item.changed{background:#f5f3ff}' +
-    '.pvband{position:fixed;top:12px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:10px;pointer-events:auto;background:#5b21b6;color:#fff;border-radius:10px;padding:6px 8px 6px 12px;box-shadow:0 8px 28px rgba(0,0,0,.3);font-size:13px;max-width:calc(100vw - 24px);flex-wrap:wrap}' +
-    '.pvband.open{display:flex}' +
-    '.pv-label{display:inline-flex;align-items:center;gap:6px;font-weight:600}' +
-    '.pvband button{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.35);color:#fff;padding:3px 9px;font-size:12px}' +
-    '.pvband button:hover:not([disabled]){background:rgba(255,255,255,.28)}' +
-    '.pvband .seg button[aria-pressed=true]{background:#fff;color:#5b21b6;border-color:#fff}';
+    '.bf-item{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #f1f2f4;font-size:13px}' +
+    '.bf-main{flex:1;min-width:0}' +
+    '.bf-item strong{display:block;font-weight:600}' +
+    '.bf-item .bf-text{display:block;color:#4b5563;font-size:12px;white-space:pre-wrap}' +
+    '.bf-item.open strong{color:#b45309}' +
+    '.bf-item.changed{background:#f5f3ff}' +
+    '.bf-state{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-radius:4px;padding:0 5px;margin:2px 0 3px;white-space:nowrap}' +
+    'details.bfdet > summary{display:flex;align-items:center;gap:4px;cursor:pointer;list-style:none}' +
+    'details.bfdet > summary::-webkit-details-marker{display:none}' +
+    'details.bfdet > summary h3{margin:0}' +
+    'details.bfdet > summary .ic{transition:transform .15s;color:#6b7280}' +
+    'details.bfdet[open] > summary .ic{transform:rotate(90deg)}' +
+    '.vright{margin-left:auto;display:inline-flex;gap:4px}' +
+    'button.exitbtn{border-color:#c4b5fd;color:#5b21b6}' +
+    '.bf-state.done{color:#065f46;background:#d1fae5}' +
+    '.bf-state.todo{color:#92400e;background:#fef3c7}' +
+    'button.bf-act{flex:none;font-size:12px;padding:2px 8px;white-space:nowrap}' +
+    'button.bf-act[aria-pressed=true]{background:#ede9fe;border-color:#7c3aed;color:#5b21b6;font-weight:600}';
 
   root.appendChild(el('style', { text: STYLE }));
   var ui = el('div', { class: 'ui' });
@@ -879,6 +892,12 @@
       statusEl.appendChild(el('span', { class: 'dot', 'aria-hidden': 'true' }));
       statusEl.appendChild(document.createTextNode('Fehlgeschlagen'));
       statusEl.title = lastFailed.error || '';
+    } else if (PREVIEW && typeof pvLive !== 'undefined') {
+      statusEl.classList.add('preview');
+      statusEl.appendChild(document.createTextNode(pvLive.shown ? 'Vorschau ' + PREVIEW.draft + ' · v' + pvLive.shown : 'Vorschau ' + PREVIEW.draft + ' · aktuelle Seite'));
+      statusEl.title = 'Entwurfs-Vorschau (Klick öffnet das Panel). Taste V wechselt zwischen Entwurf und aktueller Seite.';
+      statusEl.style.cursor = 'pointer';
+      statusEl.onclick = function () { openDrafts(PREVIEW.draft, pvLive.shown || null, true); };
     } else {
       statusEl.appendChild(document.createTextNode('bereit'));
     }
@@ -947,10 +966,24 @@
     else hidePreview();
   }
 
+  // Element unter dem Mauszeiger, dessen eigene Fläche den Punkt enthält. Überspringt Elemente, die nur über
+  // ein Pseudo-Element darüberliegen (z. B. ganze Karte klickbar per a::after { position:absolute; inset:0 }).
+  function pickAt(x, y, fallback) {
+    if (!document.elementsFromPoint) return fallback;
+    var list = document.elementsFromPoint(x, y);
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      if (n === host || n === document.documentElement || n === document.body) continue;
+      var r = n.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return n;
+    }
+    return fallback;
+  }
+
   function onMove(e) {
     if (!selecting) return;
     if (isOwn(e)) return;
-    var t = e.target;
+    var t = pickAt(e.clientX, e.clientY, e.target);
     if (!t || t.nodeType !== 1 || t === hovered) return;
     if (selectMode === 'draftnote' && !(pvLive.node && pvLive.node.contains(t))) return; // nur innerhalb der Komponente
     hovered = t;
@@ -1912,7 +1945,14 @@
       }
       return;
     }
-    if (job.type === 'draft-discard') { loadDrafts(); showToast('Entwurf verworfen.', false); return; }
+    if (job.type === 'draft-discard') {
+      if (PREVIEW && job.params && job.params.draft === PREVIEW.draft) {
+        try { sessionStorage.setItem(FLASH_KEY, 'Entwurf ' + PREVIEW.draft + ' verworfen.'); } catch (e) { /* ignorieren */ }
+        location.href = location.pathname + cleanSearch();
+        return;
+      }
+      loadDrafts(); showToast('Entwurf verworfen.', false); return;
+    }
     if (job.type === 'annotate' || job.type === 'local-commit' || job.type === 'inspect-apply' || job.type === 'draft-apply') {
       msg = r.status === 'nochange' && job.type !== 'annotate' ? (r.summary || 'Keine Änderungen.') : r.status === 'nochange' ? 'Keine Änderung (' + (r.annotationId || '') + ').' : 'Fertig: ' + (r.annotationId || '');
       if (r.summary) msg += '\n' + truncate(r.summary, 600);
@@ -3056,6 +3096,9 @@
   var draftBefund = {}; // Befund-ID -> true (umsetzen) | false (zurücknehmen)
   var draftText = {}; // Entwurf-ID -> Text im Feld „Nachbessern“ (bleibt beim Neuzeichnen erhalten)
   var draftNotes = {}; // Entwurf-ID -> [{ selector, label, snippet, desc }] Hinweise zu Elementen
+  var befundOpen = false; // Befund im Panel aufgeklappt
+  var ideaOpen = false; // Gestaltungsidee im Panel aufgeklappt
+  function leavePreview() { location.href = location.pathname + cleanSearch(); }
   // Live-Vorschau: aktuell gezeigter Stand (0 = Aktuell) und das ersetzte Element in der Seite
   var pvLive = { node: null, shown: PREVIEW ? PREVIEW.version : null, lastV: PREVIEW ? PREVIEW.version : null, cache: {} };
   if (PREVIEW && PREVIEW.name) pvLive.node = document.querySelector('.mx-' + PREVIEW.name);
@@ -3067,19 +3110,15 @@
   var dBody = el('div');
   var dErr = el('div', { class: 'err', role: 'alert' });
   var dClose = iconButton('x', 'Entwürfe schließen', { class: 'ghost' }, true);
-  var dReload = iconButton('refresh', 'Entwürfe aktualisieren', { class: 'ghost' }, true);
   var dBack = iconButton('undo', 'Zur Liste', { class: 'ghost' }, true);
   var dTitle = el('span', { text: 'Entwürfe' });
   var dScroll = el('div', { class: 'sb-body' }, [dErr, dBody]);
   var draftsPanel = el('aside', { id: 'modio-drafts', class: 'sidebar drafts', role: 'complementary', 'aria-labelledby': 'modio-dh' }, [
-    el('div', { class: 'sb-head' }, [dBack, el('h2', { id: 'modio-dh' }, [icon('pencilSparkles', 18), dTitle]), el('span', { class: 'spacer' }), dReload, dClose]),
+    el('div', { class: 'sb-head' }, [dBack, el('h2', { id: 'modio-dh' }, [icon('pencilSparkles', 18), dTitle]), el('span', { class: 'spacer' }), dClose]),
     dScroll,
   ]);
   ui.appendChild(draftsPanel);
 
-  // Hinweisband in der Vorschau
-  var pvBand = el('div', { class: 'pvband', role: 'region', 'aria-label': 'Vorschau eines Entwurfs' });
-  ui.appendChild(pvBand);
 
   var DRAFT_PARAM = '__modio_draft', DRAFT_V_PARAM = '__modio_v';
   function cleanSearch() {
@@ -3130,6 +3169,13 @@
     return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/drafts')
       .then(function (d) {
         drafts = (d && d.drafts) || [];
+        var pd = PREVIEW && draftById(PREVIEW.draft);
+        if (PREVIEW && (!pd || pd.status !== 'open') && !reloading) {
+          try { sessionStorage.setItem(FLASH_KEY, 'Entwurf ' + PREVIEW.draft + (pd ? (pd.status === 'applied' ? ' ist übernommen' : ' ist verworfen') : ' nicht gefunden') + ' – Vorschau beendet.'); } catch (e) { /* ignorieren */ }
+          reloading = true;
+          leavePreview();
+          return;
+        }
         renderDraftsButton();
         if (draftsPanel.classList.contains('open')) renderDrafts();
         applyToggles();
@@ -3284,7 +3330,7 @@
     dTitle.textContent = d.id + (v && v.title ? ' · ' + v.title : '');
     dBody.appendChild(el('div', { class: 'step-sel', text: (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector + (d.revises ? ' · Überarbeitung von mx-' + d.revises : '') }));
     dBody.appendChild(el('div', { class: 'step-prompt', text: d.prompt }));
-    if (!isOpen) dBody.appendChild(el('p', { class: 'hint', text: d.status === 'applied' ? 'Übernommen als ' + d.appliedAs + ' (Version ' + d.appliedVersion + '). Für weitere Änderungen die Komponente auswählen und per Annotation oder als neuen Entwurf (Überarbeitung) bearbeiten.' : 'Verworfen.' }));
+    if (!isOpen) dBody.appendChild(el('span', { class: 'dstate', text: d.status === 'applied' ? 'übernommen als ' + d.appliedAs + ' (v' + d.appliedVersion + ')' : 'verworfen' }));
     if (!v) { dBody.appendChild(el('p', { class: 'hint', text: 'Noch keine Version.' })); return; }
 
     // Versionen: in der Vorschau live umschalten, sonst nur auswählen
@@ -3305,7 +3351,22 @@
       vrow.appendChild(b);
     });
     dBody.appendChild(vrow);
-    if (live) dBody.appendChild(el('p', { class: 'hint', text: 'Live-Vorschau: Versionen, „Aktuell“ (Taste V) und Bausteine schalten ohne Neuladen um.' }));
+    var vright = el('span', { class: 'vright' });
+    vrow.appendChild(vright);
+    if (live) {
+      var phs = document.querySelectorAll('[data-mx-platzhalter]');
+      if (phs.length) {
+        var phOn = !!document.querySelector('style[data-modio="platzhalter"]');
+        var bPh = el('button', { type: 'button', class: 'phbtn', text: 'Platzhalter (' + phs.length + ')', 'data-fk': 'ph', 'aria-pressed': String(phOn), title: 'Ergänzte Funktionen markieren, die im echten Projekt anzubinden sind' });
+        bPh.addEventListener('click', function () { markPlaceholders(!phOn); renderDrafts(); });
+        vright.appendChild(bPh);
+      }
+    }
+    if (PREVIEW && PREVIEW.draft === d.id) {
+      var bExit = el('button', { type: 'button', class: 'exitbtn', 'data-fk': 'exit', text: 'Vorschau beenden', title: 'Zurück zur normalen Seite' });
+      bExit.addEventListener('click', leavePreview);
+      vright.appendChild(bExit);
+    }
     else if (isOpen) {
       var bShow = iconButton('click', 'Vorschau v' + v.v + ' in der Seite', { class: 'primary' });
       bShow.addEventListener('click', function () { location.href = previewUrl(d, v.v); });
@@ -3313,16 +3374,20 @@
     }
 
     if (v.prompt && v.v > 1) dBody.appendChild(el('div', { class: 'vprompt', text: 'Auftrag v' + v.v + ': ' + v.prompt }));
-    if (v.summary) dBody.appendChild(el('details', { open: '' }, [el('summary', {}, [icon('chevron', 14), 'Gestaltungsidee von Claude']), el('p', { class: 'dsum', text: v.summary })]));
+    if (v.summary) {
+      var sdet = el('details', { class: 'dsec bfdet', open: ideaOpen ? '' : null }, [el('summary', {}, [icon('chevron', 14), el('h3', { text: 'Gestaltungsidee von Claude' })]), el('p', { class: 'dsum', text: v.summary })]);
+      sdet.addEventListener('toggle', function () { ideaOpen = sdet.open; });
+      dBody.appendChild(sdet);
+    }
     (v.warnings || []).forEach(function (w) { dBody.appendChild(el('div', { class: 'hint bad', text: w })); });
 
     // Befund: Haken = in dieser Version umgesetzt; Umschalten setzt Punkte in der nächsten Version um oder nimmt sie zurück
     if (v.befund && v.befund.length) {
       var GR = { pflicht: 'Pflicht: Fehler und Barrierefreiheit', inhalt: 'Inhalt', funktionen: 'Funktionen', feinschliff: 'Feinschliff' };
       var nOpen = v.befund.filter(function (b) { return !b.umgesetzt; }).length;
-      var bsec = el('section', { class: 'dsec' }, [
-        el('h3', { text: 'Befund (' + v.befund.length + (nOpen ? ', ' + nOpen + ' offen' : '') + ')' }),
-        el('p', { class: 'hint', text: 'Haken = in v' + v.v + ' umgesetzt. Umschalten und „Neue Version“ setzt Punkte um oder nimmt sie zurück.' }),
+      var bsec = el('details', { class: 'dsec bfdet', open: befundOpen ? '' : null }, [
+        el('summary', {}, [icon('chevron', 14), el('h3', { text: 'Befund von Claude (' + v.befund.length + (nOpen ? ', ' + nOpen + ' offen' : '') + ')' })]),
+        el('p', { class: 'hint', text: 'Was Claude geprüft hat. „umgesetzt“ steckt schon in v' + v.v + ', „offen“ braucht deine Entscheidung. Mit „umsetzen“ bzw. „zurücknehmen“ merkst du Punkte für die nächste Version vor (wirkt erst mit „Neue Version“).' }),
       ]);
       ['pflicht', 'inhalt', 'funktionen', 'feinschliff'].forEach(function (g) {
         var items = v.befund.filter(function (b) { return b.gruppe === g; });
@@ -3330,17 +3395,27 @@
         bsec.appendChild(el('div', { class: 'bf-group', text: GR[g] }));
         items.forEach(function (b) {
           var changed = hasOwn(draftBefund, b.id);
-          var cb = el('input', { type: 'checkbox', 'data-fk': 'bf-' + b.id, disabled: isOpen ? null : '' });
-          cb.checked = changed ? draftBefund[b.id] : b.umgesetzt;
-          cb.addEventListener('change', function () {
-            if (cb.checked === b.umgesetzt) delete draftBefund[b.id]; else draftBefund[b.id] = cb.checked;
+          // Vormerken für die nächste Version: offene Punkte umsetzen, umgesetzte zurücknehmen; erneuter Klick hebt auf
+          var act = el('button', {
+            type: 'button', class: 'bf-act', 'data-fk': 'bf-' + b.id, 'aria-pressed': String(changed), disabled: isOpen ? null : '',
+            text: changed ? (b.umgesetzt ? 'wird zurückgenommen' : 'wird umgesetzt') : (b.umgesetzt ? 'zurücknehmen' : 'umsetzen'),
+            title: changed ? 'Vormerkung aufheben' : (b.umgesetzt ? 'In der nächsten Version rückgängig machen' : 'In der nächsten Version umsetzen'),
+          });
+          act.addEventListener('click', function () {
+            if (changed) delete draftBefund[b.id]; else draftBefund[b.id] = !b.umgesetzt;
             renderDrafts();
           });
-          bsec.appendChild(el('label', { class: 'bf-item' + (changed ? ' changed' : '') + (b.umgesetzt ? '' : ' open') }, [
-            cb, el('span', {}, [el('strong', { text: b.id + ' · ' + b.titel }), el('span', { class: 'bf-text', text: b.text })]),
+          bsec.appendChild(el('div', { class: 'bf-item' + (changed ? ' changed' : '') + (b.umgesetzt ? '' : ' open') }, [
+            el('span', { class: 'bf-main' }, [
+              el('strong', { text: b.id + ' · ' + b.titel }),
+              el('span', { class: 'bf-state ' + (b.umgesetzt ? 'done' : 'todo'), text: b.umgesetzt ? 'umgesetzt' : 'offen' }),
+              el('span', { class: 'bf-text', text: b.text }),
+            ]),
+            isOpen ? act : null,
           ]));
         });
       });
+      bsec.addEventListener('toggle', function () { befundOpen = bsec.open; });
       dBody.appendChild(bsec);
     }
     if (v.platzhalter) dBody.appendChild(el('p', { class: 'hint', text: v.platzhalter + ' Platzhalter (ergänzte Funktionen, im echten Projekt anzubinden). In der Vorschau mit „Platzhalter zeigen“ markieren.' }));
@@ -3473,37 +3548,8 @@
     });
   }
 
-  function renderPreviewBand() {
-    clear(pvBand);
-    if (!PREVIEW) { pvBand.classList.remove('open'); return; }
-    var d = draftById(PREVIEW.draft);
-    var shown = pvLive.shown;
-    var v = d && shown ? versionOf(d, shown) : null;
-    pvBand.classList.add('open');
-    pvBand.appendChild(el('span', { class: 'pv-label' }, [icon('pencilSparkles', 14), 'Vorschau ' + PREVIEW.draft + (shown ? ' · v' + shown + (v && v.title ? ' · ' + v.title : '') : ' · aktuelle Seite')]));
-    if (d) {
-      var seg = el('span', { class: 'seg', role: 'group', 'aria-label': 'Ansicht' });
-      var cur = el('button', { type: 'button', text: 'Aktuell', 'aria-pressed': String(shown === 0), title: 'Seite ohne Entwurf (Taste V)' });
-      cur.addEventListener('click', function () { showLive(d, 0); });
-      seg.appendChild(cur);
-      d.versions.forEach(function (x) {
-        var b = el('button', { type: 'button', text: 'v' + x.v, 'aria-pressed': String(x.v === shown), title: x.prompt });
-        b.addEventListener('click', function () { showLive(d, x.v); });
-        seg.appendChild(b);
-      });
-      pvBand.appendChild(seg);
-    }
-    var phs = document.querySelectorAll('[data-mx-platzhalter]');
-    if (phs.length) {
-      var on = !!document.querySelector('style[data-modio="platzhalter"]');
-      var bPh = el('button', { type: 'button', 'aria-pressed': String(on), text: 'Platzhalter zeigen (' + phs.length + ')', title: 'Ergänzte Funktionen markieren, die im echten Projekt anzubinden sind' });
-      bPh.addEventListener('click', function () { markPlaceholders(!on); renderPreviewBand(); });
-      pvBand.appendChild(bPh);
-    }
-    var bOpen = el('button', { type: 'button', text: 'Bearbeiten' });
-    bOpen.addEventListener('click', function () { openDrafts(PREVIEW.draft, pvLive.shown || null); });
-    pvBand.appendChild(bOpen);
-  }
+  // Vorschau-Zustand in der Statuszeile der Leiste (statt eigener Leiste)
+  function renderPreviewBand() { renderStatus(); }
 
   function openDrafts(id, version, keep) {
     if (selecting) stopSelecting();
@@ -3515,7 +3561,7 @@
       draftVersion = version || null;
     }
     draftsPanel.classList.add('open');
-    ui.classList.add('sb-open');
+    ui.classList.add('sb-open', 'sb-drafts');
     btnDrafts.classList.add('on');
     btnDrafts.setAttribute('aria-expanded', 'true');
     dErr.textContent = '';
@@ -3524,13 +3570,12 @@
   }
   function closeDrafts() {
     draftsPanel.classList.remove('open');
-    ui.classList.remove('sb-open');
+    ui.classList.remove('sb-open', 'sb-drafts');
     btnDrafts.classList.remove('on');
     btnDrafts.setAttribute('aria-expanded', 'false');
   }
   btnDrafts.addEventListener('click', function () { if (draftsPanel.classList.contains('open')) closeDrafts(); else openDrafts(); });
   dClose.addEventListener('click', closeDrafts);
-  dReload.addEventListener('click', loadDrafts);
   dBack.addEventListener('click', function () { draftCurrent = null; dScroll.scrollTop = 0; renderDrafts(); });
   document.addEventListener('keydown', function (e) {
     // V: in der Vorschau zwischen Entwurf und aktueller Seite wechseln (live)
@@ -3610,6 +3655,7 @@
   loadDrafts().then(function () {
     var openId = null;
     try { openId = sessionStorage.getItem(DRAFT_OPEN_KEY); sessionStorage.removeItem(DRAFT_OPEN_KEY); } catch (e) { /* ignorieren */ }
+    if (!openId && PREVIEW) openId = PREVIEW.draft; // in der Vorschau ist das Panel die Steuerung
     if (openId) openDrafts(openId, PREVIEW && PREVIEW.draft === openId ? PREVIEW.version : null);
   });
   connectEvents();
