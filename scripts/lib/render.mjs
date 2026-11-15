@@ -1,6 +1,7 @@
 // Sichtprüfung im Browser: rendert Seiten des Abzugs vorher (Git-Stand) und nachher (Arbeitsverzeichnis)
 // mit Playwright/Chromium, misst die gewählten Elemente und nimmt Ausschnitte auf.
 // Aufruf: node render.mjs <siteDir> <slug> <outDir> <spec.json-String>
+//         node render.mjs layout <siteDir> <slug> <seite> <selektor> <viewports-json>   (Hauptraster messen, für Entwürfe)
 //   spec: { before: "HEAD", targets: [{page, selector}], viewports: [{name, width, height}] }
 // Ausgabe: eine JSON-Zeile. Exit 0 ohne Fehler-Befunde, 3 mit Fehler-Befunden, 4 Playwright/Browser fehlt, 1 Fehler.
 // Sicherheit: Die Seite läuft ohne Netz. Erlaubt sind nur Anfragen an den eigenen, nur lokal gebundenen Server.
@@ -9,6 +10,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { layerLegacyCss } from './draft.mjs';
 
 const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + '\n'); process.exit(code); };
@@ -39,7 +41,7 @@ function changedFiles(siteDir, ref) {
     ...split(git(siteDir, ['ls-files', '--others', '--exclude-standard', '-z']))]);
 }
 
-function makeReader(siteDir, mode, ref) {
+export function makeReader(siteDir, mode, ref) {
   const changed = mode === 'before' ? changedFiles(siteDir, ref) : null;
   const read = async (rel) => {
     if (changed && changed.has(rel)) {
@@ -76,7 +78,7 @@ function injectHtml(buf, base, layered) {
   return Buffer.from(html, 'latin1');
 }
 
-async function startServer(reader, slug) {
+export async function startServer(reader, slug) {
   const base = `/s/${slug}`;
   const send = (res, status, body, type) => {
     res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'Content-Security-Policy': SITE_CSP });
@@ -328,4 +330,110 @@ async function main() {
   out({ status: errors ? 'issues' : 'ok', errors, issues, results, dir: outDir }, errors ? 3 : 0);
 }
 
-main().catch((e) => out({ status: 'error', error: e.message }, 1));
+// ---------- Hauptraster eines Elements (für Entwürfe) ----------
+// Gemessen werden Breite und Lage des Elements, die Inhaltsbreite (nächster Vorfahr mit max-width) und die
+// Hauptspalten: die erste Ebene unterhalb des Elements, auf der 2–4 Kinder nebeneinander stehen. Gesucht wird in der
+// breitesten Ansicht; in den anderen Ansichten wird derselbe Knoten gemessen (Spalten ggf. untereinander).
+// Inneres (Kartenraster, Listen) gehört bewusst nicht zum Hauptraster.
+export function measureLayout([sel, path0]) {
+  const describe = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (typeof n.className === 'string' && n.className.trim() ? '.' + n.className.trim().split(/\s+/).filter((c) => !c.startsWith('modio')).slice(0, 3).join('.') : '');
+  const box = (n) => { const r = n.getBoundingClientRect(); return { x: Math.round(r.left + window.scrollX), w: Math.round(r.width) }; };
+  let el;
+  try { el = document.querySelector(sel); } catch { return { error: 'Ungültiger Selektor' }; }
+  if (!el) return { error: 'Element nicht gefunden' };
+  const cs = getComputedStyle(el);
+  const element = { node: describe(el), ...box(el), maxWidth: cs.maxWidth, paddingLeft: cs.paddingLeft, paddingRight: cs.paddingRight };
+  let container = null;
+  for (let n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    const s = getComputedStyle(n);
+    if (s.maxWidth !== 'none') { container = { node: describe(n), maxWidth: s.maxWidth, ...box(n), self: n === el }; break; }
+  }
+  // Inhaltsbreite innerhalb des Elements (z. B. .wrapper/.container): erster Nachfahr mit max-width
+  let inner = null;
+  for (const n of el.querySelectorAll('*')) {
+    const s = getComputedStyle(n);
+    if (s.maxWidth !== 'none' && s.display !== 'none' && !/^(img|svg|video|picture|input|select|textarea|button)$/i.test(n.tagName) && n.getBoundingClientRect().width > el.getBoundingClientRect().width * 0.5) {
+      inner = { node: describe(n), maxWidth: s.maxWidth, ...box(n) }; break;
+    }
+  }
+  const kidsOf = (n) => [...n.children].filter((c) => {
+    const s = getComputedStyle(c);
+    if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return false;
+    const r = c.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+  });
+  // Bezugsbreite für Spalten: Inhaltsbreite, falls vorhanden, sonst das Element
+  const elW = inner ? inner.w : el.getBoundingClientRect().width;
+  let colNode = null; let path = null;
+  if (path0) {
+    colNode = el;
+    for (const i of path0) { colNode = colNode && colNode.children[i]; }
+    path = colNode ? path0 : null;
+  } else {
+    const queue = [[el, []]];
+    while (queue.length) {
+      const [n, p] = queue.shift();
+      const kids = kidsOf(n);
+      if (kids.length >= 2) {
+        const r0 = kids[0].getBoundingClientRect();
+        const row = kids.filter((k) => { const r = k.getBoundingClientRect(); return r.top < r0.bottom - 1 && r.bottom > r0.top + 1; });
+        if (row.length >= 2 && row.length <= 4 && row.every((k) => k.getBoundingClientRect().width >= elW * 0.15)) { colNode = n; path = p; break; }
+      }
+      if (p.length < 4) for (const k of kids) queue.push([k, [...p, [...n.children].indexOf(k)]]);
+    }
+  }
+  let columns = null;
+  if (colNode) {
+    const s = getComputedStyle(colNode);
+    const kids = kidsOf(colNode);
+    const cols = kids.map((k) => ({ node: describe(k), ...box(k), top: Math.round(k.getBoundingClientRect().top + window.scrollY) }));
+    const stacked = cols.length > 1 && cols.every((c) => Math.abs(c.x - cols[0].x) < 2);
+    columns = { node: describe(colNode), display: s.display, gap: s.columnGap, gridTemplateColumns: s.gridTemplateColumns !== 'none' ? s.gridTemplateColumns : null, stacked,
+      cols: cols.slice(0, 4).map(({ node, x, w }) => ({ node, x, w })) };
+  }
+  return { viewport: window.innerWidth, element, container, inner, columns, path };
+}
+
+async function layoutMain() {
+  const [, siteDir, slug, page, selector, vpArg] = process.argv.slice(2);
+  if (!siteDir || !slug || !page || !selector || !vpArg) out({ status: 'error', error: 'Aufruf: render.mjs layout <siteDir> <slug> <seite> <selektor> <viewports>' }, 1);
+  const viewports = JSON.parse(vpArg).sort((a, b) => b.width - a.width);
+  let chromium;
+  try { ({ chromium } = await import('playwright')); } catch { out({ status: 'unavailable', error: 'Playwright ist nicht installiert (npm install)' }, 4); }
+  let browser;
+  try { browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined }); } catch (e) {
+    out({ status: 'unavailable', error: `Chromium startet nicht: ${String(e.message).split('\n')[0]}` }, 4);
+  }
+  const srv = await startServer(makeReader(siteDir, 'after'), slug);
+  const result = [];
+  let path0 = null;
+  try {
+    for (const vp of viewports) {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block' });
+      await ctx.route('**/*', (route) => {
+        const u = route.request().url();
+        return u.startsWith(srv.origin + '/') || u.startsWith('data:') || u.startsWith('blob:') ? route.continue() : route.abort();
+      });
+      const pg = await ctx.newPage();
+      try {
+        await pg.goto(`${srv.origin}${srv.base}/${page.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}`, { waitUntil: 'load', timeout: Number(process.env.RENDER_TIMEOUT_MS || 20000) });
+        await pg.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
+        const m = await pg.evaluate(measureLayout, [selector, path0]);
+        if (path0 === null && m.path) path0 = m.path;
+        result.push({ name: vp.name, width: vp.width, ...m });
+      } catch (e) {
+        result.push({ name: vp.name, width: vp.width, error: String(e.message).split('\n')[0] });
+      }
+      await ctx.close();
+    }
+  } finally {
+    await browser.close().catch(() => {});
+    srv.server.close();
+  }
+  const ok = result.some((r) => !r.error);
+  out({ status: ok ? 'ok' : 'error', error: ok ? undefined : result[0]?.error, viewports: result.map(({ path, ...r }) => r) }, ok ? 0 : 1);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv[2] === 'layout') layoutMain().catch((e) => out({ status: 'error', error: e.message }, 1));
+  else main().catch((e) => out({ status: 'error', error: e.message }, 1));
+}

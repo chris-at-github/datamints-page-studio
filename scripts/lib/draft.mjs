@@ -130,6 +130,17 @@ export function replaceElement(cheerio, text, selector, html) {
   return { text: text.slice(0, loc.startOffset) + html.trim() + text.slice(loc.endOffset) };
 }
 
+// Element genau so aus der Seite holen, wie es beim Übernehmen ersetzt würde (Originalmarkup, ungekürzt).
+export function extractElement(cheerio, text, selector) {
+  const $ = cheerio.load(text, { sourceCodeLocationInfo: true });
+  let all;
+  try { all = $(selector); } catch { return { error: `Ungültiger Selektor: ${selector}` }; }
+  if (!all.length) return { error: `Selektor trifft in der Seite nichts: ${selector}` };
+  const loc = all[0].sourceCodeLocation;
+  if (!loc || loc.startOffset == null || loc.endOffset == null) return { error: `Position nicht ermittelbar: ${selector}` };
+  return { html: text.slice(loc.startOffset, loc.endOffset), count: all.length };
+}
+
 // Hosts, die in einem Entwurf vorkommen dürfen: Host der Website und Hosts aus dem Ausgangsmaterial.
 export function allowedHostsFor(siteDir, draftDir) {
   const set = new Set();
@@ -238,6 +249,15 @@ const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + '\n'); p
 
 async function main() {
   const [cmd, siteDir, draftDir, versionArg, pageArg, selector] = process.argv.slice(2);
+  if (cmd === 'extract') {
+    // node draft.mjs extract <site-dir> <seite> <selektor>
+    const [, sDir, pageRel, sel] = process.argv.slice(2);
+    const page = String(pageRel || '').replace(/^\/+/, '');
+    if (!sDir || !page || !sel) out({ error: 'Aufruf: node draft.mjs extract <site-dir> <seite> <selektor>' }, 2);
+    if (!sitePages(sDir).includes(page)) out({ error: `Seite nicht im Abzug: /${page}` }, 1);
+    const r = extractElement(await loadCheerio(), readText(path.join(sDir, 'www', page)).text, sel);
+    out(r, r.error ? 1 : 0);
+  }
   const version = Number(versionArg);
   if (!['validate', 'apply'].includes(cmd) || !siteDir || !draftDir || !Number.isInteger(version) || version < 1) {
     out({ error: 'Aufruf: node draft.mjs validate|apply <site-dir> <draft-dir> <version> [seite selektor]' }, 2);

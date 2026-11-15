@@ -348,7 +348,7 @@ check "draft-discard.sh verwirft" '[[ "$(jq -r .status "$D/draft.json")" == disc
 
 echo "Entwurf anlegen (draft-create.sh mit simuliertem Claude)"
 JOBF="$(mktemp)"
-jq -n --arg page "$ENTRY" '{id:"job-test-draft", params:{page:$page, selector:"footer", html:"<footer>© Testfirma</footer>", text:"© Testfirma", prompt:"Footer modern", bausteine:[{key:"button",classes:"btn"}], viewport:{width:1440,height:900}, rect:{width:1200}}}' >"$JOBF"
+jq -n --arg page "$ENTRY" '{id:"job-test-draft", params:{page:$page, selector:"footer", html:"<footer>Browser-Stand</footer>", text:"© Testfirma", prompt:"Footer modern", bausteine:[{key:"button",classes:"btn"}], viewport:{width:1440,height:900}, rect:{width:1200}}}' >"$JOBF"
 SKILLF="$(mktemp)"; printf -- '---\nname: frontend-design\ndescription: x\n---\n\n# Frontend Design\nTEST-SKILL-INHALT\n' >"$SKILLF"
 printf '# Sortiment\nWir verkaufen Testdinge.\n' >"$S/design/sortiment.md"
 git -C "$S" add design/sortiment.md && git -C "$S" commit -q -m "[design] Sortiment" -- design/sortiment.md
@@ -366,6 +366,18 @@ check "Ohne Skill nur Leitlinien" 'grep -q "Gestaltungsleitlinien" <<<"$OUT2" &&
 check "Neuer Entwurf mit Version 1" '[[ "$(jq -r .status <<<"$OUT")" == ok && "$(jq -r .version <<<"$OUT")" == 1 && -f "$S/drafts/$DN/v1/component.html" ]]'
 check "Ausgangsmaterial und Regeln im Entwurf" '[[ -f "$S/drafts/$DN/source.html" && -f "$S/drafts/$DN/CLAUDE.md" ]] && jq -e ".[0].classes == \"btn\"" "$S/drafts/$DN/bausteine.json" >/dev/null'
 check "Abzug unverändert" '[[ -z "$(git -C "$S" status --porcelain)" ]]'
+check "Material ungekürzt aus der Seitendatei (nicht aus dem Browser)" 'jq -e ".material.source == \"abzug\" and .material.truncated == false" "$S/drafts/$DN/draft.json" >/dev/null && grep -q "<footer>© Testfirma</footer>" "$S/drafts/$DN/source.html" && ! grep -q "Browser-Stand" "$S/drafts/$DN/source.html"'
+if node -e 'require("playwright")' 2>/dev/null && [[ -f "$S/drafts/$DN/layout.json" ]]; then
+  check "Hauptraster gemessen (layout.json je Ansicht)" 'jq -e "(.ansichten | length) >= 3 and all(.ansichten[]; .element.w > 0)" "$S/drafts/$DN/layout.json" >/dev/null'
+else
+  echo "  (Hauptraster übersprungen: Playwright/Browser nicht verfügbar)"
+fi
+JOBT="$(mktemp)"
+jq -n --arg page "$ENTRY" '{id:"job-test-draft-trunc", params:{page:$page, selector:"#gibt-es-nicht", html:"<div id=\"gibt-es-nicht\"><p>Anfang …", text:"Anfang", prompt:"Neu"}}' >"$JOBT"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBT" 2>/dev/null)" || true
+TD="$(jq -r .draft <<<"$OUT")"
+check "Element nicht im Abzug: Browser-Material mit sichtbarer Warnung" 'jq -e ".material.source == \"browser\" and .material.truncated == true" "$S/drafts/$TD/draft.json" >/dev/null && jq -e "[.warnings[] | select(test(\"Material unvollständig\"))] | length == 1" <<<"$OUT" >/dev/null'
+./scripts/draft-discard.sh "$SLUG" "$TD" >/dev/null 2>&1; rm -f "$JOBT" logs/claude-job-test-draft-trunc*.json logs/claude-job-test-draft-trunc*.stderr.log
 jq -n --arg d "$DN" '{id:"job-test-draft2", params:{draft:$d, prompt:"Etwas ruhiger"}}' >"$JOBF"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
 check "Neue Version 2 mit Session" '[[ "$(jq -r .version <<<"$OUT")" == 2 ]] && jq -e ".versions | length == 2" "$S/drafts/$DN/draft.json" >/dev/null && [[ "$(jq -r .sessionId "$S/drafts/$DN/draft.json")" == fake-session ]]'

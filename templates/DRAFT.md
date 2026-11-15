@@ -30,6 +30,14 @@ Schreibe in den Versionsordner, den der Auftrag nennt (z. B. `v1/`), `befund.jso
 - Barrierefreiheit: semantische Elemente, sinnvolle Überschriftenebene, Kontrast nach WCAG AA, Alternativtexte, sichtbarer Fokus, `prefers-reduced-motion` beachten.
 - Kein JavaScript. Interaktion nur mit HTML und CSS (`<details>`, `:has()`, `:target`, Scroll-Snap).
 
+## Hauptraster
+`layout.json` enthält das gemessene Hauptraster des bisherigen Elements, so wie es auf der Seite ausgeliefert wird: Breite des Elements, Inhaltsbreite (z. B. ein `.wrapper` mit `max-width`) und die Hauptspalten je Bildschirmbreite. Der Auftrag fasst es zusammen. Das Hauptraster ist verbindlich:
+- **Nicht breiter:** Die Komponente und ihr Inhalt werden nicht breiter als gemessen. Übernimm Inhaltsbreite und Spaltenbreiten als lokale Custom Properties auf `:scope` (z. B. `--mx-inhalt-max: 960px`), statt Werte zu raten.
+- **Keine Elemente außerhalb des Rasters:** Nichts ragt über die Inhaltskante oder die Kanten der Hauptspalten hinaus. Keine vollflächigen Ausbrüche, keine zusätzlichen Spalten, Leisten oder Randelemente neben dem Raster.
+- **Hauptspalten bleiben:** Anzahl, Reihenfolge und Breitenverhältnis der Hauptspalten bleiben auf großen Bildschirmen erhalten (± wenige Pixel). Wie sie sich auf kleinen Bildschirmen anordnen, darfst du verbessern.
+- **Innerhalb der Spalten bist du frei:** Kartenraster, Spaltenzahl der Karten, Abstände, Anordnung und Gestaltung.
+- Verlangt der Auftrag ausdrücklich ein anderes Raster, gilt der Auftrag.
+
 ## Inhalt
 - Der Inhalt kommt aus `source.html`. Übernimm Texte, Links, Bilder und Alternativtexte sinngemäß. Das Hintergrundwissen in `<hintergrund>` hilft, Inhalte richtig zu gewichten.
 - Texte korrigierst du nach `<regeln>` (Ansprache, Ton, einheitliche Bezeichnungen, einheitliche Schreibweisen wie „ד bei Maßen oder Datums- und Zeitformate). Jede Korrektur steht als Punkt in `befund.json`. Darüber hinaus Texte nur ändern, wenn der Auftrag es verlangt.
@@ -44,6 +52,6 @@ Schreibe in den Versionsordner, den der Auftrag nennt (z. B. `v1/`), `befund.jso
 - **Umschaltbar machen:** Jedes Element eines Bausteins trägt `data-mx-baustein="<key>"`. In `meta.json` steht je Baustein `klassen.neu` (die eigene Klasse, z. B. `card__btn`) und, falls es in `bausteine.json` ein passendes Gegenstück gibt, `klassen.bestand` (dessen Klassen, z. B. `btn btn-primary`). Das Markup trägt die Klassen der gewählten Quelle. Schreibe das CSS für `klassen.neu` **immer**, auch wenn der Baustein gerade aus dem Bestand kommt, und sprich Baustein-Elemente im CSS nur über diese Klasse an, nie über reine Element-Selektoren. So kann der Nutzer in der Vorschau zwischen „neu“ und „wie bisher“ umschalten, indem nur die Klassen getauscht werden.
 
 ## Arbeitsweise
-- Lies zuerst `source.html`, `bausteine.json` und die Referenzbilder. Schreibe dann `befund.json`, danach die Komponente.
+- Lies zuerst `source.html`, `layout.json` (falls vorhanden), `bausteine.json` und die Referenzbilder. Schreibe dann `befund.json`, danach die Komponente.
 - Schreibe nur in den Versionsordner des Auftrags. Andere Dateien nicht ändern.
 - Schließe mit einer kurzen Zusammenfassung auf Deutsch: offene Punkte aus dem Befund (nicht umgesetzt, mit Entscheidungsbedarf), Gestaltungsidee, Platzhalter, wichtigste Entscheidungen, wie kleine Bildschirme gelöst sind, begründete Abweichungen vom bestehenden Designkonzept und welche Bausteine neu oder aus dem Bestand sind.
