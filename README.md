@@ -20,7 +20,7 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 
 1. `https://modio.ddev.site:3443` öffnen, URL eintragen (optional Seitenliste) → Abzug wird erstellt. Weitere Seiten einer bestehenden Website später über „Seiten hinzufügen“ in der Websiteliste: Die bisherigen Schritte bleiben erhalten, nur fehlende Dateien kommen dazu, Links auf die neuen Seiten zeigen danach auf den Abzug.
 2. „Öffnen“ → Website mit Overlay. **Alt+A** schaltet den Auswahlmodus, **Pfeil hoch** wählt das Elternelement, Klick oder Enter bestätigt.
-3. Prompt eingeben, optional Referenzbilder (Drag-and-drop, Strg+V, Datei, Bild-URL), „Stärkeres Modell für komplexe Änderungen“ = Opus statt Sonnet → „In die Queue aufnehmen“ (Strg+Enter) oder „Direkt umsetzen“ (Strg+Umschalt+Enter). Gesammelte Annotationen setzt „Queue umsetzen (n)“ in der Leiste als **einen** Schritt in einer Claude-Session um; sammeln geht auch, während ein Schritt läuft.
+3. Prompt eingeben, optional Referenzbilder (Drag-and-drop, Strg+V, Datei, Bild-URL) → „In die Queue aufnehmen“ (Strg+Enter) oder „Direkt umsetzen“ (Strg+Umschalt+Enter). Gesammelte Annotationen setzt „Queue umsetzen (n)“ in der Leiste als **einen** Schritt in einer Claude-Session um; sammeln geht auch, während ein Schritt läuft.
 4. Claude setzt um, der Snapshot entsteht, die Seite lädt neu. Bei auffälligen Änderungen erscheint der Prüfdialog.
 5. „Verlauf“ → zu jedem Stand zurückspringen. „Nachbessern“ korrigiert den letzten Schritt in derselben Claude-Session.
 6. Tokens und Regeln pflegst du im Design-Panel. Im Annotationsdialog fügt „Token einfügen“ (oder Strg+Leertaste) einen Token wie `color.primary` in den Prompt ein; Claude setzt ihn als `var(--modio-color-primary)` um. Details: [projektplan-erweiterung-design.md](projektplan-erweiterung-design.md).
@@ -28,13 +28,23 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 8. Gleiche Bereiche (z. B. Header, Footer): Im Design-Panel unter „Gleiche Bereiche“ → „Auswählen“, Element bzw. Elternelement in der Pfadleiste wählen, „Übernehmen“. Der Bereich landet mit einem Selektor ohne Positionsangaben in `design/consistency.json`; die Seiten bleiben dabei unverändert. „Für alle Seiten übernehmen“ kopiert die Bereiche der geöffneten Seite ohne Claude auf alle Seiten (relative Links und aktiver Menüpunkt werden je Seite angepasst). Ändert danach ein Schritt einen gleichen Bereich auf einer Seite, überträgt `commit-step.sh` die Änderung automatisch auf alle Seiten (im selben Commit). Haben mehrere Seiten ihn unterschiedlich geändert, erscheint nur ein Hinweis. Neue Seiten („Seiten hinzufügen“) übernehmen die Bereiche automatisch, wenn die vorhandenen Seiten sich einig sind.
 10. Eigene Änderungen ohne Claude: Sobald Modio Änderungen erkennt, erscheint in der Leiste „Änderungen übernehmen (n)“. Erkannt werden im Inspektor geänderte Elemente (HTML, Text, Inline-Styles), im Styles-Panel geänderte CSS-Regeln (landen als Regel in `overrides.css`) und geänderte Dateien im Abzug (Editor, Chrome-DevTools-Workspaces). Im Panel wählst du aus, was übernommen wird (mit Diff). Alles läuft durch dieselbe Prüfung wie Claude-Schritte und wird ein Schritt A-xxx im Verlauf. Änderungen, die Scripts der Website selbst machen (beim Laden oder laufend), blendet Modio so weit wie möglich aus.
 9. Startseite → „Report erzeugen“ → `sites/<slug>/CHANGES.md`.
+11. Entwürfe: Element wählen → „Entwurf erstellen“. Claude gestaltet es ohne Altlasten als Komponente, die Vorschau zeigt die echte Seite. Im Panel „Entwürfe“ Versionen, „Aktuell“ (Taste V) und Bausteine live vergleichen, nachbessern, übernehmen. Details: [projektplan-erweiterung-entwurf.md](projektplan-erweiterung-entwurf.md).
 
-Neue Einstellungen in der `.env` (alle optional):
+Einstellungen in der `.env` (alle optional). Werte, die beim Aufruf eines Skripts ausdrücklich gesetzt sind (`CLAUDE_EFFORT=max ./scripts/…`), haben Vorrang vor der `.env`. `CLAUDE_BARE=true` (alte Schreibweise) gilt als `CLAUDE_AUTH=api`.
 
 ```dotenv
-CLAUDE_BARE=false                                  # true nur mit ANTHROPIC_API_KEY oder apiKeyHelper
+CLAUDE_AUTH=konto                                  # konto = Claude-Abo (API-Schlüssel wird dem Aufruf entzogen)
+                                                   # api   = ANTHROPIC_API_KEY oder apiKeyHelper, Aufruf mit --bare
+# ANTHROPIC_API_KEY=sk-ant-…                       # darf dauerhaft stehen bleiben, wirkt nur mit CLAUDE_AUTH=api
+CLAUDE_MODEL=claude-opus-5-5                       # Standard für alle Läufe (Annotation, Entwurf, Token-Vorschläge)
+CLAUDE_EFFORT=high                                 # low | medium | high | xhigh | max
+DRAFT_MODEL=                                       # leer = CLAUDE_MODEL
+DRAFT_EFFORT=                                      # leer = CLAUDE_EFFORT
 CLAUDE_SETTINGS_FILE=./tools/worker/claude-settings.json
-CLAUDE_MAX_BUDGET_USD=0.50                         # leer oder 0 = ohne Obergrenze
+CLAUDE_MAX_BUDGET_USD=1.50                         # je Annotation; leer oder 0 = ohne Obergrenze
+DRAFT_MAX_BUDGET_USD=4.00                          # je Entwurfslauf
+# DESIGN_SKILL_FILE=/pfad/zu/SKILL.md              # nicht gesetzt = installiertes Plugin frontend-design, leer gesetzt = ohne Skill
+DESIGN_DOCS_MAX_BYTES=60000                        # weitere design/*.md als Hintergrund
 CONTEXT_HISTORY_COUNT=5
 NOTES_MAX_LINES=40
 ```

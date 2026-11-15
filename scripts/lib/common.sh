@@ -17,11 +17,15 @@ SCRIPT_NAME="$(basename "$0" .sh)"
 
 cd "$MODIO_ROOT"
 
+# .env füllt nur, was nicht schon gesetzt ist: ausdrücklich übergebene Werte (z. B. CLAUDE_EFFORT=max ./scripts/…) gewinnen
 if [[ -f "$MODIO_ROOT/.env" ]]; then
+  _modio_preset="$(export -p)"
   set -a
   # shellcheck disable=SC1091
   source "$MODIO_ROOT/.env"
   set +a
+  eval "$_modio_preset" 2>/dev/null || true
+  unset _modio_preset
 fi
 
 # Übliche Installationsorte (z. B. Claude Code in ~/.local/bin) auch in Nicht-Login-Shells finden
@@ -157,6 +161,44 @@ draft_status() {
   a="$(jq -r '.appliedAs // ""' "$f")"
   if [[ -n "$a" && -f "$SITE/annotations/$a.json" ]]; then echo applied; else echo open; fi
 }
+
+# ----- Claude-Aufrufe: Anmeldung, Modell, Effort -----
+# CLAUDE_AUTH=konto (Standard): Anmeldung per Claude-Konto (Abo); ANTHROPIC_API_KEY wird dem Aufruf entzogen,
+#   damit sicher über das Konto abgerechnet wird.
+# CLAUDE_AUTH=api: Anmeldung per API-Schlüssel (ANTHROPIC_API_KEY oder apiKeyHelper in den Claude-Einstellungen),
+#   Aufruf mit --bare. Alte Schreibweise CLAUDE_BARE=true wird als api verstanden.
+# CLAUDE_MODEL (Standard Opus) und CLAUDE_EFFORT (Standard high: low|medium|high|xhigh|max) gelten für alle Läufe;
+# DRAFT_MODEL und DRAFT_EFFORT können Entwürfe abweichend einstellen.
+DEFAULT_CLAUDE_MODEL="claude-opus-5-5"
+claude_auth_mode() {
+  local m="${CLAUDE_AUTH:-}"
+  if [[ -z "$m" ]]; then [[ "${CLAUDE_BARE:-false}" == "true" ]] && m=api || m=konto; fi
+  printf '%s' "$m"
+}
+claude_effort() {
+  local e="${1:-${CLAUDE_EFFORT:-high}}"
+  case "$e" in low|medium|high|xhigh|max) printf '%s' "$e" ;; *) die "Ungültiger Effort: $e (erlaubt: low, medium, high, xhigh, max)" ;; esac
+}
+# Prüft die Anmeldung und füllt CLAUDE_AUTH_ARGS (Optionen für claude) und CLAUDE_ENV_UNSET (Optionen für env).
+# Aufruf: claude_auth_setup <claude-settings.json>
+claude_auth_setup() {
+  local settings="$1" mode
+  mode="$(claude_auth_mode)"
+  CLAUDE_ENV_UNSET=(-u MODIO_API_TOKEN -u CRAWL_HTTP_PASSWORD -u CRAWL_HTTP_USER)
+  case "$mode" in
+    api)
+      if [[ -z "${ANTHROPIC_API_KEY:-}" ]] && ! jq -e '.apiKeyHelper' "$settings" >/dev/null 2>&1; then
+        die "CLAUDE_AUTH=api braucht ANTHROPIC_API_KEY in der .env oder einen apiKeyHelper in $settings (Anmeldung per Claude-Konto: CLAUDE_AUTH=konto)"
+      fi
+      CLAUDE_AUTH_ARGS=(--bare) ;;
+    konto)
+      CLAUDE_ENV_UNSET+=(-u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN)
+      # globale Einstellungen, MCP-Server und Skills nicht mitladen
+      CLAUDE_AUTH_ARGS=(--setting-sources project,local --disable-slash-commands) ;;
+    *) die "Ungültiger Wert CLAUDE_AUTH=$mode (konto oder api)" ;;
+  esac
+}
+claude_is_api() { [[ "$(claude_auth_mode)" == "api" ]]; }
 
 # Systemprompt für Claude-Läufe zusammensetzen: Grundregeln (z. B. DRAFT.md oder CLAUDE.md bei --bare),
 # optional die Gestaltungsleitlinien aus templates/CLAUDE.md (für Entwürfe; bei Annotationen stehen sie schon

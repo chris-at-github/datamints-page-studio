@@ -38,17 +38,18 @@ P
 
 RESULT_FILE="$LOG_DIR/claude-tokens-propose-$SLUG.json"
 STDERR_FILE="$LOG_DIR/claude-tokens-propose-$SLUG.stderr.log"
-args=(-p --model "${CLAUDE_MODEL:-claude-sonnet-5-5}" --tools "" --output-format json --json-schema "$SCHEMA"
+claude_auth_setup "$CLAUDE_SETTINGS"
+args=(-p --model "${CLAUDE_MODEL:-$DEFAULT_CLAUDE_MODEL}" --effort "$(claude_effort)" --tools "" --output-format json --json-schema "$SCHEMA"
   --settings "$CLAUDE_SETTINGS" --strict-mcp-config --no-session-persistence)
-if [[ "${CLAUDE_BARE:-false}" == "true" ]]; then args+=(--bare); else args+=(--setting-sources project,local --disable-slash-commands); fi
-BUDGET="${CLAUDE_MAX_BUDGET_USD-0.50}"
+args+=("${CLAUDE_AUTH_ARGS[@]}")
+BUDGET="${CLAUDE_MAX_BUDGET_USD-1.50}"
 [[ -n "$BUDGET" && "$BUDGET" != "0" ]] && args+=(--max-budget-usd "$BUDGET")
 
 # In einem leeren Ordner ausführen: kein CLAUDE.md, keine Dateien im Kontext
 WORK="$(mktemp -d)"; PROPOSALS="$(mktemp)"; trap 'rm -rf "$WORK" "$PROPOSALS"' EXIT
 log "$SLUG: Claude ordnet Scan-Werte Tokens zu …"
 set +e
-( cd "$WORK" && printf '%s' "$PROMPT" | env -u MODIO_API_TOKEN -u CRAWL_HTTP_PASSWORD -u CRAWL_HTTP_USER \
+( cd "$WORK" && printf '%s' "$PROMPT" | env "${CLAUDE_ENV_UNSET[@]}" \
   timeout "${CLAUDE_TIMEOUT:-1200}" claude "${args[@]}" >"$RESULT_FILE" 2>"$STDERR_FILE" )
 rc=$?
 set -e

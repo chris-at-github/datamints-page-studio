@@ -21,6 +21,8 @@ DID="$(jq -r '.draft // ""' <<<"$P")"
 ensure_drafts_ignored
 CLAUDE_SETTINGS="$(abspath "${CLAUDE_SETTINGS_FILE:-./tools/worker/claude-settings.json}")"
 [[ -f "$CLAUDE_SETTINGS" ]] || die "Einstellungen für Claude nicht gefunden: $CLAUDE_SETTINGS"
+claude_auth_setup "$CLAUDE_SETTINGS"
+EFFORT="$(claude_effort "${DRAFT_EFFORT:-}")"
 
 CREATED_DIR=""
 if [[ -z "$DID" ]]; then
@@ -143,7 +145,7 @@ if [[ -n "$REFS_TEXT" ]]; then
 fi
 
 # ----- Claude -----
-MODEL="${DRAFT_MODEL:-claude-opus-5-5}"
+MODEL="${DRAFT_MODEL:-${CLAUDE_MODEL:-$DEFAULT_CLAUDE_MODEL}}"
 RESULT_FILE="$LOG_DIR/claude-$JOB_ID.json"
 STDERR_FILE="$LOG_DIR/claude-$JOB_ID.stderr.log"
 : >"$RESULT_FILE"
@@ -152,6 +154,7 @@ run_claude() {
   args=(
     -p
     --model "$MODEL"
+    --effort "$EFFORT"
     --allowedTools "Read,Edit,Write,Grep,Glob"
     --disallowedTools "Bash,WebFetch,WebSearch"
     --permission-mode acceptEdits
@@ -160,13 +163,13 @@ run_claude() {
     --strict-mcp-config
     --append-system-prompt-file "$DDIR/SYSTEM.md"
   )
-  if [[ "${CLAUDE_BARE:-false}" == "true" ]]; then args+=(--bare); else args+=(--setting-sources project,local --disable-slash-commands); fi
-  local budget="${DRAFT_MAX_BUDGET_USD-2.00}"
+  args+=("${CLAUDE_AUTH_ARGS[@]}")
+  local budget="${DRAFT_MAX_BUDGET_USD-4.00}"
   [[ -n "$budget" && "$budget" != "0" ]] && args+=(--max-budget-usd "$budget")
   [[ -n "$session" ]] && args+=(--resume "$session")
   (
     cd "$DDIR"
-    printf '%s' "$prompt" | env -u MODIO_API_TOKEN -u CRAWL_HTTP_PASSWORD -u CRAWL_HTTP_USER \
+    printf '%s' "$prompt" | env "${CLAUDE_ENV_UNSET[@]}" \
       timeout "${CLAUDE_TIMEOUT:-1200}" claude "${args[@]}" >>"$RESULT_FILE" 2>>"$STDERR_FILE"
   )
 }
@@ -174,7 +177,7 @@ last_result() { jq -cs '[.[] | if type == "array" then .[] else . end | select(.
 
 SESSION=""
 (( VERSION > 1 )) && SESSION="$(jq -r '.sessionId // ""' "$DDIR/draft.json")"
-log "$DID v$VERSION: Claude ($MODEL${SESSION:+, Session ${SESSION:0:8}}) entwirft …"
+log "$DID v$VERSION: Claude ($MODEL, Effort $EFFORT, $(claude_auth_mode)${SESSION:+, Session ${SESSION:0:8}}) entwirft …"
 set +e
 run_claude "$SESSION" "$PROMPT"; rc=$?
 if (( rc != 0 )) && [[ -n "$SESSION" ]]; then
@@ -216,10 +219,10 @@ NAME="$(jq -r .name <<<"$CHECK")"; TITLE="$(jq -r .title <<<"$CHECK")"; WARN="$(
 NPH="$(jq '.platzhalter | length' <<<"$CHECK")"; NOPEN="$(jq '[.befund[] | select(.umgesetzt | not)] | length' <<<"$CHECK")"; NBEF="$(jq '.befund | length' <<<"$CHECK")"
 tmp="$(mktemp)"
 jq --argjson v "$VERSION" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)" --arg summary "$SUMMARY" --arg name "$NAME" \
-   --arg title "$TITLE" --arg model "$MODEL" --argjson cost "$COST" --arg session "$SESSION" --argjson warn "$WARN" \
+   --arg title "$TITLE" --arg model "$MODEL" --arg effort "$EFFORT" --argjson cost "$COST" --arg session "$SESSION" --argjson warn "$WARN" \
    --argjson nph "$NPH" --argjson nopen "$NOPEN" --argjson nbef "$NBEF" '
   .sessionId = (if $session == "" then .sessionId else $session end)
-  | .versions += [{v:$v, prompt:$prompt, created:$created, summary:$summary, name:$name, title:$title, model:$model, costUsd:$cost, warnings:$warn, befund:$nbef, offen:$nopen, platzhalter:$nph}]' \
+  | .versions += [{v:$v, prompt:$prompt, created:$created, summary:$summary, name:$name, title:$title, model:$model, effort:$effort, costUsd:$cost, warnings:$warn, befund:$nbef, offen:$nopen, platzhalter:$nph}]' \
   "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
 chmod 644 "$DDIR/draft.json"
 log "$DID v$VERSION: Komponente mx-$NAME fertig ($NBEF Befundpunkte, $NOPEN offen, $NPH Platzhalter, $(printf '%.2f' "$COST") USD)"

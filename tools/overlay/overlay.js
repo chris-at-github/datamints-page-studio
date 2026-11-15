@@ -660,9 +660,6 @@
     pFile,
     el('div', { class: 'row' }, [pUrl, pUrlAdd]),
     pThumbs,
-    el('div', { class: 'checks' }, [
-      el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet: besser bei kniffligen oder seitenübergreifenden Änderungen, aber langsamer und teurer' }, [pThorough, 'Stärkeres Modell für komplexe Änderungen']),
-    ]),
     pErr,
     el('div', { class: 'row end' }, [pCancel, el('span', { class: 'spacer' }), pDraft, pSend, pQueue]),
   ]);
@@ -1832,7 +1829,6 @@
   var queuePanel = el('div', { class: 'panel', role: 'dialog', 'aria-labelledby': 'modio-qh' }, [
     el('h2', { id: 'modio-qh', text: 'Queue' }),
     qList,
-    el('div', { class: 'checks' }, [el('label', { class: 'switch', title: 'Nimmt Opus statt Sonnet' }, [qThorough, 'Stärkeres Modell für komplexe Änderungen'])]),
     qErr,
     el('div', { class: 'row end' }, [qClose, qRun]),
   ]);

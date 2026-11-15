@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Simuliertes Claude Code für Tests von draft-create.sh: schreibt eine gültige Komponente in den Versionsordner.
 PROMPT="$(cat)"
+# Für Tests: Aufrufparameter und Anmeldung protokollieren
+if [[ -n "${FAKE_CLAUDE_ARGS:-}" ]]; then printf '%s\n' "$@" >"$FAKE_CLAUDE_ARGS"; echo "KEY=${ANTHROPIC_API_KEY:-}" >>"$FAKE_CLAUDE_ARGS"; fi
 V="$(grep -oE 'v[0-9]+/' <<<"$PROMPT" | head -1 | tr -d /)"
 [[ -n "$V" ]] || V=v1
 # Bei einer Überarbeitung den Namen der bestehenden Komponente beibehalten

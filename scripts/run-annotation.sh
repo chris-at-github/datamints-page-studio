@@ -48,12 +48,11 @@ if [[ ! -f "$SITE/design/tokens.json" || ! -f "$SITE/design/consistency.json" ]]
   "$SCRIPTS_DIR/design-init.sh" "$SLUG" >/dev/null || die "design/ konnte nicht angelegt werden"
 fi
 
-# Bei Anmeldung per API-Key ohne OAuth: --bare braucht ANTHROPIC_API_KEY oder einen apiKeyHelper
+# Anmeldung (CLAUDE_AUTH=konto|api), Modell und Effort
 CLAUDE_SETTINGS="$(abspath "${CLAUDE_SETTINGS_FILE:-./tools/worker/claude-settings.json}")"
 [[ -f "$CLAUDE_SETTINGS" ]] || die "Einstellungen für Claude nicht gefunden: $CLAUDE_SETTINGS"
-if [[ "${CLAUDE_BARE:-false}" == "true" && -z "${ANTHROPIC_API_KEY:-}" ]] && ! jq -e '.apiKeyHelper' "$CLAUDE_SETTINGS" >/dev/null 2>&1; then
-  die "CLAUDE_BARE=true braucht ANTHROPIC_API_KEY oder einen apiKeyHelper in $CLAUDE_SETTINGS (Anmeldung per Claude-Konto: CLAUDE_BARE=false)"
-fi
+claude_auth_setup "$CLAUDE_SETTINGS"
+EFFORT="$(claude_effort)"
 
 # Annotation-ID vergeben (Zähler wird beim Rücksprung nicht zurückgesetzt)
 COUNTER="$(next_annotation_number)"
@@ -88,13 +87,13 @@ while IFS= read -r REF; do
   REFS="$(jq -c --argjson o "$OUT" --arg type "$TYPE" --argjson item "$(jq -r '.item // 0' <<<"$REF")" '. + [{type:$type, path:$o.relPath, absPath:$o.path, sourceUrl:$o.sourceUrl, width:$o.width, height:$o.height, item:$item}]' <<<"$REFS")"
 done < <(jq -c 'to_entries[] | .key as $i | (.value.references // [])[] | . + {item: $i}' <<<"$ITEMS")
 
-MODEL="${CLAUDE_MODEL:-claude-sonnet-5-5}"
-[[ "$THOROUGH" == "true" ]] && MODEL="${CLAUDE_MODEL_THOROUGH:-claude-opus-5-5}"
+MODEL="${CLAUDE_MODEL:-$DEFAULT_CLAUDE_MODEL}"
+[[ "$THOROUGH" == "true" ]] && MODEL="${CLAUDE_MODEL_THOROUGH:-$MODEL}"
 
 ANN_FILE="$SITE/annotations/$ID.json"
-jq -n --arg id "$ID" --arg slug "$SLUG" --arg job "$JOB_ID" --arg created "$(now_iso)" --arg model "$MODEL" \
+jq -n --arg id "$ID" --arg slug "$SLUG" --arg job "$JOB_ID" --arg created "$(now_iso)" --arg model "$MODEL" --arg effort "$EFFORT" --arg auth "$(claude_auth_mode)" \
   --argjson ann "$ANN_IN" --argjson refs "$REFS" --argjson items "$ITEMS" --arg batch "$BATCH" '
-  {id:$id, site:$slug, job:$job, created:$created, model:$model}
+  {id:$id, site:$slug, job:$job, created:$created, model:$model, effort:$effort, auth:$auth}
   + ($ann | {page, selector, html, text, viewport, prompt, thorough: (.thorough == true),
              remember: (.remember == true), followup: (.followup == true), followup_of: (.followup_of // null),
              allow_token_change: (.allow_token_change == true)})
@@ -235,6 +234,7 @@ run_claude() {
   args=(
     -p
     --model "$MODEL"
+    --effort "$EFFORT"
     --allowedTools "${CLAUDE_ALLOWED_TOOLS:-Read,Edit,Write,Grep,Glob}"
     --disallowedTools "${CLAUDE_DISALLOWED_TOOLS:-Bash,WebFetch,WebSearch}"
     --permission-mode acceptEdits
@@ -242,26 +242,26 @@ run_claude() {
     --settings "$CLAUDE_SETTINGS"
     --strict-mcp-config
   )
-  if [[ "${CLAUDE_BARE:-false}" == "true" ]]; then
+  args+=("${CLAUDE_AUTH_ARGS[@]}")
+  if claude_is_api; then
     # --bare lädt weder CLAUDE.md noch Settings selbst: CLAUDE.md (inkl. Leitlinien) und Skill explizit übergeben
-    args+=(--bare --append-system-prompt-file "$SYSTEM_BARE")
+    args+=(--append-system-prompt-file "$SYSTEM_BARE")
   else
-    # Anmeldung per Claude-Konto: globale Einstellungen, MCP-Server und Skills nicht mitladen;
     # CLAUDE.md (inkl. Gestaltungsleitlinien) lädt Claude selbst, der Skill kommt fest dazu
-    args+=(--setting-sources project,local --disable-slash-commands --append-system-prompt-file "$SYSTEM_EXTRA")
+    args+=(--append-system-prompt-file "$SYSTEM_EXTRA")
   fi
   [[ -n "${CLAUDE_MAX_TURNS:-}" ]] && args+=(--max-turns "$CLAUDE_MAX_TURNS")
-  local budget="${CLAUDE_MAX_BUDGET_USD-0.50}"
+  local budget="${CLAUDE_MAX_BUDGET_USD-1.50}"
   [[ -n "$budget" && "$budget" != "0" ]] && args+=(--max-budget-usd "$budget")
   [[ -n "$session" ]] && args+=(--resume "$session")
   (
     cd "$SITE"
-    printf '%s' "$PROMPT" | env -u MODIO_API_TOKEN -u CRAWL_HTTP_PASSWORD -u CRAWL_HTTP_USER \
+    printf '%s' "$PROMPT" | env "${CLAUDE_ENV_UNSET[@]}" \
       timeout "${CLAUDE_TIMEOUT:-1200}" claude "${args[@]}" >"$RESULT_FILE" 2>"$STDERR_FILE"
   )
 }
 
-log "$ID: Claude ($MODEL${SESSION_ID:+, Session ${SESSION_ID:0:8}}) arbeitet …"
+log "$ID: Claude ($MODEL, Effort $EFFORT, $(claude_auth_mode)${SESSION_ID:+, Session ${SESSION_ID:0:8}}) arbeitet …"
 set +e
 run_claude "$SESSION_ID"; rc=$?
 if (( rc != 0 )) && [[ -n "$SESSION_ID" ]]; then
@@ -319,5 +319,5 @@ rc=$?
 set -e
 if (( rc != 0 && rc != 3 )); then fail_cleanup; die "commit-step.sh fehlgeschlagen: $(jq -r '.error // empty' <<<"$COMMIT_OUT" 2>/dev/null)"; fi
 # sessionHead setzt commit-step.sh beim Commit (Nachbessern nur, solange HEAD gleich bleibt)
-emit_json "$(jq -c --arg model "$MODEL" '. + {model:$model}' <<<"$COMMIT_OUT")"
+emit_json "$(jq -c --arg model "$MODEL" --arg effort "$EFFORT" '. + {model:$model, effort:$effort}' <<<"$COMMIT_OUT")"
 exit "$rc"

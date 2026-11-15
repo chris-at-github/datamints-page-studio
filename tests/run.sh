@@ -366,6 +366,19 @@ OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$
 check "Neue Version 2 mit Session" '[[ "$(jq -r .version <<<"$OUT")" == 2 ]] && jq -e ".versions | length == 2" "$S/drafts/$DN/draft.json" >/dev/null && [[ "$(jq -r .sessionId "$S/drafts/$DN/draft.json")" == fake-session ]]'
 set +e; OUT="$(FAKE_CLAUDE_BAD=1 PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)"; rc=$?; set -e
 check "Ungültiger Entwurf: Fehler, keine Version 3" '(( rc != 0 )) && grep -q "Entwurf ungültig" <<<"$OUT" && [[ ! -d "$S/drafts/$DN/v3" ]]'
+ARGF="$(mktemp)"
+jq -n --arg d "$DN" '{id:"job-test-draft3", params:{draft:$d, prompt:"Noch einmal"}}' >"$JOBF"
+OUT="$(FAKE_CLAUDE_ARGS="$ARGF" ANTHROPIC_API_KEY=sk-test CLAUDE_AUTH=konto CLAUDE_MODEL= CLAUDE_EFFORT= DRAFT_MODEL= DRAFT_EFFORT= PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
+check "Konto: Opus, Effort high, ohne --bare, API-Schlüssel entzogen" 'grep -qx -- "--effort" "$ARGF" && grep -A1 -x -- "--effort" "$ARGF" | grep -qx high && grep -A1 -x -- "--model" "$ARGF" | grep -qx claude-opus-5-5 && ! grep -qx -- "--bare" "$ARGF" && grep -qx "KEY=" "$ARGF"'
+OUT="$(FAKE_CLAUDE_ARGS="$ARGF" ANTHROPIC_API_KEY=sk-test CLAUDE_AUTH=api CLAUDE_MODEL= DRAFT_MODEL= DRAFT_EFFORT=max PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
+check "API: --bare, Schlüssel vorhanden, Effort einstellbar" 'grep -qx -- "--bare" "$ARGF" && grep -qx "KEY=sk-test" "$ARGF" && grep -A1 -x -- "--effort" "$ARGF" | grep -qx max'
+set +e; OUT="$(env -u ANTHROPIC_API_KEY CLAUDE_AUTH=api CLAUDE_SETTINGS_FILE="$ROOT/tools/worker/claude-settings.json" PATH="$ROOT/tests/fake-claude:$PATH" bash -c 'source scripts/lib/common.sh; ANTHROPIC_API_KEY=; claude_auth_setup tools/worker/claude-settings.json; echo ok' 2>/dev/null)"; rc=$?; set -e
+check "API ohne Schlüssel: klare Fehlermeldung" '(( rc != 0 )) && grep -q "CLAUDE_AUTH=api braucht ANTHROPIC_API_KEY" <<<"$OUT"'
+set +e; OUT="$(CLAUDE_EFFORT=riesig bash -c 'source scripts/lib/common.sh; claude_effort' 2>/dev/null)"; rc=$?; set -e
+check "Ungültiger Effort abgewiesen" '(( rc != 0 )) && grep -q "Ungültiger Effort" <<<"$OUT"'
+OUT="$(CLAUDE_BARE=true bash -c 'unset CLAUDE_AUTH; source scripts/lib/common.sh; claude_auth_mode' 2>/dev/null)"
+check "Alte Schreibweise CLAUDE_BARE=true gilt als api" '[[ "$OUT" == api* ]]'
+rm -f "$ARGF"
 ./scripts/draft-discard.sh "$SLUG" "$DN" >/dev/null 2>&1
 rm -f "$JOBF" logs/claude-job-test-draft*.json logs/claude-job-test-draft*.stderr.log
 
