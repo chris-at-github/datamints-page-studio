@@ -25,7 +25,9 @@
       "Edit(./design/tokens.css)",
       "Write(./design/tokens.css)",
       "Edit(./.scan.json)",
-      "Edit(./.history.json)"
+      "Edit(./.history.json)",
+      "Edit(./.render/**)",
+      "Write(./.render/**)"
     ]
   }
 }

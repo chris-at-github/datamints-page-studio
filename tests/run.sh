@@ -5,6 +5,11 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# dieselbe Node-Version wie die Skripte (auch ohne geladenes nvm)
+MODIO_ROOT="$ROOT"
+# shellcheck source=../scripts/lib/node-env.sh
+source scripts/lib/node-env.sh
+node_version_ok "$(command -v node)" || { echo "Node.js ab $MODIO_NODE_MIN nötig, gefunden: $(node -v 2>/dev/null)" >&2; exit 1; }
 SLUG=modio-test
 PORT="${TEST_PORT:-8765}"
 S="sites/$SLUG"
@@ -390,6 +395,38 @@ check "Hinzugefügte Seiten im Report" 'grep -q "^## Seiten: 1 Seite(n) hinzugef
 check "Report beginnt mit Design-Vorgaben" 'grep -q "^## Design-Vorgaben" "$S/CHANGES.md" && grep -q "| \`color.primary\` | \`#0B5FA5\`" "$S/CHANGES.md"'
 OUT="$(./scripts/site-list.sh 2>/dev/null)"
 check "site-list.sh enthält Website" 'jq -e --arg s "$SLUG" ".sites | map(.slug) | index(\$s)" <<<"$OUT" >/dev/null'
+
+echo "Sichtprüfung im Browser (render-check.sh, run-annotation.sh)"
+jq -n --arg page "$ENTRY" '{id:"A-090", prompt:"Headline", page:$page, selector:"h1.hero__title", viewport:{width:1280,height:800}}' >"$S/annotations/A-090.json"
+printf '/* A-090: kaputt */\nhtml body h1.hero__title { width: 3000px !important; font-size: 40px !important; }\n' >>"$S/overrides.css"
+set +e; OUT="$(./scripts/render-check.sh "$SLUG" A-090 2>/dev/null)"; rc=$?; set -e
+if (( rc == 4 )); then
+  echo "  (übersprungen: $(jq -r .error <<<"$OUT" | cut -c1-120))"
+else
+  check "Fehler-Befund: Exit 3" '(( rc == 3 ))'
+  check "Überlauf erkannt" 'jq -e "[.issues[] | select(.level == \"fehler\" and (.rule == \"page-overflow-x\" or .rule == \"element-overflow\"))] | length > 0" <<<"$OUT" >/dev/null'
+  check "Stiländerung gemessen" 'jq -e "[.results[] | .styleChanges[\"font-size\"]] | map(select(. != null)) | length > 0" <<<"$OUT" >/dev/null'
+  check "Bilder vorher/nachher je Ansicht" 'jq -e "[.results[].images | .vorher, .nachher] | all(. != null)" <<<"$OUT" >/dev/null && [[ -f "$S/$(jq -r ".results[0].images.nachher" <<<"$OUT")" ]]'
+  check "Ansicht der Auswahl ergänzt" 'jq -e "[.results[].viewport.name] | index(\"auswahl\")" <<<"$OUT" >/dev/null'
+  check ".render/ nicht in git status" '! git -C "$S" status --porcelain | grep -q "\.render"'
+  rm -f "$S/annotations/A-090.json"; ./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+  OUT="$(./scripts/render-check.sh "$SLUG" A-001 2>/dev/null)" || true
+  check "Ohne offene Änderung: nur letzter Schritt prüfbar" '[[ "$(jq -r .status <<<"$OUT")" == error ]]'
+
+  JOBR="$ROOT/jobs/test-render.json"; PROMPTF="$(mktemp)"
+  jq -n --arg page "$ENTRY" '{id:"job-test-render", params:{page:$page, selector:"h1.hero__title", prompt:"Headline betonen", viewport:{width:1280,height:800}}}' >"$JOBR"
+  set +e; OUT="$(FAKE_RENDER_PROMPT="$PROMPTF" RENDER_REVIEW=always PATH="$ROOT/tests/fake-claude-render:$PATH" ./scripts/run-annotation.sh "$SLUG" "$JOBR" 2>/dev/null)"; rc=$?; set -e
+  RID="$(jq -r .annotationId <<<"$OUT")"
+  check "Annotation mit Sichtprüfung committet" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT")" == committed ]]'
+  check "Claude bekam Bilder und Befunde" 'grep -q "nachher: .render/$RID/desktop-1-nachher.png" "$PROMPTF" && grep -q "fehler:" "$PROMPTF"'
+  check "Fehler korrigiert, Nachmessung ohne Fehler" '! grep -q TESTFEHLER "$S/overrides.css" && jq -e ".render.status == \"ok\" and .render.errors == 0" "$S/annotations/$RID.json" >/dev/null'
+  check "Korrekturrunde und Kosten in der Annotation" 'jq -e "(.result.review | length) == 1 and .result.costUsd == 0.07 and (.result.summary | test(\"Sichtprüfung: korrigiert\"))" "$S/annotations/$RID.json" >/dev/null'
+  check "Keine Bilder im Commit" '! git -C "$S" show --name-only --format= HEAD | grep -q "\.render"'
+  OUT="$(RENDER_REVIEW=off PATH="$ROOT/tests/fake-claude-render:$PATH" ./scripts/run-annotation.sh "$SLUG" "$JOBR" 2>/dev/null)" || true
+  RID="$(jq -r .annotationId <<<"$OUT")"
+  check "RENDER_REVIEW=off: keine Sichtprüfung" 'jq -e ".render == null and .result.review == null" "$S/annotations/$RID.json" >/dev/null'
+  rm -f "$JOBR" "$PROMPTF" logs/claude-job-test-render.json logs/claude-job-test-render.stderr.log
+fi
 
 echo "Neu einlesen"
 OUT="$(./scripts/site-recrawl.sh "$SLUG" 2>/dev/null)"

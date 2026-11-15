@@ -23,6 +23,7 @@ Modio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne Element-
 | `add-reference.sh` | `add-reference.sh <slug> <annotation-id> <url\|datei>` |
 | `check-diff.sh` | `check-diff.sh <slug> [annotation-id]` |
 | `check-consistency.sh` | `check-consistency.sh <slug> [--changed-only]` |
+| `render-check.sh` | `render-check.sh <slug> <annotation-id>` |
 | `commit-step.sh` | `commit-step.sh <slug> <annotation-id> [--accept]` |
 | `discard-step.sh` | `discard-step.sh <slug>` |
 | `rollback.sh` | `rollback.sh <slug> <annotation-id\|baseline\|commit>` |

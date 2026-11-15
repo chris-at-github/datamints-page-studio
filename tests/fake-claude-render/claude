@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Simuliertes Claude Code für die Sichtprüfung in run-annotation.sh:
+# Die Umsetzung baut einen sichtbaren Fehler ein (Überschrift ragt heraus), die Sichtprüfung entfernt ihn wieder.
+PROMPT="$(cat)"
+ID="$(grep -oE 'A-[0-9]{3,}' <<<"$PROMPT" | head -1)"
+if grep -q "^Sichtprüfung $ID" <<<"$PROMPT"; then
+  [[ -n "${FAKE_RENDER_PROMPT:-}" ]] && printf '%s\n' "$PROMPT" >"$FAKE_RENDER_PROMPT"
+  sed -i '/TESTFEHLER-START/,/TESTFEHLER-ENDE/d' overrides.css
+  printf '{"type":"result","is_error":false,"result":"Sichtprüfung: korrigiert – Überlauf entfernt.","session_id":"fake-session","total_cost_usd":0.02,"num_turns":2}\n'
+else
+  printf '\n/* %s: Headline betonen */\n/* TESTFEHLER-START */\nhtml body h1.hero__title { width: 3000px !important; font-size: 40px !important; }\n/* TESTFEHLER-ENDE */\n.hero__title { letter-spacing: .02em; }\n' "$ID" >>overrides.css
+  printf '{"type":"result","is_error":false,"result":"Headline betont.","session_id":"fake-session","total_cost_usd":0.05,"num_turns":3}\n'
+fi

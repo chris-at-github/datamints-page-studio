@@ -16,6 +16,8 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 
 `inotify-tools` und ImageMagick werden nicht gebraucht: Der Worker ist ein Node-Prozess, Bilder verarbeitet `sharp`.
 
+**Node-Versionen:** Der Bridge-Server läuft im DDEV-Container (Node 22, `.ddev/config.yaml`), Worker und Skripte in der WSL. Die Skripte wählen ihre Node-Version selbst (`scripts/lib/node-env.sh`): zuerst `MODIO_NODE` aus der `.env`, dann ein passender `node` im PATH (ab 20.6), dann nvm (Version aus `.nvmrc`). Ein alter System-Node wie `/usr/bin/node` 18 wird so auch in Shells ohne nvm übergangen; findet sich keine passende Version, bricht das Skript mit einer klaren Meldung ab. `npm run worker` selbst in einer Shell mit nvm starten (`nvm use`).
+
 ## Bedienung
 
 1. `https://modio.ddev.site:3443` öffnen, URL eintragen (optional Seitenliste) → Abzug wird erstellt. Weitere Seiten einer bestehenden Website später über „Seiten hinzufügen“ in der Websiteliste: Die bisherigen Schritte bleiben erhalten, nur fehlende Dateien kommen dazu, Links auf die neuen Seiten zeigen danach auf den Abzug.
@@ -46,8 +48,15 @@ DRAFT_MAX_BUDGET_USD=4.00                          # je Entwurfslauf
 # DESIGN_SKILL_FILE=/pfad/zu/SKILL.md              # nicht gesetzt = installiertes Plugin frontend-design, leer gesetzt = ohne Skill
 DESIGN_DOCS_MAX_BYTES=60000                        # weitere design/*.md als Hintergrund
 CONTEXT_HISTORY_COUNT=5
+RENDER_REVIEW=always                               # Sichtprüfung nach jeder Annotation: always | issues | off
+RENDER_MAX_ROUNDS=1                                # höchstens so viele Korrekturrunden nach der Sichtprüfung
+RENDER_VIEWPORTS=desktop:1440x900,mobil:390x844    # Ansichten der Sichtprüfung (dazu der Viewport der Auswahl, falls abweichend)
+# PLAYWRIGHT_CHROMIUM=/pfad/zu/chrome              # nur falls der Playwright-Browser nicht installiert werden kann
+# MODIO_NODE=/home/<user>/.nvm/versions/node/v24.13.1/bin/node   # fester Node für alle Skripte (sonst automatisch)
 NOTES_MAX_LINES=40
 ```
+
+**Sichtprüfung:** Nach dem Umsetzen rendert `render-check.sh` die Seite vorher und nachher mit Playwright (Chromium, ohne Netz, nur ein lokal gebundener Server), misst das gewählte Element (Stilwerte, abgeschnittener oder überstehender Text, horizontales Scrollen, Verdeckung, Kontrast, neue Script-Fehler) und legt Ausschnitte unter `sites/<slug>/.render/<id>/` ab (lokal ignoriert, nicht im Verlauf). Claude sieht sich die Bilder in derselben Session an und bessert bei Bedarf einmal nach; das kostet je Annotation etwa 5–10 s Rendern plus eine kurze Claude-Runde. Gemeldet werden nur Verschlechterungen gegenüber vorher. Fehlt Playwright oder der Browser, wird die Sichtprüfung übersprungen. Der Browser muss zur installierten Playwright-Version passen: nach `npm install` einmal `./node_modules/.bin/playwright install chromium` (nicht ein globales `npx playwright`).
 
 Ohne DDEV: `npm run server` (Port aus `BRIDGE_PORT`, Origin muss in `MODIO_ALLOWED_ORIGINS` stehen).
 
