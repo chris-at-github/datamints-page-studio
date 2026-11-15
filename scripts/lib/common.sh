@@ -208,6 +208,15 @@ claude_auth_setup() {
   esac
 }
 claude_is_api() { [[ "$(claude_auth_mode)" == "api" ]]; }
+# Kosten eines einzelnen Claude-Aufrufs. total_cost_usd im Ergebnis gilt für die ganze Session (beim Fortsetzen
+# mit --resume sind frühere Aufrufe enthalten). Aufruf: claude_call_cost <result-json> <fortgesetzte-session> <bisheriger-stand>
+# Gibt die Differenz aus, wenn das Ergebnis zur fortgesetzten Session gehört, sonst den vollen Wert.
+claude_call_cost() {
+  jq -r --arg s "${2:-}" --argjson prev "${3:-0}" '
+    (.total_cost_usd // 0) as $t
+    | if $s != "" and (.session_id // "") == $s and $t >= $prev then ($t - $prev) else $t end
+    | . * 1e6 | round / 1e6' <<<"$1"
+}
 
 # Systemprompt für Claude-Läufe zusammensetzen: Grundregeln (z. B. DRAFT.md oder CLAUDE.md bei --bare),
 # optional die Gestaltungsleitlinien aus templates/CLAUDE.md (für Entwürfe; bei Annotationen stehen sie schon

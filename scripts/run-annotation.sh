@@ -146,7 +146,7 @@ $TEXT_SNIPPET
 </seiteninhalt>
 
 Hinweise:
-- CSS ausschließlich in overrides.css, als Block mit dem Kommentar /* $ID: Kurzbeschreibung */. overrides.css wird beim Ausliefern automatisch nach allen Stylesheets eingebunden (nicht selbst im HTML verlinken); nutze passende Spezifität und nur wenn nötig !important.
+- CSS ausschließlich in overrides.css (liegt in diesem Ordner, nicht unter www/), als Block mit dem Kommentar /* $ID: Kurzbeschreibung */. overrides.css wird beim Ausliefern automatisch nach allen Stylesheets eingebunden (nicht selbst im HTML verlinken); nutze passende Spezifität und nur wenn nötig !important.
 - Ausnahme: Liegt das Element in einer Komponente (Klasse mx-<name>), ändere components/mx-<name>.css innerhalb von @scope (.mx-<name>), ohne !important.
 - Die Tokens stehen als CSS-Variablen bereit (design/tokens.css wird vor overrides.css eingebunden). Verwende var(--modio-…), wenn ein passender Token existiert.
 - Texte und Struktur direkt in der HTML-Datei ändern. Das Element über Selektor und HTML-Ausschnitt in www$PAGE finden.
@@ -195,7 +195,7 @@ Optionen:
 $OPTIONS
 $BLOCKS
 Hinweise:
-- CSS ausschließlich in overrides.css, als Block mit dem Kommentar /* $ID: Kurzbeschreibung */ (bei Bedarf mehrere Blöcke mit diesem Kommentar). overrides.css wird automatisch nach allen Stylesheets eingebunden; nutze passende Spezifität und nur wenn nötig !important.
+- CSS ausschließlich in overrides.css (liegt in diesem Ordner, nicht unter www/), als Block mit dem Kommentar /* $ID: Kurzbeschreibung */ (bei Bedarf mehrere Blöcke mit diesem Kommentar). overrides.css wird automatisch nach allen Stylesheets eingebunden; nutze passende Spezifität und nur wenn nötig !important.
 - Ausnahme: Liegt ein Element in einer Komponente (Klasse mx-<name>), ändere components/mx-<name>.css innerhalb von @scope (.mx-<name>), ohne !important.
 - Die Tokens stehen als CSS-Variablen bereit (design/tokens.css). Verwende var(--modio-…), wenn ein passender Token existiert.
 - Texte und Struktur direkt in der jeweiligen HTML-Datei ändern. Die Elemente über Selektor und HTML-Ausschnitt finden.
@@ -214,10 +214,12 @@ fi
 # ----- Claude Code headless -----
 # Frische Session ist Standard. Fortsetzen nur bei "Nachbessern" und nur, wenn seit dem Schritt der Stand gleich ist.
 SESSION_ID=""
+SESSION_PREV_COST=0   # Kostenstand der fortgesetzten Session (total_cost_usd ist kumuliert)
 if [[ "$FOLLOWUP" == "true" ]]; then
   PREV_SESSION="$(state_get sessionId)"
   if [[ -n "$PREV_SESSION" && "$(state_get sessionHead)" == "$(git_site rev-parse HEAD)" && ( -z "$FOLLOWUP_OF" || "$(state_get sessionAnnotation)" == "$FOLLOWUP_OF" ) ]]; then
     SESSION_ID="$PREV_SESSION"
+    SESSION_PREV_COST="$(state_get sessionCostUsd)"
   else
     log "$ID: Nachbessern ohne gültige Session (Rücksprung oder neuer Stand), starte frisch"
   fi
@@ -270,7 +272,7 @@ if (( rc != 0 )) && [[ -n "$SESSION_ID" ]]; then
   log "$ID: Fortsetzen der Session fehlgeschlagen (Exit $rc), neuer Versuch mit frischer Session"
   fail_cleanup_keep_ann() { git_site checkout -q -- www overrides.css 2>/dev/null || true; git_site clean -fdq -- www 2>/dev/null || true; }
   fail_cleanup_keep_ann
-  SESSION_ID=""
+  SESSION_ID=""; SESSION_PREV_COST=0
   run_claude ""; rc=$?
 fi
 set -e
@@ -287,8 +289,11 @@ if (( rc != 0 )) || [[ "$IS_ERROR" == "true" ]]; then
   die "Claude Code fehlgeschlagen (Exit $rc): ${MSG:-keine Details}"
 fi
 
+CALL_COST="$(claude_call_cost "$RESULT_JSON" "$SESSION_ID" "${SESSION_PREV_COST:-0}")"
+SESSION_COST="$(jq -r '.total_cost_usd // 0' <<<"$RESULT_JSON")"
 NEW_SESSION="$(jq -r '.session_id // empty' <<<"$RESULT_JSON")"
 if [[ -n "$NEW_SESSION" ]]; then
+  state_set sessionCostUsd "$SESSION_COST"
   state_set sessionId "\"$NEW_SESSION\""
   state_set sessionAnnotation "\"$ID\""
   state_set sessionHead null
@@ -296,9 +301,9 @@ fi
 SUMMARY="$(jq -r '.result // ""' <<<"$RESULT_JSON")"
 
 tmp="$(mktemp)"
-jq --arg summary "$SUMMARY" --arg session "$NEW_SESSION" --arg resumed "$([[ -n "$SESSION_ID" ]] && echo true || echo false)" --argjson r "$RESULT_JSON" '
+jq --arg summary "$SUMMARY" --arg session "$NEW_SESSION" --arg resumed "$([[ -n "$SESSION_ID" ]] && echo true || echo false)" --argjson r "$RESULT_JSON" --argjson cost "$CALL_COST" '
   .result = {summary:$summary, sessionId:$session, finished:(now|todate), resumed:($resumed == "true"),
-             turns:($r.num_turns // null), durationMs:($r.duration_ms // null), costUsd:($r.total_cost_usd // null),
+             turns:($r.num_turns // null), durationMs:($r.duration_ms // null), costUsd:$cost, sessionCostUsd:($r.total_cost_usd // null),
              usage:($r.usage // null), modelUsage:($r.modelUsage // null)}' \
   "$ANN_FILE" >"$tmp" && mv "$tmp" "$ANN_FILE"
 chmod 644 "$ANN_FILE"
@@ -375,8 +380,10 @@ if [[ "$RENDER_REVIEW" != "off" && -n "$(git_site status --porcelain -- www over
       break
     fi
     S2="$(jq -r '.session_id // empty' <<<"$R2")"
-    if [[ -n "$S2" ]]; then NEW_SESSION="$S2"; state_set sessionId "\"$S2\""; fi
-    REVIEW_LOG="$(jq -c --argjson r "$R2" --argjson round "$ROUND" '. + [{round:$round, summary:($r.result // ""), costUsd:($r.total_cost_usd // null), turns:($r.num_turns // null), durationMs:($r.duration_ms // null)}]' <<<"$REVIEW_LOG")"
+    R2_COST="$(claude_call_cost "$R2" "$NEW_SESSION" "$SESSION_COST")"
+    SESSION_COST="$(jq -r '.total_cost_usd // 0' <<<"$R2")"
+    if [[ -n "$S2" ]]; then NEW_SESSION="$S2"; state_set sessionId "\"$S2\""; state_set sessionCostUsd "$SESSION_COST"; fi
+    REVIEW_LOG="$(jq -c --argjson r "$R2" --argjson round "$ROUND" --argjson cost "$R2_COST" '. + [{round:$round, summary:($r.result // ""), costUsd:$cost, turns:($r.num_turns // null), durationMs:($r.duration_ms // null)}]' <<<"$REVIEW_LOG")"
     REVIEW_SUMMARY="$(jq -r '.result // ""' <<<"$R2")"
     [[ -n "$REVIEW_SUMMARY" ]] && SUMMARY+=$'\n\n'"$REVIEW_SUMMARY"
     provide_refs

@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 # Simuliertes Claude Code für Tests von draft-create.sh: schreibt eine gültige Komponente in den Versionsordner.
+# Kosten wie beim echten Claude: total_cost_usd ist über die Session kumuliert (--resume setzt fort)
+FAKE_COST_DIR="${TMPDIR:-/tmp}/modio-fake-claude-$(id -u)"; mkdir -p "$FAKE_COST_DIR"
+fake_total() { # fake_total <kosten dieses aufrufs> -> neuer Gesamtstand der Session fake-session
+  local prev=0 f="$FAKE_COST_DIR/fake-session"
+  [[ "$RESUMED" == 1 && -f "$f" ]] && prev="$(cat "$f")"
+  awk -v a="$prev" -v b="$1" 'BEGIN{printf "%.2f", a+b}' | tee "$f"
+}
+RESUMED=0; for a in "$@"; do [[ "$a" == "--resume" ]] && RESUMED=1; done
 PROMPT="$(cat)"
 # Für Tests: Aufrufparameter und Anmeldung protokollieren
 if [[ -n "${FAKE_CLAUDE_ARGS:-}" ]]; then printf '%s\n' "$@" >"$FAKE_CLAUDE_ARGS"; echo "KEY=${ANTHROPIC_API_KEY:-}" >>"$FAKE_CLAUDE_ARGS"; fi
@@ -17,4 +25,4 @@ fi
 printf '@scope (.mx-%s) {\n  :scope { padding: 2rem; }\n}\n' "$NAME" >"$V/component.css"
 printf '[{"id":"P1","gruppe":"pflicht","titel":"Ansprache","text":"Sie-Form","umgesetzt":true}]\n' >"$V/befund.json"
 printf '{"name":"%s","title":"Test","bausteine":[{"key":"layout","label":"Layout","source":"neu"}]}\n' "$NAME" >"$V/meta.json"
-printf '{"type":"result","is_error":false,"result":"Entwurf %s erstellt.","session_id":"fake-session","total_cost_usd":0.01,"num_turns":1}\n' "$V"
+printf '{"type":"result","is_error":false,"result":"Entwurf %s erstellt.","session_id":"fake-session","total_cost_usd":'"$(fake_total 0.01)"',"num_turns":1}\n' "$V"

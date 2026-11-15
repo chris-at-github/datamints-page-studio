@@ -157,6 +157,8 @@ if [[ -f "$DDIR/layout.json" ]]; then
      else "; Hauptspalten nebeneinander in \(.columns.node) (Abstand \(.columns.gap)): " + ([.columns.cols | sort_by(.x)[] | "\(.node) \(.w) px"] | join(" | ")) end)' "$DDIR/layout.json")"
 fi
 
+# Vorhandene Dateien nennen: Es gibt keine Screenshots oder Bilder des Elements, Claude soll nicht danach suchen
+DRAFT_FILES="$(cd "$DDIR" && find . -maxdepth 2 -type f ! -name 'SYSTEM.md' ! -path './v*/*' -printf '%P\n' | sort | paste -sd, - | sed 's/,/, /g')"
 NO_LAYOUT_NOTE=""
 [[ -n "$LAYOUT_TEXT" ]] || NO_LAYOUT_NOTE=$'\n'"Das Hauptraster konnte nicht gemessen werden: Rate keine festen Breiten, nutze die verfügbare Breite und nenne das in der Zusammenfassung."
 cp "$MODIO_ROOT/templates/DRAFT.md" "$DDIR/CLAUDE.md"
@@ -209,6 +211,7 @@ ${LAYOUT_TEXT:+Hauptraster des bisherigen Elements (gemessen in der ausgeliefert
 $LAYOUT_TEXT
 }Vorhandene Komponenten (Namen nicht verwenden, außer bei neuer Version desselben Entwurfs): ${COMPONENTS:-keine}
 Ausgangsmaterial: source.html (bisheriges Element) und bausteine.json (Bausteine der Seite) in diesem Ordner.$NO_LAYOUT_NOTE
+Dateien in diesem Ordner: $DRAFT_FILES. Weitere gibt es nicht, insbesondere keine Screenshots oder Bilder des Elements; suche nicht danach. Neue Dateien im Versionsordner legst du direkt mit Write an.
 
 Auftrag:
 <auftrag>
@@ -259,12 +262,15 @@ last_result() { jq -cs '[.[] | if type == "array" then .[] else . end | select(.
 
 SESSION=""
 (( VERSION > 1 )) && SESSION="$(jq -r '.sessionId // ""' "$DDIR/draft.json")"
+# Kostenstand der Session (total_cost_usd ist kumuliert), um die Kosten dieser Version zu bestimmen
+SESSION_PREV_COST=0
+[[ -n "$SESSION" ]] && SESSION_PREV_COST="$(jq -r '.sessionCostUsd // (.versions[-1].costUsd // 0)' "$DDIR/draft.json")"  # ältere Entwürfe: letzter Stand als Näherung
 log "$DID v$VERSION: Claude ($MODEL, Effort $EFFORT, $(claude_auth_mode)${SESSION:+, Session ${SESSION:0:8}}) entwirft …"
 set +e
 run_claude "$SESSION" "$PROMPT"; rc=$?
 if (( rc != 0 )) && [[ -n "$SESSION" ]]; then
   log "$DID: Fortsetzen der Session fehlgeschlagen, neuer Versuch mit frischer Session"
-  SESSION=""; run_claude "" "$PROMPT"; rc=$?
+  SESSION=""; SESSION_PREV_COST=0; run_claude "" "$PROMPT"; rc=$?
 fi
 set -e
 R="$(last_result)"
@@ -273,9 +279,10 @@ if (( rc != 0 )) || [[ "$(jq -r '.is_error // false' <<<"$R")" == "true" ]]; the
   (( rc == 124 )) && MSG="Zeitüberschreitung nach ${CLAUDE_TIMEOUT:-1200} s"
   fail "Claude Code fehlgeschlagen (Exit $rc): ${MSG:-$(tail -n 3 "$STDERR_FILE" 2>/dev/null | tr '\n' ' ' | head -c 300)}"
 fi
+COST="$(claude_call_cost "$R" "$SESSION" "$SESSION_PREV_COST")"
 SESSION="$(jq -r '.session_id // empty' <<<"$R")"
+SESSION_COST="$(jq -r '.total_cost_usd // 0' <<<"$R")"
 SUMMARY="$(jq -r '.result // ""' <<<"$R")"
-COST="$(jq -r '.total_cost_usd // 0' <<<"$R")"
 
 # ----- Prüfen, bei Fehlern eine Korrekturrunde -----
 set +e
@@ -291,7 +298,8 @@ $ERRS"
   set -e
   R="$(last_result)"
   if (( rc == 0 )) && [[ "$(jq -r '.is_error // false' <<<"$R")" != "true" ]]; then
-    COST="$(jq -rn --argjson a "$COST" --argjson b "$(jq -r '.total_cost_usd // 0' <<<"$R")" '$a + $b')"
+    COST="$(jq -rn --argjson a "$COST" --argjson b "$(claude_call_cost "$R" "$SESSION" "$SESSION_COST")" '$a + $b | . * 1e6 | round / 1e6')"
+    SESSION_COST="$(jq -r '.total_cost_usd // 0' <<<"$R")"
     set +e; CHECK="$(DRAFT_EXPECT_NAME="$REVISES" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?; set -e
   fi
 fi
@@ -304,9 +312,10 @@ fi
 NPH="$(jq '.platzhalter | length' <<<"$CHECK")"; NOPEN="$(jq '[.befund[] | select(.umgesetzt | not)] | length' <<<"$CHECK")"; NBEF="$(jq '.befund | length' <<<"$CHECK")"
 tmp="$(mktemp)"
 jq --argjson v "$VERSION" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)" --arg summary "$SUMMARY" --arg name "$NAME" \
-   --arg title "$TITLE" --arg model "$MODEL" --arg effort "$EFFORT" --argjson cost "$COST" --arg session "$SESSION" --argjson warn "$WARN" \
+   --arg title "$TITLE" --arg model "$MODEL" --arg effort "$EFFORT" --argjson cost "$COST" --arg session "$SESSION" --argjson scost "$SESSION_COST" --argjson warn "$WARN" \
    --argjson nph "$NPH" --argjson nopen "$NOPEN" --argjson nbef "$NBEF" '
   .sessionId = (if $session == "" then .sessionId else $session end)
+  | .sessionCostUsd = (if $session == "" then .sessionCostUsd else $scost end)
   | .versions += [{v:$v, prompt:$prompt, created:$created, summary:$summary, name:$name, title:$title, model:$model, effort:$effort, costUsd:$cost, warnings:$warn, befund:$nbef, offen:$nopen, platzhalter:$nph}]' \
   "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
 chmod 644 "$DDIR/draft.json"

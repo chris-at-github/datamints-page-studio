@@ -381,6 +381,7 @@ check "Element nicht im Abzug: Browser-Material mit sichtbarer Warnung" 'jq -e "
 jq -n --arg d "$DN" '{id:"job-test-draft2", params:{draft:$d, prompt:"Etwas ruhiger"}}' >"$JOBF"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
 check "Neue Version 2 mit Session" '[[ "$(jq -r .version <<<"$OUT")" == 2 ]] && jq -e ".versions | length == 2" "$S/drafts/$DN/draft.json" >/dev/null && [[ "$(jq -r .sessionId "$S/drafts/$DN/draft.json")" == fake-session ]]'
+check "Kosten je Version, nicht kumuliert (Session fortgesetzt)" 'jq -e "[.versions[].costUsd] == [0.01, 0.01] and .sessionCostUsd == 0.02" "$S/drafts/$DN/draft.json" >/dev/null'
 set +e; OUT="$(FAKE_CLAUDE_BAD=1 PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)"; rc=$?; set -e
 check "Ungültiger Entwurf: Fehler, keine Version 3" '(( rc != 0 )) && grep -q "Entwurf ungültig" <<<"$OUT" && [[ ! -d "$S/drafts/$DN/v3" ]]'
 ARGF="$(mktemp)"
@@ -432,7 +433,7 @@ else
   check "Annotation mit Sichtprüfung committet" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT")" == committed ]]'
   check "Claude bekam Bilder und Befunde" 'grep -q "nachher: .render/$RID/desktop-1-nachher.png" "$PROMPTF" && grep -q "fehler:" "$PROMPTF"'
   check "Fehler korrigiert, Nachmessung ohne Fehler" '! grep -q TESTFEHLER "$S/overrides.css" && jq -e ".render.status == \"ok\" and .render.errors == 0" "$S/annotations/$RID.json" >/dev/null'
-  check "Korrekturrunde und Kosten in der Annotation" 'jq -e "(.result.review | length) == 1 and .result.costUsd == 0.07 and (.result.summary | test(\"Sichtprüfung: korrigiert\"))" "$S/annotations/$RID.json" >/dev/null'
+  check "Korrekturrunde und Kosten in der Annotation" 'jq -e "(.result.review | length) == 1 and .result.review[0].costUsd == 0.02 and .result.costUsd == 0.07 and (.result.summary | test(\"Sichtprüfung: korrigiert\"))" "$S/annotations/$RID.json" >/dev/null'
   check "Keine Bilder im Commit" '! git -C "$S" show --name-only --format= HEAD | grep -q "\.render"'
   OUT="$(RENDER_REVIEW=off PATH="$ROOT/tests/fake-claude-render:$PATH" ./scripts/run-annotation.sh "$SLUG" "$JOBR" 2>/dev/null)" || true
   RID="$(jq -r .annotationId <<<"$OUT")"
