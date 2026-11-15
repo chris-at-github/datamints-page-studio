@@ -6,7 +6,7 @@
 # Aufruf: commit-step.sh <slug> <annotation-id> [--accept]
 # Exit 0: committed/nochange, Exit 3: Prüfung nötig
 source "$(dirname "$0")/lib/common.sh"
-require_cmd git jq
+require_cmd git jq node
 require_site "${1:-}"
 ID="${2:-}"; ACCEPT="${3:-}"
 valid_annotation_id "$ID" || usage "commit-step.sh <slug> <annotation-id> [--accept]"

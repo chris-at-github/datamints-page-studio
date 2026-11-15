@@ -37,6 +37,10 @@ if [[ -n "${CLAUDE_BIN:-}" ]]; then PATH="$(dirname "$CLAUDE_BIN"):$PATH"; fi
 export PATH
 unset _dir
 
+# Node.js: passende Version wählen (MODIO_NODE, PATH, nvm), siehe node-env.sh
+# shellcheck source=node-env.sh
+source "$MODIO_ROOT/scripts/lib/node-env.sh"
+
 abspath() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$MODIO_ROOT" "${1#./}" ;; esac; }
 
 SITES_DIR="$(abspath "${SITES_DIR:-./sites}")"
@@ -91,7 +95,12 @@ usage() { die "Aufruf: $*" 2; }
 
 require_cmd() {
   local c
-  for c in "$@"; do command -v "$c" >/dev/null 2>&1 || die "Benötigtes Programm fehlt: $c"; done
+  for c in "$@"; do
+    command -v "$c" >/dev/null 2>&1 || die "Benötigtes Programm fehlt: $c"
+    if [[ "$c" == node ]] && ! node_version_ok "$(command -v node)"; then
+      die "Node.js ab $MODIO_NODE_MIN nötig, gefunden: $(node -v 2>/dev/null) ($(command -v node)). MODIO_NODE=/pfad/zu/node in der .env setzen oder per nvm installieren."
+    fi
+  done
 }
 
 valid_slug() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]; }
