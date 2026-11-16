@@ -6,6 +6,7 @@
 //   scan                          häufige Farben, Radien, Schriften, Schriftgrößen nach .scan.json
 //   save <payload.json>           Tokens, notes.md und/oder consistency.json von Hand übernehmen (geprüft)
 //   merge <proposals.json>        Token-Vorschläge mit locked:false übernehmen (nur Werte aus .scan.json)
+//   import-css                    CSS-Variablen aus design/tokens-quelle.css als gesperrte Tokens übernehmen (neue Projekte)
 // Ausgabe: eine JSON-Zeile auf stdout. Exit 0 ok, 3 Prüfung nötig, 1 Fehler.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,10 @@ import { readConfig as readConsistency, areaError } from './consistency.mjs';
 export const CATEGORIES = ['color', 'font', 'size', 'radius', 'space', 'shadow', 'breakpoint'];
 const KEY_RE = new RegExp(`^(${CATEGORIES.join('|')})\\.[a-z0-9]+(?:-[a-z0-9]+)*$`);
 const FORBIDDEN = ['url(', '@', ';', '{', '}', '<', '>', '\\', '/*', '*/', '\n', '\r'];
-const ALLOWED_FUNCS = new Set(['rgb', 'rgba', 'hsl', 'hsla']);
+const ALLOWED_FUNCS = new Set(['rgb', 'rgba', 'hsl', 'hsla', 'clamp', 'min', 'max', 'calc', 'var']);
+// Ausdrücke mit clamp()/min()/max()/calc() oder Verweisen auf andere Tokens (nur var(--modio-…))
+const EXPR_RE = /^[a-z0-9#.,%()\s/*+-]+$/i;
+const hasExpr = (v) => /\b(?:clamp|min|max|calc|var)\s*\(/i.test(v);
 const MEASURE = '(?:-?(?:\\d+\\.?\\d*|\\.\\d+)(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex|pt)?)';
 const MEASURES_RE = new RegExp(`^${MEASURE}(?:\\s+${MEASURE}){0,3}$`, 'i');
 const HEX_RE = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -43,7 +47,16 @@ export function checkValue(key, value) {
   for (const m of v.matchAll(/([a-z-]+)\s*\(/gi)) {
     if (!ALLOWED_FUNCS.has(m[1].toLowerCase())) return `Funktion ${m[1]}() nicht erlaubt`;
   }
+  for (const m of v.matchAll(/var\s*\(([^)]*)\)/gi)) {
+    if (!/^\s*--modio-[a-z0-9-]+\s*$/.test(m[1])) return 'var() nur mit Verweis auf einen anderen Token (--modio-…)';
+  }
   const cat = key.split('.')[0];
+  if (hasExpr(v)) {
+    if (!EXPR_RE.test(v)) return 'ungültiger Ausdruck';
+    if (cat === 'font') return 'Schriften ohne Funktionen angeben';
+    if (cat === 'color' && !/^var\s*\(\s*--modio-[a-z0-9-]+\s*\)$/i.test(v) && !COLOR_FN_RE.test(v)) return 'Farbe: Wert oder Verweis var(--modio-…)';
+    return null;
+  }
   switch (cat) {
     case 'color':
       return isColor(v) ? null : 'keine gültige Farbe (Hex, rgb(a), hsl(a) oder Farbname)';
@@ -354,6 +367,80 @@ function merge(site, proposalsFile) {
   return { code: 0, out: { status: 'ok', added, skipped } };
 }
 
+// ---------- Import aus CSS-Variablen (neue Projekte) ----------
+
+const CAT_PREFIX = [
+  [['font-size', 'fontsize', 'text-size'], 'size'],
+  [['font-family', 'fontfamily', 'font', 'ff', 'family', 'schrift'], 'font'],
+  [['color', 'colour', 'farbe', 'clr', 'c'], 'color'],
+  [['radius', 'rounded', 'round', 'br'], 'radius'],
+  [['space', 'spacing', 'gap', 'abstand', 'sp', 'margin', 'padding'], 'space'],
+  [['shadow', 'elevation', 'schatten'], 'shadow'],
+  [['breakpoint', 'bp', 'screen'], 'breakpoint'],
+  [['size', 'text', 'fs', 'width', 'container', 'content', 'max', 'h', 'height'], 'size'],
+];
+const NO_CATEGORY = ['font-weight', 'fw', 'weight', 'line-height', 'lh', 'leading', 'letter-spacing', 'tracking', 'z', 'z-index', 'duration', 'ease', 'easing', 'opacity', 'transition'];
+
+function categorize(name, value) {
+  const n = name.replace(/^--/, '').toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+  if (NO_CATEGORY.some((p) => n === p || n.startsWith(p + '-'))) return null;
+  for (const [prefixes, cat] of CAT_PREFIX) {
+    for (const p of prefixes) {
+      if (n === p || n.startsWith(p + '-')) return { cat, rest: n.slice(p.length).replace(/^-+/, '') || 'base' };
+    }
+  }
+  const v = value.trim();
+  if (isColor(v) && !COLOR_NAME_RE.test(v)) return { cat: 'color', rest: n };
+  if (MEASURES_RE.test(v) && /[a-z%]$/i.test(v)) return { cat: 'size', rest: n };
+  return null;
+}
+
+export function importCss(site) {
+  const src = path.join(site, 'design', 'tokens-quelle.css');
+  if (!fs.existsSync(src)) return { code: 1, out: { status: 'error', error: 'design/tokens-quelle.css fehlt' } };
+  const text = fs.readFileSync(src, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const vars = new Map();
+  for (const m of text.matchAll(/:root\s*\{([^}]*)\}/g)) {
+    for (const d of m[1].matchAll(/(--[A-Za-z0-9_-]+)\s*:\s*([^;]+?)\s*(?:;|$)/g)) vars.set(d[1], d[2].trim());
+  }
+  const map = {};
+  const used = new Set();
+  const skipped = [];
+  const ohneToken = {};
+  for (const [name, value] of vars) {
+    const c = categorize(name, value);
+    if (!c) { ohneToken[name] = value; continue; }
+    let key = `${c.cat}.${c.rest.replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'base'}`;
+    for (let i = 2; used.has(key); i++) key = `${key.replace(/-\d+$/, '')}-${i}`;
+    used.add(key);
+    map[name] = key;
+  }
+  // Verweise auflösen: auf andere Tokens -> var(--modio-…), auf Werte ohne Token -> Wert einsetzen
+  const resolve = (v, depth = 0) => v.replace(/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,\s*([^()]*))?\)/g, (all, ref, fb) => {
+    if (map[ref]) return `var(${cssVarName(map[ref])})`;
+    if (vars.has(ref) && depth < 5) return resolve(vars.get(ref), depth + 1);
+    return fb ? fb.trim() : all;
+  });
+  const file = path.join(site, 'design', 'tokens.json');
+  const current = fs.existsSync(file) ? parseTokens(fs.readFileSync(file, 'utf8')) : { tokens: {}, errors: [] };
+  if (current.errors.length) return { code: 3, out: { status: 'error', error: `tokens.json ungültig: ${current.errors.join('; ')}` } };
+  // bisher importierte Tokens ersetzen, von Hand angelegte behalten
+  const tokens = Object.fromEntries(Object.entries(current.tokens).filter(([, t]) => !/^Quelle: --/.test(t.note || '')));
+  const imported = [];
+  for (const [name, key] of Object.entries(map)) {
+    const value = resolve(vars.get(name));
+    const err = checkValue(key, value);
+    if (err) { skipped.push({ name, value: vars.get(name), reason: err }); ohneToken[name] = vars.get(name); delete map[name]; continue; }
+    tokens[key] = { value, locked: true, note: `Quelle: ${name}` };
+    imported.push({ name, key });
+  }
+  writeAtomic(file, stringifyTokens(tokens));
+  writeAtomic(path.join(site, 'design', 'tokens-map.json'), JSON.stringify({ quelle: 'design/tokens-quelle.css', tokens: map, ohneToken }, null, 2) + '\n');
+  const b = build(site);
+  if (b.code !== 0) return b;
+  return { code: 0, out: { status: 'ok', imported: imported.length, skipped, ohneToken: Object.keys(ohneToken), map } };
+}
+
 // ---------- CLI ----------
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -366,6 +453,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       case 'scan': { const s = scan(site); r = { code: 0, out: { status: 'ok', file: '.scan.json', colors: s.colors.length, radii: s.radii.length, fonts: s.fonts.length, fontSizes: s.fontSizes.length } }; break; }
       case 'save': r = save(site, rest[0]); break;
       case 'merge': r = merge(site, rest[0]); break;
+      case 'import-css': r = importCss(site); break;
       default: r = { code: 2, out: { status: 'error', error: `Unbekannter Befehl: ${cmd}` } };
     }
   } catch (e) {

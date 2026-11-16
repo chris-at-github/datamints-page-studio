@@ -36,6 +36,33 @@ if (MODE === 'before') {
   check('API ohne Token abgewiesen', noauth.status === 403);
   const bad = await fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/versions`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: '{"prompt":""}' });
   check('Neue Version ohne Prompt abgewiesen', bad.status === 400, bad.status);
+
+  // Briefing für claude.ai (von tests/run.sh mit draft-brief.sh erzeugt)
+  const br = await fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/brief`, { headers: auth });
+  const bj = br.ok ? await br.json() : {};
+  check('API: Briefing mit Text und Dateien', br.ok && bj.text?.includes('## Auftrag') && bj.files?.some((f) => f.file === 'D-001-element.html' && f.size > 0), br.status);
+  const dl = await fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/brief/D-001-element.html`, { headers: auth });
+  check('API: Briefing-Datei als Download', dl.ok && /attachment/.test(dl.headers.get('content-disposition') || '') && dl.headers.get('x-content-type-options') === 'nosniff', dl.status);
+  const dlx = await fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/brief/draft.json`, { headers: auth });
+  check('API: nur Dateien aus dem Briefing', dlx.status === 404, dlx.status);
+  const dln = await fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/brief/D-001-element.html`);
+  check('API: Briefing ohne Token abgewiesen', dln.status === 403, dln.status);
+  const ld = (await (await fetch(`${BASE}/api/sites/${SLUG}/drafts`, { headers: auth })).json()).drafts?.find((x) => x.id === 'D-001');
+  check('API: Entwurf meldet vorhandenes Briefing', !!ld?.brief?.created);
+
+  // Import als neue Version: Form prüfen, Job anlegen (ohne Worker), danach aufräumen
+  const fs = await import('node:fs');
+  const post = (body) => fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/import`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const ie = await post({ html: 'kein html' });
+  check('Import ohne HTML abgewiesen', ie.status === 400, ie.status);
+  const ib = await post({ html: '<p>' + 'x'.repeat(1600 * 1024) + '</p>' });
+  check('Import über 1,5 MB abgewiesen', ib.status === 400 || ib.status === 413, ib.status);
+  const io = await post({ html: '<section><h2>Import</h2></section>', prompt: 'Bitte übernehmen' });
+  const ij = io.ok ? await io.json() : {};
+  const jf = ij.job ? `jobs/pending/${ij.job.id}.json` : '';
+  const job = jf && fs.existsSync(jf) ? JSON.parse(fs.readFileSync(jf, 'utf8')) : null;
+  check('Import legt Entwurfs-Job mit Import-Datei an', io.status === 202 && job?.type === 'draft' && job.params.draft === 'D-001' && /^jobs\/assets\/job-[0-9a-f-]+-import\.html$/.test(job.params.importFile) && fs.readFileSync(job.params.importFile, 'utf8').includes('<h2>Import</h2>'), io.status);
+  if (job) { fs.rmSync(jf, { force: true }); fs.rmSync(job.params.importFile, { force: true }); }
 } else {
   const html = await (await fetch(page)).text();
   check('Server: mit Komponente liegt Alt-CSS in @layer legacy', html.includes('layer(legacy)') && html.includes('data-modio="components"') && !html.includes('__draft.css'));

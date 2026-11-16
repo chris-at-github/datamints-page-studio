@@ -24,7 +24,7 @@ if ! curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then
   SERVER_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.3; done
 fi
-cleanup() { [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; [[ -n "${SRV_PID:-}" ]] && kill "$SRV_PID" 2>/dev/null; rm -rf "$S"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
+cleanup() { [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; [[ -n "${SRV_PID:-}" ]] && kill "$SRV_PID" 2>/dev/null; rm -rf "$S" "sites/modio-test-neu"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 rm -rf "$S"
 
@@ -306,6 +306,15 @@ rm -rf "$D/v2"
 mkdir -p "$D/v2"; cp "$D/v1/component.css" "$D/v1/meta.json" "$D/v1/befund.json" "$D/v2/"
 sed 's#<h1>Willkommen</h1>#<h1>Version zwei</h1>#' "$D/v1/component.html" >"$D/v2/component.html"
 jq '.versions += [{v:2, prompt:"Zweite Fassung", name:"hero", title:"Hero 2", summary:"Zwei."}]' "$D/draft.json" >"$D/draft.tmp" && mv "$D/draft.tmp" "$D/draft.json"
+# Briefing für claude.ai (für den Server-Test der Briefing-API)
+OUT="$(./scripts/draft-brief.sh "$SLUG" D-001 2>/dev/null)" || true
+check "Briefing: Text, Element-HTML und Übersicht" 'jq -e ".status == \"ok\"" <<<"$OUT" >/dev/null && [[ -f "$D/brief/briefing.md" && -f "$D/brief/D-001-element.html" && -f "$D/brief/brief.json" ]] && cmp -s "$D/source.html" "$D/brief/D-001-element.html"'
+check "Briefing: Auftrag, Token-Block und Ausgabeformat" 'B="$D/brief/briefing.md"; grep -q "^## Auftrag" "$B" && grep -q -- "--modio-color-primary" "$B" && grep -q "Keine React-Komponente" "$B" && grep -q "D-001-element.html" "$B"'
+if node -e 'require("playwright")' 2>/dev/null; then
+  check "Briefing: Screenshots Desktop und Mobil" '[[ -s "$D/brief/D-001-desktop.png" && -s "$D/brief/D-001-mobil.png" ]] && jq -e "[.files[] | select(.kind == \"png\")] | length == 2" "$D/brief/brief.json" >/dev/null'
+fi
+check "Briefing: Originalseite mit Live-URL und Fundstelle" 'sed -n "/^## Originalseite/,/^## Raster/p" "$D/brief/briefing.md" | grep -qx "http://127.0.0.1:$PORT/" && grep -q "CSS-Selektor:" "$D/brief/briefing.md"'
+check "Briefing nicht im Abzug versioniert" '[[ -z "$(git -C "$S" status --porcelain)" ]]'
 SPORT="${TEST_SERVER_PORT:-3998}"; STOKEN="test-token-0123456789abcdef"
 MODIO_API_TOKEN="$STOKEN" BRIDGE_PORT="$SPORT" node tools/server/index.js >/dev/null 2>&1 &
 SRV_PID=$!
@@ -382,6 +391,24 @@ jq -n --arg d "$DN" '{id:"job-test-draft2", params:{draft:$d, prompt:"Etwas ruhi
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
 check "Neue Version 2 mit Session" '[[ "$(jq -r .version <<<"$OUT")" == 2 ]] && jq -e ".versions | length == 2" "$S/drafts/$DN/draft.json" >/dev/null && [[ "$(jq -r .sessionId "$S/drafts/$DN/draft.json")" == fake-session ]]'
 check "Kosten je Version, nicht kumuliert (Session fortgesetzt)" 'jq -e "[.versions[].costUsd] == [0.01, 0.01] and .sessionCostUsd == 0.02" "$S/drafts/$DN/draft.json" >/dev/null'
+# Gestaltung in claude.ai: Entwurf nur mit Briefing anlegen, dann HTML importieren
+JOBX="$(mktemp)"
+jq -n --arg page "$ENTRY" '{id:"job-test-ext", params:{page:$page, selector:"footer", html:"<footer>x</footer>", text:"x", prompt:"Footer extern gestalten", viewport:{width:1440,height:900}, mode:"brief"}}' >"$JOBX"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBX" 2>/dev/null)" || true
+XD="$(jq -r .draft <<<"$OUT")"
+check "Briefing-Entwurf ohne Claude-Lauf und ohne Version" 'jq -e ".brief == true" <<<"$OUT" >/dev/null && jq -e ".external == true and (.versions | length) == 0" "$S/drafts/$XD/draft.json" >/dev/null && [[ -f "$S/drafts/$XD/brief/briefing.md" ]] && [[ ! -f logs/claude-job-test-ext.json ]]'
+IMPF="jobs/assets/job-test-ext-import.html"
+printf '%s\n' '<!doctype html><html><head><link href="https://fonts.googleapis.com/css2?family=Inter" rel="stylesheet"><style>@import url(https://fonts.googleapis.com/x);:root{--modio-color-primary:#0B5FA5}body{margin:0}.f{padding:2rem}</style></head><body><footer class="f" onclick="x()">© Testfirma<script>alert(1)</script></footer></body></html>' >"$IMPF"
+ARGF2="$(mktemp)"
+jq -n --arg d "$XD" --arg f "$IMPF" '{id:"job-test-ext-imp", params:{draft:$d, importFile:$f}}' >"$JOBX"
+OUT="$(FAKE_CLAUDE_ARGS="$ARGF2" PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBX" 2>/dev/null)" || true
+check "Import als v1: bereinigt, Quelle import, Warnungen im Panel" '[[ "$(jq -r .version <<<"$OUT")" == 1 ]] && jq -e ".versions[0].source == \"import\"" "$S/drafts/$XD/draft.json" >/dev/null && ! grep -qiE "<script|onclick|fonts.googleapis" "$S/drafts/$XD/import-v1.html" && jq -e "[.warnings[] | select(test(\"^Import:\"))] | length >= 2" <<<"$OUT" >/dev/null'
+check "Import: frische Session, Effort medium" '! grep -qx -- "--resume" "$ARGF2" && grep -A1 -x -- "--effort" "$ARGF2" | grep -qx medium'
+printf '%s\n' '<html><body><div id="root"></div><script type="text/babel">ReactDOM.createRoot(root).render(<App/>)</script></body></html>' >"$IMPF"
+set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBX" 2>/dev/null)"; rc=$?; set -e
+check "React-Artefakt abgewiesen, keine Version 2" '(( rc != 0 )) && grep -q "React" <<<"$OUT" && [[ ! -d "$S/drafts/$XD/v2" ]]'
+./scripts/draft-discard.sh "$SLUG" "$XD" >/dev/null 2>&1
+rm -f "$JOBX" "$ARGF2" "$IMPF" logs/claude-job-test-ext*.json logs/claude-job-test-ext*.stderr.log
 set +e; OUT="$(FAKE_CLAUDE_BAD=1 PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)"; rc=$?; set -e
 check "Ungültiger Entwurf: Fehler, keine Version 3" '(( rc != 0 )) && grep -q "Entwurf ungültig" <<<"$OUT" && [[ ! -d "$S/drafts/$DN/v3" ]]'
 ARGF="$(mktemp)"
@@ -440,6 +467,59 @@ else
   check "RENDER_REVIEW=off: keine Sichtprüfung" 'jq -e ".render == null and .result.review == null" "$S/annotations/$RID.json" >/dev/null'
   rm -f "$JOBR" "$PROMPTF" logs/claude-job-test-render.json logs/claude-job-test-render.stderr.log
 fi
+
+echo "Neues Projekt ohne Website (project-new, project-package, Import, project-export)"
+NS="sites/modio-test-neu"; rm -rf "$NS"
+OUT="$(./scripts/project-new.sh modio-test-neu "Test <Neu>" 2 2>/dev/null)" || true
+check "Projekt angelegt: Leinwand mit Plätzen, Vorlagen, Baseline" '[[ "$(jq -r .kind <<<"$OUT")" == neu ]] && grep -q "id=\"platz-2\"" "$NS/www/leinwand/index.html" && grep -q "Test &lt;Neu&gt;" "$NS/www/leinwand/index.html" && [[ -f "$NS/design/tokens-quelle.css" && -f "$NS/design/projekt.md" ]] && git -C "$NS" rev-parse -q --verify baseline >/dev/null'
+set +e; OUT="$(./scripts/project-new.sh modio-test-neu 2>/dev/null)"; rc=$?; set -e
+check "Projekt doppelt: abgewiesen" '(( rc != 0 ))'
+cat >"$NS/design/tokens-quelle.css" <<'TQ'
+:root {
+  --color-primary: #0b5fa5;
+  --color-link: var(--color-primary);
+  --font-body: "Inter", system-ui, sans-serif;
+  --text-h1: clamp(2rem, 1rem + 3vw, 3rem);
+  --space-m: 1.5rem;
+  --space-l: calc(var(--space-m) * 2);
+  --font-weight-bold: 700;
+  --color-bad: url(x.png);
+}
+TQ
+printf '# Gestaltungsregeln\n- Ruhig und klar.\n' >"$NS/design/notes.md"
+OUT="$(./scripts/project-package.sh modio-test-neu 2>/dev/null)" || true
+check "Paket: Tokens aus CSS-Variablen (gesperrt, Verweise, clamp)" 'jq -e ".tokens == 6" <<<"$OUT" >/dev/null && jq -e ".tokens[\"color.link\"].value == \"var(--modio-color-primary)\" and .tokens[\"space.l\"].value == \"calc(var(--modio-space-m) * 2)\" and .tokens[\"size.h1\"].locked == true" "$NS/design/tokens.json" >/dev/null'
+check "Paket: ungültige Variable gemeldet, Werte ohne Token im Paket" 'jq -e "[.warnings[] | select(test(\"--color-bad\"))] | length == 1" <<<"$OUT" >/dev/null && grep -q -- "--font-weight-bold: 700" "$NS/paket/CLAUDE.md"'
+check "Paket: CLAUDE.md, tokens.css, regeln.md, Hintergrund, README, entwuerfe/" 'P="$NS/paket"; [[ -f "$P/CLAUDE.md" && -f "$P/regeln.md" && -f "$P/projekt.md" && -f "$P/README.md" && -d "$P/entwuerfe" ]] && grep -q -- "--modio-color-primary: #0b5fa5" "$P/tokens.css" && grep -q "entwuerfe/<kurzer-name>.html" "$P/CLAUDE.md"'
+check "Paket: Angaben committet, Paket nicht versioniert" '[[ "$(git -C "$NS" log -1 --format=%s)" == "[design] Projektangaben übernommen"* ]] && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+touch "$NS/paket/entwuerfe/a.html"; ./scripts/project-package.sh modio-test-neu >/dev/null 2>&1 || true
+check "Paket neu erzeugen: entwuerfe/ bleibt" '[[ -f "$NS/paket/entwuerfe/a.html" ]]'
+JOBN="$(mktemp)"; IMPN="jobs/assets/job-test-neu-import.html"
+printf '%s\n' '<!doctype html><html><head><style>.t{padding:var(--modio-space-m)}</style></head><body><section class="t"><h2>Neu</h2></section></body></html>' >"$IMPN"
+jq -n --arg f "$IMPN" '{id:"job-test-neu", params:{page:"/leinwand/index.html", selector:"#platz-1", html:"", text:"", prompt:"Teaser", viewport:{width:1440,height:900}, importFile:$f}}' >"$JOBN"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_ARGS=/dev/null ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
+ND="$(jq -r .draft <<<"$OUT")"
+check "Import auf einen Platz der Leinwand" '[[ "$(jq -r .version <<<"$OUT")" == 1 ]]'
+OUT="$(./scripts/draft-apply.sh modio-test-neu "$ND" 2>/dev/null)" || true
+check "Übernahme ersetzt den Platz" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && ! grep -q "id=\"platz-1\"" "$NS/www/leinwand/index.html" && grep -q "class=\"mx-test\"" "$NS/www/leinwand/index.html"'
+printf '/* mx-test: Teaser */\n@scope (.mx-test) {\n  :scope { padding: var(--modio-space-l); color: var(--modio-color-link); }\n}\n' >"$NS/components/mx-test.css"
+OUT="$(./scripts/project-export.sh modio-test-neu 2>/dev/null)" || true
+EX="$(jq -r .dir <<<"$OUT")"
+check "Export: Komponente mit den Variablen des Projekts" '[[ -f "$EX/komponenten/test/component.html" ]] && grep -q "var(--space-l)" "$EX/komponenten/test/component.css" && grep -q "var(--color-link)" "$EX/komponenten/test/component.css" && ! grep -q -- "--modio-" "$EX/komponenten/test/component.css"'
+check "Export: tokens.css aus tokens-quelle.css, Vorschau, README" 'cmp -s "$NS/design/tokens-quelle.css" "$EX/tokens.css" && grep -q "komponenten.css" "$EX/vorschau.html" && grep -q "mx-test" "$EX/README.md"'
+git -C "$NS" checkout -q -- components
+# Letzter freier Platz übernommen: ein neuer Platz kommt dazu
+jq -n --arg f "$IMPN" '{id:"job-test-neu2", params:{page:"/leinwand/index.html", selector:"#platz-2", html:"", text:"", prompt:"Zweiter", viewport:{width:1440,height:900}, importFile:$f}}' >"$JOBN"
+OUT="$(FAKE_CLAUDE_NAME=zwei PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
+OUT="$(./scripts/draft-apply.sh modio-test-neu "$(jq -r .draft <<<"$OUT")" 2>/dev/null)" || true
+check "Kein freier Platz mehr: neuer Platz angefügt" 'grep -q "id=\"platz-3\"" "$NS/www/leinwand/index.html" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+jq -n '{id:"job-test-neu3", params:{page:"/leinwand/index.html", selector:"#platz-3", html:"", text:"", prompt:"Hero für die Startseite", viewport:{width:1440,height:900}, mode:"brief"}}' >"$JOBN"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
+check "Briefing im neuen Projekt: nur Auftrag, verweist auf das Paket" 'B="$NS/drafts/$(jq -r .draft <<<"$OUT")/brief/briefing.md"; grep -q "Hero für die Startseite" "$B" && grep -q "Projektwissen" "$B" && ! grep -q "## Originalseite" "$B"'
+set +e; OUT="$(./scripts/site-recrawl.sh modio-test-neu 2>/dev/null)"; rc=$?; set -e
+check "Neu einlesen bei neuem Projekt abgewiesen" '(( rc != 0 )) && grep -q "Neues Projekt" <<<"$OUT"'
+rm -f "$JOBN" "$IMPN" logs/claude-job-test-neu*.json logs/claude-job-test-neu*.stderr.log
+rm -rf "$NS"
 
 echo "Neu einlesen"
 OUT="$(./scripts/site-recrawl.sh "$SLUG" 2>/dev/null)"

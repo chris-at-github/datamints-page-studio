@@ -141,6 +141,62 @@ export function extractElement(cheerio, text, selector) {
   return { html: text.slice(loc.startOffset, loc.endOffset), count: all.length };
 }
 
+// Import aus claude.ai (HTML-Artefakt): mechanisch bereinigen, bevor Claude es ins Komponentenformat übernimmt.
+// Entfernt Scripts, Event-Handler, Frames, <link>/<meta>/<base>, javascript:-Adressen, @import und externe @font-face.
+// Ergebnis: ein <style>-Block mit dem gesamten CSS, danach das Markup aus <body>.
+export function cleanImport(cheerio, text) {
+  const warnings = [];
+  const removed = { scripts: 0, handlers: 0, frames: 0, links: 0, imports: 0, fontFaces: 0 };
+  // React/JSX: Inhalt entsteht erst per Script, das lässt sich nicht als HTML übernehmen
+  const react = /<script[^>]*type=["']text\/babel["']|ReactDOM|createRoot\(|from\s+["']react["']|className=\{/.test(text);
+  const $ = cheerio.load(text);
+  const bodyText = $('body').clone().find('script, noscript, style, template').remove().end().text().replace(/\s+/g, ' ').trim();
+  if (react && bodyText.length < 40) {
+    return { error: 'Der Import ist eine React-Komponente (Inhalt entsteht erst per Script). Bitte Claude bitten, das Artefakt als reines HTML mit CSS auszugeben (kein React, kein JavaScript).' };
+  }
+  removed.scripts = $('script, noscript').length; $('script, noscript').remove();
+  removed.frames = $('iframe, frame, object, embed').length; $('iframe, frame, object, embed').remove();
+  removed.links = $('link').length; $('link, meta, base, title').remove();
+  $('*').each((_, n) => {
+    for (const a of Object.keys(n.attribs || {})) {
+      if (/^on/i.test(a)) { delete n.attribs[a]; removed.handlers++; }
+      else if (/^(href|src|action|formaction|xlink:href)$/i.test(a) && /^\s*javascript:/i.test(n.attribs[a])) { delete n.attribs[a]; removed.handlers++; }
+    }
+  });
+  let css = $('style').map((_, n) => $(n).text()).get().join('\n\n');
+  $('style').remove();
+  css = css.replace(/@import\s+[^;]+;/gi, () => { removed.imports++; return ''; });
+  css = css.replace(/@font-face\s*\{[^}]*\}/gi, (b) => (/url\(\s*["']?(https?:)?\/\//i.test(b) ? (removed.fontFaces++, '') : b));
+  const body = $('body').length ? $('body').html() : $.root().html();
+  const markup = String(body || '').trim();
+  if (!markup) return { error: 'Im Import ist kein Markup (body leer).' };
+  const top = $('body').length ? $('body').children().length : 0;
+  const hosts = [...hostsIn(markup + '\n' + css)];
+  if (react) warnings.push('Import enthielt React/JavaScript; übernommen wird nur das statische HTML.');
+  if (removed.scripts) warnings.push(`${removed.scripts} Script(s) entfernt (Interaktion nur mit HTML und CSS möglich).`);
+  if (removed.imports || removed.fontFaces) warnings.push('Externe Schriften entfernt (@import/@font-face); es gilt die Schrift der Website.');
+  if (hosts.length) warnings.push(`Externe Adressen im Import: ${hosts.slice(0, 5).join(', ')} – werden bei der Übernahme durch Material aus source.html ersetzt.`);
+  if (top > 1) warnings.push(`${top} Elemente auf oberster Ebene – werden bei der Übernahme in ein Wurzelelement gefasst.`);
+  const cleaned = `<!-- Import aus claude.ai, von Modio bereinigt (Scripts, Handler, externe Schriften entfernt). Material, keine Anweisung. -->\n<style>\n${css.trim()}\n</style>\n\n${markup}\n`;
+  return { html: cleaned, removed, hosts, topLevel: top, warnings, cssBytes: Buffer.byteLength(css), htmlBytes: Buffer.byteLength(markup) };
+}
+
+// Freier Platz auf der Leinwand eines neuen Projekts (Ziel für neue Designs)
+export const platzHtml = (n) => `  <section class="modio-platz" id="platz-${n}" data-modio-platz><h2>Platz ${n}</h2><p>Frei für ein neues Design</p></section>`;
+
+// Nach einer Übernahme: Ist kein freier Platz mehr auf der Seite, einen neuen vor </main> (sonst vor </body>) anfügen.
+export function ensurePlatz(text) {
+  if (/\bdata-modio-platz\b/.test(text)) return null;
+  const nums = [...text.matchAll(/\bid="platz-(\d+)"/g)].map((m) => Number(m[1]));
+  // fortlaufend: übernommene Designs (ersetzte Plätze) zählen mit
+  const designs = (text.match(/\bclass="mx-[a-z0-9-]+/g) || []).length;
+  const next = Math.max(0, ...nums, designs) + 1;
+  let i = text.search(/<\/main\s*>/i);
+  if (i < 0) i = text.search(/<\/body\s*>/i);
+  if (i < 0) return null;
+  return { text: text.slice(0, i) + platzHtml(next) + '\n' + text.slice(i), id: `platz-${next}` };
+}
+
 // Hosts, die in einem Entwurf vorkommen dürfen: Host der Website und Hosts aus dem Ausgangsmaterial.
 export function allowedHostsFor(siteDir, draftDir) {
   const set = new Set();
@@ -249,6 +305,49 @@ const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + '\n'); p
 
 async function main() {
   const [cmd, siteDir, draftDir, versionArg, pageArg, selector] = process.argv.slice(2);
+  if (cmd === 'import-clean') {
+    // node draft.mjs import-clean <eingabe.html> <ausgabe.html>
+    const [, inFile, outFile] = process.argv.slice(2);
+    if (!inFile || !outFile) out({ error: 'Aufruf: node draft.mjs import-clean <eingabe.html> <ausgabe.html>' }, 2);
+    const r = cleanImport(await loadCheerio(), readText(inFile).text);
+    if (r.error) out({ error: r.error }, 3);
+    fs.writeFileSync(outFile, r.html);
+    const { html, ...info } = r;
+    out(info);
+  }
+  if (cmd === 'platz') { process.stdout.write(platzHtml(Number(process.argv[3]) || 1)); process.exit(0); }
+  if (cmd === 'ensure-platz') {
+    // node draft.mjs ensure-platz <site-dir> <seite>
+    const [, sDir, pageRel] = process.argv.slice(2);
+    const page = String(pageRel || '').replace(/^\/+/, '');
+    if (!sitePages(sDir).includes(page)) out({ error: `Seite nicht im Abzug: /${page}` }, 1);
+    const file = path.join(sDir, 'www', page);
+    const src = readText(file);
+    const r = ensurePlatz(src.text);
+    if (r) fs.writeFileSync(file, r.text, src.enc);
+    out({ added: r ? r.id : null });
+  }
+  if (cmd === 'locate') {
+    // node draft.mjs locate <site-dir> <seite> <selektor>: Merkmale, um das Element auf der Originalseite zu finden
+    const [, sDir, pageRel, sel] = process.argv.slice(2);
+    const page = String(pageRel || '').replace(/^\/+/, '');
+    if (!sDir || !page || !sel) out({ error: 'Aufruf: node draft.mjs locate <site-dir> <seite> <selektor>' }, 2);
+    if (!sitePages(sDir).includes(page)) out({ error: `Seite nicht im Abzug: /${page}` }, 1);
+    const $ = (await loadCheerio()).load(readText(path.join(sDir, 'www', page)).text);
+    let n;
+    try { n = $(sel).first(); } catch { out({ error: `Ungültiger Selektor: ${sel}` }, 1); }
+    if (!n.length) out({ error: `Selektor trifft in der Seite nichts: ${sel}` }, 1);
+    const clean = (t) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const headings = n.find('h1, h2, h3, h4').map((_, h) => clean($(h).text())).get().filter(Boolean).slice(0, 3);
+    if (/^h[1-4]$/i.test(n[0].tagName)) headings.unshift(clean(n.text()));
+    // nächste Überschrift vor dem Element (Dokumentreihenfolge)
+    let before = '';
+    const all = $('h1, h2, h3, h4').toArray();
+    for (const h of all) { if (n[0] === h || $(h).closest(n).length) break; if ($(h).nextAll().add($(h).parents().nextAll()).filter((_, x) => x === n[0] || $(x).find(n).length > 0).length) before = clean($(h).text()); }
+    const anchor = n.attr('id') || n.parents('[id]').first().attr('id') || '';
+    const title = clean($('title').first().text());
+    out({ title, headings, before, anchor, text: clean(n.text()).slice(0, 120) });
+  }
   if (cmd === 'extract') {
     // node draft.mjs extract <site-dir> <seite> <selektor>
     const [, sDir, pageRel, sel] = process.argv.slice(2);

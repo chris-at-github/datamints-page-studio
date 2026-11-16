@@ -2,6 +2,7 @@
 // mit Playwright/Chromium, misst die gewählten Elemente und nimmt Ausschnitte auf.
 // Aufruf: node render.mjs <siteDir> <slug> <outDir> <spec.json-String>
 //         node render.mjs layout <siteDir> <slug> <seite> <selektor> <viewports-json>   (Hauptraster messen, für Entwürfe)
+//         node render.mjs shot <siteDir> <slug> <seite> <selektor> <outDir> <prefix> <viewports-json>   (Ausschnitt des Elements, für Briefings)
 //   spec: { before: "HEAD", targets: [{page, selector}], viewports: [{name, width, height}] }
 // Ausgabe: eine JSON-Zeile. Exit 0 ohne Fehler-Befunde, 3 mit Fehler-Befunden, 4 Playwright/Browser fehlt, 1 Fehler.
 // Sicherheit: Die Seite läuft ohne Netz. Erlaubt sind nur Anfragen an den eigenen, nur lokal gebundenen Server.
@@ -433,7 +434,64 @@ async function layoutMain() {
   out({ status: ok ? 'ok' : 'error', error: ok ? undefined : result[0]?.error, viewports: result.map(({ path, ...r }) => r) }, ok ? 0 : 1);
 }
 
+// ---------- Ausschnitt eines Elements (für Briefings) ----------
+async function shotMain() {
+  const [, siteDir, slug, page, selector, outDir, prefix, vpArg] = process.argv.slice(2);
+  if (!siteDir || !slug || !page || !selector || !outDir || !prefix || !vpArg) out({ status: 'error', error: 'Aufruf: render.mjs shot <siteDir> <slug> <seite> <selektor> <outDir> <prefix> <viewports>' }, 1);
+  let chromium;
+  try { ({ chromium } = await import('playwright')); } catch { out({ status: 'unavailable', error: 'Playwright ist nicht installiert (npm install)' }, 4); }
+  let browser;
+  try { browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined }); } catch (e) {
+    out({ status: 'unavailable', error: `Chromium startet nicht: ${String(e.message).split('\n')[0]}` }, 4);
+  }
+  fs.mkdirSync(outDir, { recursive: true });
+  const srv = await startServer(makeReader(siteDir, 'after'), slug);
+  const files = [];
+  const maxH = Number(process.env.BRIEF_SHOT_MAX_HEIGHT || 4000);
+  try {
+    for (const vp of JSON.parse(vpArg)) {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block' });
+      await ctx.route('**/*', (route) => {
+        const u = route.request().url();
+        return u.startsWith(srv.origin + '/') || u.startsWith('data:') || u.startsWith('blob:') ? route.continue() : route.abort();
+      });
+      const pg = await ctx.newPage();
+      try {
+        await pg.goto(`${srv.origin}${srv.base}/${page.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}`, { waitUntil: 'load', timeout: Number(process.env.RENDER_TIMEOUT_MS || 20000) });
+        await pg.addStyleTag({ content: '*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important}' }).catch(() => {});
+        await pg.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
+        await pg.waitForTimeout(200);
+        const r = await pg.evaluate((sel) => {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          return { x: b.left + window.scrollX, y: b.top + window.scrollY, w: b.width, h: b.height, docH: document.documentElement.scrollHeight };
+        }, selector);
+        if (!r || r.w < 1 || r.h < 1) { files.push({ viewport: vp.name, error: 'Element nicht gefunden oder unsichtbar' }); }
+        else {
+          const pad = 16;
+          const x = Math.max(0, Math.floor(r.x - pad)), y = Math.max(0, Math.floor(r.y - pad));
+          const w = Math.min(vp.width - x, Math.ceil(r.w + 2 * pad));
+          const h = Math.max(1, Math.min(Math.ceil(r.h + 2 * pad), maxH, r.docH - y));
+          const file = path.join(outDir, `${prefix}-${vp.name}.png`);
+          await pg.screenshot({ path: file, fullPage: true, clip: { x, y, width: w, height: h } });
+          files.push({ viewport: vp.name, width: vp.width, file: path.basename(file), cut: r.h + 2 * pad > maxH });
+        }
+      } catch (e) {
+        files.push({ viewport: vp.name, error: String(e.message).split('\n')[0] });
+      }
+      await ctx.close();
+    }
+  } finally {
+    await browser.close().catch(() => {});
+    srv.server.close();
+  }
+  const ok = files.some((f) => f.file);
+  out({ status: ok ? 'ok' : 'error', files, error: ok ? undefined : (files[0] && files[0].error) }, ok ? 0 : 1);
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === 'layout') layoutMain().catch((e) => out({ status: 'error', error: e.message }, 1));
+  else if (process.argv[2] === 'shot') shotMain().catch((e) => out({ status: 'error', error: e.message }, 1));
   else main().catch((e) => out({ status: 'error', error: e.message }, 1));
 }

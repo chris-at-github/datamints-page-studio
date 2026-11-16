@@ -445,6 +445,12 @@
     '.hl.pick{border-color:#059669;background:rgba(5,150,105,.10)}' +
     '.hl.pick .hl-label{background:#059669}' +
     '.dsec{margin-bottom:18px}' +
+    '.dsec.claude summary{cursor:pointer;list-style:none}.dsec.claude summary::-webkit-details-marker{display:none}.dsec.claude summary h3{display:inline-flex}' +
+    '.dsec.claude summary h3::before{content:"▸";margin-right:4px}.dsec.claude[open] summary h3::before{content:"▾"}' +
+    '.brieftext{width:100%;min-height:120px;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}' +
+    '.brieffiles{list-style:none;margin:4px 0 8px;padding:0}.brieffiles li{margin:2px 0}' +
+    '.linkish{background:none;border:0;padding:0;color:#2563eb;text-decoration:underline;cursor:pointer;font:inherit}' +
+    '.claude-row{gap:4px;flex-wrap:nowrap;align-items:center}.claude-row .hint{white-space:nowrap}.claude-row button{font-size:12px;padding:4px 6px;white-space:nowrap}' +
     '.design .sb-body .dsec{border-top:1px solid #9ca3af;padding-top:14px}' +
     '.design .sb-body > div:empty + section.dsec,.design .sb-body > div > .dsec:first-child{border-top:0;padding-top:0}' +
     '.dsec h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin:0 0 6px;display:flex;align-items:center;gap:6px}' +
@@ -645,6 +651,11 @@
   var pSend = el('button', { type: 'button', text: 'Direkt umsetzen', title: 'Sofort als eigenen Schritt mit Claude umsetzen (Strg+Umschalt+Enter)' });
   var pQueue = el('button', { type: 'button', class: 'primary', text: 'In die Queue aufnehmen', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)' });
   var pDraft = iconButton('pencilSparkles', 'Entwurf erstellen', { title: 'Claude gestaltet das Element ohne Altlasten als eigene Komponente neu. Erst „Übernehmen“ ändert die Website. (Strg+Alt+Enter)' });
+  // Gestaltung extern in claude.ai: Briefing erzeugen bzw. dort gestaltetes HTML importieren
+  var pBrief = iconButton('sparkles', 'In claude.ai gestalten', { class: 'ghost', title: 'Entwurf ohne Claude-Lauf anlegen und ein Briefing (Text und Dateien) für claude.ai erzeugen. Das Ergebnis danach im Entwurf importieren.' });
+  var pImport = iconButton('files', 'HTML importieren …', { class: 'ghost', title: 'In claude.ai gestaltetes HTML (Artefakt) als neuen Entwurf für dieses Element übernehmen. Der Prompt ist optional.' });
+  var pImportFile = el('input', { type: 'file', accept: '.html,.htm,text/html', hidden: '' });
+  var pClaudeRow = el('div', { class: 'row claude-row' }, [el('span', { class: 'hint', text: 'Extern gestalten:' }), pBrief, pImport, pImportFile]);
   var pTokBtn = iconButton('palette', 'Token einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
@@ -661,6 +672,7 @@
     el('div', { class: 'row' }, [pUrl, pUrlAdd]),
     pThumbs,
     pErr,
+    pClaudeRow,
     el('div', { class: 'row end' }, [pCancel, el('span', { class: 'spacer' }), pDraft, pSend, pQueue]),
   ]);
   ui.appendChild(promptPanel);
@@ -838,6 +850,7 @@
     draft: 'Entwurf',
     'draft-apply': 'Entwurf übernehmen',
     'draft-discard': 'Entwurf verwerfen',
+    'draft-brief': 'Briefing',
   };
 
   var followupJob = null; // Annotation, die gerade nachgebessert wird
@@ -870,7 +883,7 @@
       var label = TYPE_LABEL[job.type] || job.type;
       var txt;
       if (job.status === 'pending') txt = label + ': in Warteschlange';
-      else if (job.status === 'running') txt = job.type === 'annotate' ? 'Claude arbeitet …' : job.type === 'draft' ? 'Claude entwirft …' : label + ' läuft …';
+      else if (job.status === 'running') txt = job.type === 'annotate' ? 'Claude arbeitet …' : job.type === 'draft' ? (job.params && job.params.importFile ? 'Claude übernimmt den Import …' : job.params && job.params.mode === 'brief' ? 'Briefing wird erstellt …' : 'Claude entwirft …') : label + ' läuft …';
       else txt = 'Prüfung nötig – anzeigen';
       statusEl.classList.add(job.status);
       statusEl.appendChild(el('span', { class: 'dot', 'aria-hidden': 'true' }));
@@ -904,6 +917,7 @@
     pSend.disabled = busy;
     pQueue.style.display = followupJob ? 'none' : '';
     pDraft.style.display = followupJob ? 'none' : '';
+    pClaudeRow.style.display = followupJob ? 'none' : '';
     if (PREVIEW) { btnSelect.disabled = true; btnSelect.title = 'In der Vorschau eines Entwurfs nicht möglich'; }
     pSend.classList.toggle('primary', !!followupJob);
     if (typeof renderQueueButton === 'function' && qRun) renderQueueButton();
@@ -1522,6 +1536,23 @@
   pSend.addEventListener('click', function () { submit('direct'); });
   pQueue.addEventListener('click', function () { submit('queue'); });
   pDraft.addEventListener('click', function () { submit('draft'); });
+  pBrief.addEventListener('click', function () { submit('brief'); });
+  pImport.addEventListener('click', function () { pImportFile.value = ''; pImportFile.click(); });
+  pImportFile.addEventListener('change', function () {
+    var f = pImportFile.files && pImportFile.files[0];
+    if (!f) return;
+    readHtmlFile(f).then(function (html) { submit('import', html); }).catch(function (e) { pErr.textContent = e.message; });
+  });
+  // HTML-Datei aus claude.ai lesen (Größe wie auf dem Server begrenzt)
+  function readHtmlFile(f) {
+    return new Promise(function (resolve, reject) {
+      if (f.size > 1536 * 1024) { reject(new Error('HTML-Datei zu groß (höchstens 1,5 MB).')); return; }
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result || '')); };
+      r.onerror = function () { reject(new Error('Datei konnte nicht gelesen werden.')); };
+      r.readAsText(f, 'utf-8');
+    });
+  }
 
 
   // Zeilenweiser Unterschied (LCS) zweier HTML-Fassungen, Tags je Zeile
@@ -1642,10 +1673,11 @@
     closePrompt();
   });
 
-  function submit(mode) {
+  function submit(mode, importHtml) {
     if (!selected && !followupJob) return;
     var toQueue = mode === 'queue' && !followupJob;
-    var toDraft = mode === 'draft' && !followupJob;
+    var extMode = !followupJob && (mode === 'brief' || mode === 'import') ? mode : null;
+    var toDraft = (mode === 'draft' || !!extMode) && !followupJob;
     if (toDraft && activeJob() && activeJob().status !== 'review') {
       pErr.textContent = 'Es läuft noch ein Auftrag. Der Entwurf ist erst danach möglich.';
       return;
@@ -1655,8 +1687,9 @@
       return;
     }
     var prompt = pText.value.trim();
+    if (!prompt && extMode === 'import') prompt = 'Übernahme des Entwurfs aus claude.ai';
     if (!prompt) {
-      pErr.textContent = 'Bitte einen Prompt eingeben.';
+      pErr.textContent = extMode === 'brief' ? 'Bitte den Auftrag für claude.ai eingeben (er steht im Briefing).' : 'Bitte einen Prompt eingeben.';
       pText.focus();
       return;
     }
@@ -1686,13 +1719,15 @@
       annotation.rect = { width: Math.round(rect.width), height: Math.round(rect.height) };
       try { annotation.bausteine = collectBausteine(); } catch (e) { annotation.bausteine = []; }
       delete annotation.followup; delete annotation.followup_of;
+      if (extMode) annotation.mode = extMode;
+      if (extMode === 'import') annotation.importHtml = importHtml || '';
     }
     var fd = new FormData();
     fd.append('annotation', JSON.stringify(annotation));
     refs.forEach(function (r) {
       if (r.kind === 'file') fd.append('images', r.file, r.file.name || 'bild');
     });
-    pSend.disabled = pQueue.disabled = pDraft.disabled = true;
+    pSend.disabled = pQueue.disabled = pDraft.disabled = pBrief.disabled = pImport.disabled = true;
     pErr.textContent = '';
     api('POST', '/api/sites/' + encodeURIComponent(SLUG) + (toDraft ? '/drafts' : toQueue ? '/queue' : '/annotations'), fd)
       .then(function (data) {
@@ -1700,14 +1735,16 @@
         if (data && data.items) { queueItems = data.items; renderQueueButton(); }
         resetPrompt();
         closePrompt();
-        showToast(toDraft ? 'Claude entwirft das Element als Komponente … Die Vorschau öffnet sich, sobald der Entwurf fertig ist.' : toQueue ? 'In die Queue aufgenommen (' + queueItems.length + ').' : 'Annotation gesendet.', false);
+        showToast(extMode === 'brief' ? 'Entwurf wird angelegt, Briefing für claude.ai wird erstellt …'
+          : extMode === 'import' ? 'Claude übernimmt das HTML aus claude.ai als Komponente … Die Vorschau öffnet sich danach.'
+          : toDraft ? 'Claude entwirft das Element als Komponente … Die Vorschau öffnet sich, sobald der Entwurf fertig ist.' : toQueue ? 'In die Queue aufgenommen (' + queueItems.length + ').' : 'Annotation gesendet.', false);
       })
       .catch(function (err) {
         pErr.textContent =
           err.status === 409 ? 'Für diese Website läuft bereits ein Schritt oder wartet auf Prüfung.' : 'Senden fehlgeschlagen: ' + err.message;
       })
       .then(function () {
-        pQueue.disabled = pDraft.disabled = false;
+        pQueue.disabled = pDraft.disabled = pBrief.disabled = pImport.disabled = false;
         renderStatus();
       });
   }
@@ -1933,7 +1970,17 @@
     lastFailed = null;
     var r = job.result || {};
     var msg = '';
+    if (job.type === 'draft-brief') {
+      loadDrafts().then(function () { if (r.draft) openDrafts(r.draft, null, true); });
+      showToast('Briefing für ' + (r.draft || 'den Entwurf') + ' ist bereit: Text kopieren und Dateien in claude.ai hochladen.', false);
+      return;
+    }
     if (job.type === 'draft') {
+      if (r.brief && r.draft) {
+        loadDrafts().then(function () { openDrafts(r.draft); });
+        showToast('Entwurf ' + r.draft + ' angelegt. Briefing kopieren, Dateien in claude.ai hochladen und das Ergebnis danach hier importieren.', false);
+        return;
+      }
       loadDrafts();
       if (r.draft && r.version) {
         try { sessionStorage.setItem(FLASH_KEY, 'Entwurf ' + r.draft + ' v' + r.version + (r.title ? ' („' + r.title + '“)' : '') + ' fertig. Mit „Aktuell“ und den Versionen oben vergleichen, rechts nachbessern oder übernehmen.'); sessionStorage.setItem(DRAFT_OPEN_KEY, r.draft); } catch (e) { /* ignorieren */ }
@@ -3307,7 +3354,7 @@
           el('strong', { text: x.id }),
           el('span', { text: draftLabel(x) }),
           el('span', { class: 'spacer' }),
-          x.status === 'applied' ? el('span', { class: 'badge', text: 'übernommen ' + (x.appliedAs || '') }) : el('span', { class: 'dver', text: x.versions.length + ' Version(en)' + (x.revises ? ' · Überarbeitung' : '') }),
+          x.status === 'applied' ? el('span', { class: 'badge', text: 'übernommen ' + (x.appliedAs || '') }) : el('span', { class: 'dver', text: (x.versions.length ? x.versions.length + ' Version(en)' : x.external ? 'in claude.ai' : '0 Versionen') + (x.revises ? ' · Überarbeitung' : '') }),
         ]),
         el('span', { class: 'step-sel', text: [x.page === currentPage() ? 'diese Seite' : x.page, x.selector].join(' · ') }),
         el('span', { class: 'step-date', text: fmtDate((l && l.created) || x.created) }),
@@ -3327,7 +3374,24 @@
     dBody.appendChild(el('div', { class: 'step-sel', text: (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector + (d.revises ? ' · Überarbeitung von mx-' + d.revises : '') }));
     dBody.appendChild(el('div', { class: 'step-prompt', text: d.prompt }));
     if (!isOpen) dBody.appendChild(el('span', { class: 'dstate', text: d.status === 'applied' ? 'übernommen als ' + d.appliedAs + ' (v' + d.appliedVersion + ')' : 'verworfen' }));
-    if (!v) { dBody.appendChild(el('p', { class: 'hint', text: 'Noch keine Version.' })); return; }
+    if (!v) {
+      dBody.appendChild(el('p', { class: 'hint', text: d.external ? 'Noch keine Version: Das Element wird in claude.ai gestaltet. Briefing kopieren, Dateien dort hochladen und das Ergebnis (HTML-Artefakt) hier importieren.' : 'Noch keine Version.' }));
+      if (isOpen) {
+        renderClaudeSection(d, null, true);
+        var bDel = iconButton('trash', 'Verwerfen', { class: 'ghost danger' });
+        var errDel = el('div', { class: 'err', role: 'alert' });
+        bDel.addEventListener('click', function () {
+          if (!confirm(d.id + ' verwerfen?')) return;
+          bDel.disabled = true;
+          draftsApi('/' + d.id + '/discard')
+            .then(function (data) { if (data && data.job) trackJob(data.job); draftCurrent = null; })
+            .catch(function (e) { errDel.textContent = 'Fehlgeschlagen: ' + e.message; bDel.disabled = false; });
+        });
+        dBody.appendChild(errDel);
+        dBody.appendChild(el('div', { class: 'row dactions' }, [bDel]));
+      }
+      return;
+    }
 
     // Versionen: in der Vorschau live umschalten, sonst nur auswählen
     var vrow = el('div', { class: 'vtabs', role: 'group', 'aria-label': 'Versionen' });
@@ -3338,7 +3402,7 @@
     }
     d.versions.forEach(function (x) {
       var pressed = live ? pvLive.shown === x.v : x.v === v.v;
-      var b = el('button', { type: 'button', text: 'v' + x.v, 'data-fk': 'vt-' + x.v, title: x.prompt, 'aria-pressed': String(pressed) });
+      var b = el('button', { type: 'button', text: 'v' + x.v + (x.source === 'import' ? ' ↓' : ''), 'data-fk': 'vt-' + x.v, title: (x.source === 'import' ? 'Import aus claude.ai: ' : '') + x.prompt, 'aria-pressed': String(pressed) });
       b.addEventListener('click', function () {
         if (live) { showLive(d, x.v); return; }
         if (draftVersion !== x.v) { draftVersion = x.v; draftToggles = {}; draftBefund = {}; }
@@ -3477,6 +3541,8 @@
     if (notes.length) nsec.appendChild(nlist);
     dBody.appendChild(nsec);
 
+    if (isOpen) renderClaudeSection(d, v, false);
+
     // Nachbessern und Aktionen
     var ta = el('textarea', { 'data-fk': 'ta', placeholder: 'Was soll am Entwurf insgesamt anders werden? (wie im Chat)', 'aria-label': 'Entwurf nachbessern' });
     ta.value = draftText[d.id] || '';
@@ -3542,6 +3608,111 @@
         .then(function (data) { if (data && data.job) trackJob(data.job); draftCurrent = null; })
         .catch(function (e) { err.textContent = 'Fehlgeschlagen: ' + e.message; bDiscard.disabled = false; });
     });
+  }
+
+  // ---- Gestaltung in claude.ai: Briefing (Text und Dateien) und Import als neue Version
+  var briefCache = {}; // Entwurf-ID -> { created, text, files }
+  var claudeOpen = {}; // Entwurf-ID -> Bereich aufgeklappt (bleibt beim Neuzeichnen erhalten)
+  function briefUrl(d, file) { return '/api/sites/' + encodeURIComponent(SLUG) + '/drafts/' + d.id + '/brief' + (file ? '/' + encodeURIComponent(file) : ''); }
+  function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function downloadBrief(d, file) {
+    return fetch(briefUrl(d, file), { headers: { 'X-Modio-Token': TOKEN }, credentials: 'same-origin' })
+      .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.blob(); })
+      .then(function (blob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = file; a.style.display = 'none';
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      });
+  }
+  function copyText(text, ta) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    ta.select(); // Ersatz ohne Clipboard-API (http)
+    return document.execCommand('copy') ? Promise.resolve() : Promise.reject(new Error('Kopieren nicht möglich – Text markieren und mit Strg+C kopieren.'));
+  }
+  function renderClaudeSection(d, v, open) {
+    var err = el('div', { class: 'err', role: 'alert' });
+    var body = el('div');
+    var det = el('details', { class: 'dsec claude' }, [el('summary', {}, [el('h3', { text: 'Gestaltung in claude.ai' })]), body]);
+    det.open = hasOwn(claudeOpen, d.id) ? claudeOpen[d.id] : (open || !v);
+    det.addEventListener('toggle', function () { claudeOpen[d.id] = det.open; });
+    dBody.appendChild(det);
+    var busy = isBusy();
+    body.appendChild(el('p', { class: 'hint', text: '1. Briefing kopieren und in einen neuen Chat auf claude.ai einfügen, die Dateien dort hochladen. 2. Das fertige HTML-Artefakt herunterladen. 3. Hier importieren: Claude bringt es ohne Neugestaltung ins Komponentenformat (Tokens, Raster, Inhalte).' }));
+    // Briefing
+    var bWrap = el('div');
+    body.appendChild(bWrap);
+    function showBrief(b) {
+      clear(bWrap);
+      var ta = el('textarea', { readonly: '', class: 'brieftext', 'aria-label': 'Briefing für claude.ai', rows: '6' });
+      ta.value = b.text || '';
+      var bCopy = iconButton('files', 'Briefing kopieren', { class: 'primary' });
+      bCopy.addEventListener('click', function () {
+        copyText(b.text || '', ta).then(function () { showToast('Briefing kopiert. Jetzt in claude.ai einfügen und die Dateien hochladen.', false); })
+          .catch(function (e) { err.textContent = e.message; });
+      });
+      var list = el('ul', { class: 'brieffiles' });
+      (b.files || []).forEach(function (f) {
+        var bf = el('button', { type: 'button', class: 'linkish', text: f.file, title: 'Herunterladen' });
+        bf.addEventListener('click', function () { downloadBrief(d, f.file).catch(function (e) { err.textContent = 'Download fehlgeschlagen: ' + e.message; }); });
+        list.appendChild(el('li', {}, [bf, el('span', { class: 'hint', text: ' ' + fmtSize(f.size || 0) + (f.cut ? ' · unten abgeschnitten' : '') })]));
+      });
+      var bAll = el('button', { type: 'button', class: 'ghost', text: 'Alle Dateien herunterladen' });
+      bAll.addEventListener('click', function () {
+        (b.files || []).reduce(function (p, f) { return p.then(function () { return downloadBrief(d, f.file); }); }, Promise.resolve())
+          .catch(function (e) { err.textContent = 'Download fehlgeschlagen: ' + e.message; });
+      });
+      var bRe = el('button', { type: 'button', class: 'ghost', text: 'Neu erzeugen', title: 'Briefing mit dem aktuellen Stand der Seite neu erstellen' });
+      bRe.disabled = busy;
+      bRe.addEventListener('click', makeBrief);
+      bWrap.appendChild(el('div', { class: 'row' }, [bCopy, el('span', { class: 'spacer' }), bRe]));
+      bWrap.appendChild(el('details', {}, [el('summary', { class: 'hint', text: 'Text ansehen' }), ta]));
+      bWrap.appendChild(el('div', { class: 'hint', text: 'Dateien zum Hochladen (' + fmtDate(b.created) + '):' }));
+      bWrap.appendChild(list);
+      bWrap.appendChild(el('div', { class: 'row' }, [bAll]));
+    }
+    function makeBrief() {
+      err.textContent = '';
+      draftsApi('/' + d.id + '/brief')
+        .then(function (data) { if (data && data.job) trackJob(data.job); delete briefCache[d.id]; showToast('Briefing wird erstellt …', false); })
+        .catch(function (e) { err.textContent = e.status === 409 ? 'Es läuft noch ein Auftrag.' : 'Fehlgeschlagen: ' + e.message; });
+    }
+    if (d.brief) {
+      var c = briefCache[d.id];
+      if (c && c.created === d.brief.created) showBrief(c);
+      else {
+        bWrap.appendChild(el('p', { class: 'hint', text: 'Briefing wird geladen …' }));
+        api('GET', briefUrl(d)).then(function (b) { briefCache[d.id] = b; showBrief(b); })
+          .catch(function (e) { clear(bWrap); err.textContent = 'Briefing nicht ladbar: ' + e.message; });
+      }
+    } else {
+      var bMake = iconButton('sparkles', 'Briefing erstellen', { class: 'primary' });
+      bMake.disabled = busy;
+      bMake.addEventListener('click', makeBrief);
+      bWrap.appendChild(el('div', { class: 'row' }, [bMake]));
+    }
+    // Import
+    var note = el('input', { type: 'text', class: 'textin', placeholder: 'Hinweis zum Import (optional)', 'aria-label': 'Hinweis zum Import', 'data-fk': 'imp-note' });
+    var file = el('input', { type: 'file', accept: '.html,.htm,text/html', hidden: '' });
+    var bImp = iconButton('files', v ? 'HTML importieren (v' + (d.versions.length ? Math.max.apply(null, d.versions.map(function (x) { return x.v; })) + 1 : 1) + ')' : 'HTML importieren (v1)', { class: v ? '' : 'primary' });
+    bImp.disabled = busy;
+    bImp.addEventListener('click', function () { file.value = ''; file.click(); });
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      if (!f) return;
+      err.textContent = '';
+      readHtmlFile(f).then(function (html) {
+        bImp.disabled = true;
+        return draftsApi('/' + d.id + '/import', { html: html, prompt: note.value.trim() });
+      }).then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        showToast('Claude übernimmt das HTML aus claude.ai als neue Version von ' + d.id + ' … Die Vorschau öffnet sich danach.', false);
+      }).catch(function (e) { err.textContent = e.status === 409 ? 'Es läuft noch ein Auftrag.' : e.message; bImp.disabled = false; });
+    });
+    body.appendChild(el('div', { class: 'row' }, [note]));
+    body.appendChild(el('div', { class: 'row' }, [bImp, file]));
+    if (busy) body.appendChild(el('p', { class: 'hint', text: 'Es läuft noch ein Auftrag – danach möglich.' }));
+    body.appendChild(err);
   }
 
   // Vorschau-Zustand in der Statuszeile der Leiste (statt eigener Leiste)

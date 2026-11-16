@@ -122,6 +122,53 @@ try {
   const ann = body && JSON.parse((body.match(/name="annotation"\r\n\r\n([\s\S]*?)\r\n--/) || [])[1] || 'null');
   check('Entwurf erstellen: Annotation mit Prompt und Selektor gesendet', ann?.prompt === 'Hero moderner gestalten' && /hero/.test(ann.selector || ''), body?.slice(0, 200));
   check('Entwurf erstellen: Bausteine und Breite gemessen', Array.isArray(ann?.bausteine) && ann.bausteine.some((b) => b.kind === 'heading' && b.style?.['font-size']) && ann.rect?.width > 0, JSON.stringify(ann?.bausteine)?.slice(0, 200));
+
+  // Gestaltung in claude.ai: aus dem Annotationsdialog Briefing-Entwurf und Import
+  const annOf = () => body && JSON.parse((body.match(/name="annotation"\r\n\r\n([\s\S]*?)\r\n--/) || [])[1] || 'null');
+  const selectHero = async () => {
+    // neu laden: der simulierte Auftrag gilt sonst als laufend und sperrt weitere Entwürfe
+    await page.goto(pageUrl);
+    await page.waitForTimeout(800);
+    await ov('.bar button[aria-pressed]').first().click();
+    await page.locator('section.hero').click({ position: { x: 5, y: 5 } });
+    await page.waitForTimeout(300);
+  };
+  body = null;
+  await selectHero();
+  await ov('#modio-prompt').fill('Hero extern gestalten');
+  await ov('button:has-text("In claude.ai gestalten")').click();
+  await page.waitForTimeout(600);
+  let a2 = annOf();
+  check('In claude.ai gestalten: Entwurf im Modus brief', a2?.mode === 'brief' && a2.prompt === 'Hero extern gestalten' && !a2.importHtml, JSON.stringify(a2)?.slice(0, 160));
+  body = null;
+  await selectHero();
+  await ov('#modio-prompt').fill('');
+  await ov('.claude-row input[type="file"]').setInputFiles({ name: 'entwurf.html', mimeType: 'text/html', buffer: Buffer.from('<!doctype html><html><body><section class="entwurf"><h2>Aus claude.ai</h2></section></body></html>') });
+  await page.waitForTimeout(800);
+  a2 = annOf();
+  check('HTML importieren (neuer Entwurf): HTML und Modus gesendet, Prompt optional', a2?.mode === 'import' && a2.importHtml.includes('Aus claude.ai') && a2.prompt.includes('claude.ai'), JSON.stringify(a2)?.slice(0, 160));
+
+  // Entwurfs-Panel: Briefing (von tests/run.sh erzeugt) kopieren/herunterladen und Import als neue Version
+  await page.unroute('**/api/sites/*/drafts');
+  await ov('.bar button[aria-controls="modio-drafts"]').click();
+  await page.waitForTimeout(400);
+  await ov('#modio-drafts button.ditem:has-text("D-001")').click();
+  await page.waitForTimeout(800);
+  await ov('#modio-drafts details.claude > summary').click();
+  await page.waitForTimeout(300);
+  check('Panel: Bereich „Gestaltung in claude.ai“ mit Briefing', (await ov('#modio-drafts details.claude').count()) === 1 && (await ov('#modio-drafts textarea.brieftext').inputValue()).includes('## Auftrag') && (await ov('#modio-drafts ul.brieffiles').textContent()).includes('D-001-element.html'));
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 5000 }).catch(() => null), ov('#modio-drafts ul.brieffiles button:has-text("D-001-element.html")').click()]);
+  check('Panel: Briefing-Datei herunterladen', dl && dl.suggestedFilename() === 'D-001-element.html', String(dl && dl.suggestedFilename()));
+  let impBody = null;
+  await page.route('**/api/sites/*/drafts/D-001/import', async (route) => {
+    impBody = route.request().postDataJSON();
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ job: { id: 'job-20261113000001-abcdef', type: 'draft', slug: SLUG, status: 'pending' } }) });
+  });
+  await ov('#modio-drafts input[data-fk="imp-note"]').fill('Abstände etwas größer');
+  await ov('#modio-drafts details.claude input[type="file"]').setInputFiles({ name: 'v3.html', mimeType: 'text/html', buffer: Buffer.from('<section><h2>Version aus claude.ai</h2></section>') });
+  await page.waitForTimeout(800);
+  check('Panel: HTML als neue Version importieren (mit Hinweis)', impBody?.html?.includes('Version aus claude.ai') && impBody.prompt === 'Abstände etwas größer', JSON.stringify(impBody)?.slice(0, 160));
+
   check('Keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
 } finally {
   await browser.close();

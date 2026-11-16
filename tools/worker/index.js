@@ -143,6 +143,17 @@ async function handle(job, logFile) {
       if (Number.isInteger(job.params?.version) && job.params.version > 0) args.push(String(job.params.version));
       return runScript('draft-apply.sh', args, logFile);
     }
+    case 'project-new':
+      return runScript('project-new.sh', [slug, String(job.params?.title || slug)], logFile);
+    case 'project-package':
+      return runScript('project-package.sh', [slug], logFile);
+    case 'project-export':
+      return runScript('project-export.sh', [slug], logFile);
+    case 'draft-brief': {
+      const d = String(job.params?.draft || '');
+      if (!/^D-\d{3,}$/.test(d)) return { code: 1, result: { status: 'error', error: 'Ungültiger Entwurf' } };
+      return runScript('draft-brief.sh', [slug, d], logFile);
+    }
     case 'draft-discard': {
       const d = String(job.params?.draft || '');
       if (!/^D-\d{3,}$/.test(d)) return { code: 1, result: { status: 'error', error: 'Ungültiger Entwurf' } };

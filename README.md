@@ -31,6 +31,15 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 10. Eigene Änderungen ohne Claude: Sobald Modio Änderungen erkennt, erscheint in der Leiste „Änderungen übernehmen (n)“. Erkannt werden im Inspektor geänderte Elemente (HTML, Text, Inline-Styles), im Styles-Panel geänderte CSS-Regeln (landen als Regel in `overrides.css`) und geänderte Dateien im Abzug (Editor, Chrome-DevTools-Workspaces). Im Panel wählst du aus, was übernommen wird (mit Diff). Alles läuft durch dieselbe Prüfung wie Claude-Schritte und wird ein Schritt A-xxx im Verlauf. Änderungen, die Scripts der Website selbst machen (beim Laden oder laufend), blendet Modio so weit wie möglich aus.
 9. Startseite → „Report erzeugen“ → `sites/<slug>/CHANGES.md`.
 11. Entwürfe: Element wählen → „Entwurf erstellen“. Claude gestaltet es ohne Altlasten als Komponente, die Vorschau zeigt die echte Seite. Im Panel „Entwürfe“ Versionen, „Aktuell“ (Taste V) und Bausteine live vergleichen, nachbessern, übernehmen. Details: [projektplan-erweiterung-entwurf.md](projektplan-erweiterung-entwurf.md). Das Ausgangsmaterial (`source.html`) kommt ungekürzt aus der Seitendatei, nicht aus dem auf 20 000 Zeichen gekürzten Browser-HTML. Ältere Entwürfe mit gekürztem Material werden bei der nächsten Version einmal nachgeladen. Vor dem ersten Entwurf misst Playwright das Hauptraster des Elements (Breite, Inhaltsbreite, Hauptspalten je Bildschirmbreite) in `layout.json`. Es ist für Claude verbindlich, innerhalb der Spalten bleibt die Gestaltung frei.
+12. Gestaltung in claude.ai: Element wählen, Auftrag eingeben → „In claude.ai gestalten“. Modio legt einen Entwurf ohne Version an und erstellt ein Briefing. Im Panel „Entwürfe“ unter „Gestaltung in claude.ai“: „Briefing kopieren“ und in einen neuen Chat auf claude.ai einfügen, die Dateien (Element-HTML, Hintergrundwissen, Screenshots) dort hochladen. Das fertige HTML-Artefakt herunterladen und mit „HTML importieren“ übernehmen: Claude bringt es ohne Neugestaltung ins Komponentenformat (Tokens, Hauptraster, Inhalte aus dem Abzug). Danach wie gewohnt mit Hinweisen nachbessern und übernehmen. Ein Import geht auch direkt im Annotationsdialog („HTML importieren …“) oder als neue Version jedes offenen Entwurfs.
+
+### Neue Designs ohne bestehende Website
+
+1. Startseite → „Neues Projekt (ohne Website)“: Titel und Kurzname. Modio legt `sites/<kurzname>/` mit einer Leinwand und Vorlagen unter `design/` an.
+2. Angaben pflegen: `design/notes.md` (Gestaltungsregeln), `design/projekt.md` und weitere `.md` (Angebot, Zielgruppen, Funktionen), `design/tokens-quelle.css` (Design-Tokens als CSS-Variablen, z. B. `--color-primary`, `--font-body`, `--space-m`).
+3. „Aktionen → Paket erstellen“: Die Variablen werden gesperrte Tokens, `sites/<kurzname>/paket/` enthält CLAUDE.md, tokens.css, Regeln und Hintergrund. In claude.ai als Projekt verwenden (CLAUDE.md als Projektanweisungen, übrige Dateien als Projektwissen, je Design ein Chat) oder lokal mit Claude Code im Paket-Ordner arbeiten (Ergebnisse unter `entwuerfe/`). Details in `paket/README.md`.
+4. Leinwand öffnen, freien Platz wählen → „HTML importieren …“ (oder „In claude.ai gestalten“ für ein kurzes Briefing, bzw. „Entwurf erstellen“ mit Claude Code im Werkzeug). Finetuning wie bei jedem Entwurf, dann übernehmen.
+5. „Aktionen → Komponenten exportieren“: `sites/<kurzname>/export/<zeitpunkt>/` mit je Komponente component.html und component.css (mit den eigenen Variablennamen), tokens.css, komponenten.css und vorschau.html.
 
 Einstellungen in der `.env` (alle optional). Werte, die beim Aufruf eines Skripts ausdrücklich gesetzt sind (`CLAUDE_EFFORT=max ./scripts/…`), haben Vorrang vor der `.env`. `CLAUDE_BARE=true` (alte Schreibweise) gilt als `CLAUDE_AUTH=api`.
 
@@ -46,6 +55,8 @@ CLAUDE_SETTINGS_FILE=./tools/worker/claude-settings.json
 CLAUDE_MAX_BUDGET_USD=1.50                         # je Annotation; leer oder 0 = ohne Obergrenze
 DRAFT_MAX_BUDGET_USD=4.00                          # je Entwurfslauf
 DRAFT_SOURCE_MAX_BYTES=200000                      # Ausgangsmaterial eines Entwurfs (Element aus der Seitendatei), darüber gekürzt mit Warnung
+DRAFT_IMPORT_EFFORT=medium                         # Übernahme eines Imports aus claude.ai (keine Neugestaltung)
+DRAFT_IMPORT_MAX_BUDGET_USD=2.00                   # je Übernahme eines Imports
 # DESIGN_SKILL_FILE=/pfad/zu/SKILL.md              # nicht gesetzt = installiertes Plugin frontend-design, leer gesetzt = ohne Skill
 DESIGN_DOCS_MAX_BYTES=60000                        # weitere design/*.md als Hintergrund
 CONTEXT_HISTORY_COUNT=5

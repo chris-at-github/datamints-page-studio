@@ -203,11 +203,13 @@ async function readDraft(slug, id) {
   const versions = await Promise.all((d.versions || []).map(async (v) => {
     const meta = await readJson(path.join(dir, `v${v.v}`, 'meta.json'), {});
     const befundText = await fsp.readFile(path.join(dir, `v${v.v}`, 'befund.json'), 'utf8').catch(() => null);
-    return { v: v.v, prompt: v.prompt, created: v.created, summary: v.summary, name: v.name, title: v.title, costUsd: v.costUsd, warnings: v.warnings || [],
+    return { v: v.v, prompt: v.prompt, created: v.created, summary: v.summary, name: v.name, title: v.title, costUsd: v.costUsd, warnings: v.warnings || [], source: v.source || null,
       bausteine: Array.isArray(meta.bausteine) ? meta.bausteine.slice(0, 30) : [],
       befund: befundText === null ? [] : validateBefund(befundText).befund, platzhalter: v.platzhalter || 0 };
   }));
+  const brief = await readJson(path.join(dir, 'brief', 'brief.json'), null);
   return { id: d.id, page: d.page, selector: d.selector, prompt: d.prompt, created: d.created, status: draftStatus(slug, d),
+    external: d.external === true, brief: brief ? { created: brief.created } : null,
     appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, revises: d.revises || null, versions };
 }
 
@@ -412,6 +414,15 @@ function parseAnnotationUpload(req, jobId) {
   });
 }
 
+// HTML aus claude.ai (Artefakt): nur Form prüfen, bereinigt wird im Skript
+const IMPORT_MAX_BYTES = 1536 * 1024;
+function validateImportHtml(html) {
+  if (typeof html !== 'string' || !html.trim()) return 'HTML-Datei fehlt';
+  if (Buffer.byteLength(html) > IMPORT_MAX_BYTES) return 'HTML-Datei zu groß (höchstens 1,5 MB)';
+  if (!/<[a-z!]/i.test(html)) return 'Die Datei enthält kein HTML';
+  return null;
+}
+
 function validateAnnotation(a, uploadCount) {
   if (!a || typeof a !== 'object') return 'Annotation fehlt';
   if (typeof a.prompt !== 'string' || !a.prompt.trim()) return 'Prompt fehlt';
@@ -585,6 +596,19 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/sites' && req.method === 'GET') return send(res, 200, await readJson(path.join(STATE_DIR, 'sites.json'), { sites: [] }));
 
+  if (p === '/api/projects' && req.method === 'POST') {
+    // Neues Projekt ohne Website (Gestaltung neuer Designs)
+    const body = await readBody(req);
+    const slug = String(body.slug || '').trim();
+    const title = String(body.title || '').trim() || slug;
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Kurzname (a-z, 0-9, Bindestrich)');
+    if (title.length > 80 || /[\0\n]/.test(title)) return sendError(res, 400, 'Titel zu lang (höchstens 80 Zeichen)');
+    if (siteExists(slug)) return sendError(res, 409, `${slug} existiert bereits`);
+    const pending = await listJobs((j) => (j.type === 'project-new' || j.type === 'site-new') && j.slug === slug);
+    if (pending.some((j) => ACTIVE.includes(j.status))) return sendError(res, 409, `${slug} wird bereits angelegt`);
+    return send(res, 202, { job: await createJob('project-new', slug, { slug, title }) });
+  }
+
   if (p === '/api/sites' && req.method === 'POST') {
     const body = await readBody(req);
     if (!validHttpUrl(body.url)) return sendError(res, 400, 'Bitte eine gültige http- oder https-URL angeben');
@@ -634,7 +658,26 @@ async function handleApi(req, res, url) {
     if (v.errors.length) return sendError(res, 409, `Version ungültig: ${v.errors.join('; ')}`);
     return send(res, 200, { version: Number(vs), name: v.name, html: v.html });
   }
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/drafts\/(D-\d{3,})(?:\/(versions|apply|discard))?$/))) {
+  // Briefing für claude.ai: Text und Dateien (nur die in brief.json genannten)
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/drafts\/(D-\d{3,})\/brief(?:\/([A-Za-z0-9._-]{1,100}))?$/)) && req.method === 'GET') {
+    const [, slug, id, file] = m;
+    if (!validSlug(slug) || !siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    const bdir = path.join(siteDir(slug), 'drafts', id, 'brief');
+    const meta = await readJson(path.join(bdir, 'brief.json'), null);
+    if (!meta) return sendError(res, 404, 'Kein Briefing vorhanden');
+    if (!file) {
+      const text = await fsp.readFile(path.join(bdir, meta.text || 'briefing.md'), 'utf8').catch(() => '');
+      const files = await Promise.all((meta.files || []).map(async (f) => ({ ...f, size: (await fsp.stat(path.join(bdir, f.file)).catch(() => ({ size: 0 }))).size })));
+      return send(res, 200, { created: meta.created, text, files });
+    }
+    if (!(meta.files || []).some((f) => f.file === file)) return sendError(res, 404, 'Datei nicht im Briefing');
+    const buf = await fsp.readFile(path.join(bdir, file)).catch(() => null);
+    if (!buf) return sendError(res, 404, 'Datei fehlt');
+    const type = file.endsWith('.png') ? 'image/png' : file.endsWith('.md') ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8';
+    // als Download, nie als Seite im Origin des Werkzeugs anzeigen
+    return send(res, 200, buf, { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${file}"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
+  }
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/drafts\/(D-\d{3,})(?:\/(versions|apply|discard|brief|import))?$/))) {
     const [, slug, id, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -643,7 +686,21 @@ async function handleApi(req, res, url) {
     if (!action && req.method === 'GET') return send(res, 200, { draft });
     if (!action || req.method !== 'POST') return sendError(res, 405, 'Methode nicht erlaubt');
     if (draft.status !== 'open') return sendError(res, 409, `${id} ist nicht mehr offen`);
-    const body = await readBody(req);
+    const body = await readBody(req, action === 'import' ? IMPORT_MAX_BYTES + 64 * 1024 : undefined);
+    if (action === 'brief') {
+      if (await draftBusyCheck(res, slug)) return;
+      return send(res, 202, { job: await createJob('draft-brief', slug, { draft: id }) });
+    }
+    if (action === 'import') {
+      const err = validateImportHtml(body.html);
+      if (err) return sendError(res, 400, err);
+      const prompt = typeof body.prompt === 'string' ? body.prompt.trim().slice(0, 10000) : '';
+      if (await draftBusyCheck(res, slug)) return;
+      const jobId = newJobId();
+      const file = `jobs/assets/${jobId}-import.html`;
+      await fsp.writeFile(path.join(ROOT, file), body.html);
+      return send(res, 202, { job: await createJob('draft', slug, { draft: id, prompt: prompt || 'Übernahme des Entwurfs aus claude.ai', importFile: file }, jobId) });
+    }
     if (action === 'versions') {
       const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
       if (!prompt) return sendError(res, 400, 'Prompt fehlt');
@@ -676,10 +733,13 @@ async function handleApi(req, res, url) {
     sse.emit('queue', { slug });
     return send(res, 200, { items: await readQueue(slug) });
   }
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts|package|export)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    if ((action === 'recrawl' || action === 'pages') && (await readJson(path.join(siteDir(slug), 'site.json'), {})).kind === 'neu') {
+      return sendError(res, 400, 'Neues Projekt ohne Website: Neu einlesen und Seiten hinzufügen gibt es hier nicht');
+    }
 
     if (action === 'history' && req.method === 'GET') {
       return send(res, 200, await readJson(path.join(siteDir(slug), '.history.json'), { slug, head: null, baseline: null, steps: [] }));
@@ -732,7 +792,9 @@ async function handleApi(req, res, url) {
       if (await draftBusyCheck(res, slug)) return req.resume();
       const id = newJobId();
       const { annotation, files } = await parseAnnotationUpload(req, id);
-      const err = validateAnnotation(annotation, files.length) || validateBausteine(annotation);
+      const mode = annotation && (annotation.mode === 'brief' || annotation.mode === 'import') ? annotation.mode : null;
+      if (mode === 'import' && annotation && (typeof annotation.prompt !== 'string' || !annotation.prompt.trim())) annotation.prompt = 'Übernahme des Entwurfs aus claude.ai';
+      const err = validateAnnotation(annotation, files.length) || validateBausteine(annotation) || (mode === 'import' ? validateImportHtml(annotation.importHtml) : null);
       if (err) {
         await Promise.all(files.map((f) => fsp.rm(path.join(ROOT, f), { force: true })));
         return sendError(res, 400, err);
@@ -741,6 +803,11 @@ async function handleApi(req, res, url) {
       const params = { site: slug, page, selector, html, text, viewport, prompt, references,
         rect: annotation.rect ? { width: Math.round(Number(annotation.rect.width)) || null, height: Math.round(Number(annotation.rect.height)) || null } : null,
         bausteine: annotation.bausteine || [] };
+      if (mode === 'brief') params.mode = 'brief';
+      if (mode === 'import') {
+        params.importFile = `jobs/assets/${id}-import.html`;
+        await fsp.writeFile(path.join(ROOT, params.importFile), annotation.importHtml);
+      }
       return send(res, 202, { job: await createJob('draft', slug, params, id) });
     }
     if (action === 'queue') {
@@ -777,6 +844,15 @@ async function handleApi(req, res, url) {
       await Promise.all(files.map((f) => fsp.rm(path.join(dir, f), { force: true })));
       sse.emit('queue', { slug });
       return send(res, 202, { job });
+    }
+    if (action === 'package') {
+      // Tokens aus tokens-quelle.css übernehmen (Commit unter design/) und Paket für Claude erzeugen
+      if (await busyCheck(res, slug, 'Das Paket')) return;
+      return send(res, 202, { job: await createJob('project-package', slug, {}) });
+    }
+    if (action === 'export') {
+      if (await draftBusyCheck(res, slug)) return;
+      return send(res, 202, { job: await createJob('project-export', slug, {}) });
     }
     if (action === 'recrawl') {
       const body = await readBody(req);

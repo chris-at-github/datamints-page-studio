@@ -12,8 +12,10 @@ for dir in "$SITES_DIR"/*/; do
   last="$(git -C "$dir" log -1 --format=%aI 2>/dev/null || echo "")"
   report="false"; [[ -f "$dir/CHANGES.md" ]] && report="true"
   pages=0; [[ -f "$dir/urls.txt" ]] && pages="$(grep -c . "$dir/urls.txt" || true)"
-  entry="$(jq -c --argjson steps "$steps" --arg last "$last" --argjson report "$report" --argjson pages "${pages:-0}" \
-    '{slug, url, host, entry, crawledAt, steps:$steps, pages:$pages, lastChange:$last, hasReport:$report}' "$dir/site.json")"
+  [[ "$(jq -r '.kind // ""' "$dir/site.json")" == neu ]] && pages="$(find "$dir/www" -name '*.html' -type f | wc -l)"
+  comps=0; [[ -d "$dir/components" ]] && comps="$(find "$dir/components" -maxdepth 1 -name 'mx-*.css' | wc -l)"
+  entry="$(jq -c --argjson steps "$steps" --arg last "$last" --argjson report "$report" --argjson pages "${pages:-0}" --argjson comps "${comps:-0}" \
+    '{slug, url, host, entry, crawledAt, kind:(.kind // "abzug"), title:(.title // null), created:(.created // null), steps:$steps, pages:$pages, components:$comps, lastChange:$last, hasReport:$report}' "$dir/site.json")"
   SITES="$(jq -c --argjson e "$entry" '. + [$e]' <<<"$SITES")"
 done
 OUT="$(jq -c '{sites: (. | sort_by(.slug)), updated: (now | todate)}' <<<"$SITES")"

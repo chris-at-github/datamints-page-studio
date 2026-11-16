@@ -1,0 +1,21 @@
+/* Design-Tokens des Projekts als CSS Custom Properties.
+   Modio übernimmt die Variablen im :root-Block mit „Paket erstellen“ als gesperrte Tokens.
+   Der Name bestimmt die Kategorie: --color-…, --font-…, --size-… (auch --text-…, --fs-…),
+   --radius-…, --space-… (auch --spacing-…, --gap-…), --shadow-…, --breakpoint-… (auch --bp-…).
+   Werte: Farben (Hex, rgb, hsl), Schriftlisten, Maße (px, rem, %, clamp(), calc()), Schatten.
+   Verweise auf andere Variablen dieser Datei sind erlaubt: --color-link: var(--color-primary);
+   Die Exporte verwenden wieder genau diese Namen. */
+:root {
+  /* Beispiele – ersetzen:
+  --color-primary: #0b5fa5;
+  --color-text: #1f2328;
+  --color-surface: #ffffff;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-heading: "Inter", system-ui, sans-serif;
+  --size-content: 1200px;
+  --text-base: 1rem;
+  --radius-base: 6px;
+  --space-m: 1.5rem;
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.08);
+  */
+}

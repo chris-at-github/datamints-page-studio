@@ -11,6 +11,9 @@ Modio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne Element-
 | Skript | Aufruf |
 |---|---|
 | `site-new.sh` | `site-new.sh <url> [slug] [urls.txt]` |
+| `project-new.sh` | `project-new.sh <slug> [titel] [plätze]` |
+| `project-package.sh` | `project-package.sh <slug>` |
+| `project-export.sh` | `project-export.sh <slug>` |
 | `crawl.sh` | `crawl.sh <slug>` |
 | `clean.sh` | `clean.sh <slug>` |
 | `pages-add.sh` | `pages-add.sh <slug> <urls.txt>` |
@@ -37,6 +40,7 @@ Modio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne Element-
 | `tokens-scan.sh` | `tokens-scan.sh <slug>` |
 | `tokens-propose.sh` | `tokens-propose.sh <slug>` |
 | `draft-create.sh` | `draft-create.sh <slug> <job.json>` |
+| `draft-brief.sh` | `draft-brief.sh <slug> <entwurf-id>` |
 | `draft-apply.sh` | `draft-apply.sh <slug> <entwurf-id> [version]` |
 | `draft-discard.sh` | `draft-discard.sh <slug> <entwurf-id>` |
 

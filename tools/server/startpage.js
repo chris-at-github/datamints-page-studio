@@ -7,19 +7,28 @@ const dateDe = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle
 const domainOf = (u) => { try { return new URL(u).host; } catch { return u; } };
 
 function siteRow(s) {
+  const neu = s.kind === 'neu';
+  const sub = neu
+    ? `<span class="muted">Neues Projekt${s.title && s.title !== s.slug ? ' · ' + esc(s.title) : ''}</span>`
+    : `<a class="muted site-url" href="${esc(s.url)}" title="${esc(s.url)}" rel="noreferrer noopener" target="_blank">${esc(s.host || domainOf(s.url))}</a>`;
+  const menu = neu
+    ? `<button type="button" role="menuitem" data-action="package">Paket erstellen</button>
+          <button type="button" role="menuitem" data-action="export">Komponenten exportieren</button>`
+    : `<button type="button" role="menuitem" data-action="pages">Seiten hinzufügen</button>
+          <button type="button" role="menuitem" data-action="recrawl">Neu einlesen</button>${s.components ? `
+          <button type="button" role="menuitem" data-action="export">Komponenten exportieren</button>` : ''}`;
   return `<tr data-slug="${esc(s.slug)}">
-    <td><strong>${esc(s.slug)}</strong><br><a class="muted site-url" href="${esc(s.url)}" title="${esc(s.url)}" rel="noreferrer noopener" target="_blank">${esc(s.host || domainOf(s.url))}</a></td>
+    <td><strong>${esc(s.slug)}</strong><br>${sub}</td>
     <td class="num">${esc(s.pages ?? '–')}</td>
     <td class="num">${esc(s.steps)}</td>
-    <td>${esc(dateDe(s.crawledAt))}</td>
+    <td>${esc(dateDe(neu ? s.created : s.crawledAt))}</td>
     <td>${esc(dateDe(s.lastChange))}</td>
     <td class="actions">
       <a class="btn primary" href="/s/${esc(s.slug)}/">Öffnen</a>
       <span class="menu-wrap">
         <button class="btn menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-${esc(s.slug)}" aria-label="Weitere Aktionen für ${esc(s.slug)}">Aktionen <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
         <span class="menu" id="menu-${esc(s.slug)}" role="menu" hidden>
-          <button type="button" role="menuitem" data-action="pages">Seiten hinzufügen</button>
-          <button type="button" role="menuitem" data-action="recrawl">Neu einlesen</button>
+          ${menu}
           <button type="button" role="menuitem" data-action="report">Report erzeugen</button>
           ${s.hasReport ? `<a role="menuitem" href="/report/${esc(s.slug)}" target="_blank">Report ansehen</a>` : ''}
         </span>
@@ -116,7 +125,19 @@ export function renderStartPage({ sites, token }) {
     </form>
   </section>
   <section>
-    <h2>Websites</h2>
+    <h2>Neues Projekt (ohne Website)</h2>
+    <p class="muted">Für neue Designs ohne bestehende Website. Modio legt die Ordnerstruktur an; danach die Angaben in <code>sites/&lt;kurzname&gt;/design/</code> pflegen (notes.md, projekt.md, tokens-quelle.css) und „Paket erstellen“ wählen.</p>
+    <form id="new-project">
+      <div class="row">
+        <div><label for="p-title">Titel</label><input id="p-title" name="title" type="text" maxlength="80" required placeholder="z. B. Relaunch Musterfirma"></div>
+        <div><label for="p-slug">Kurzname</label><input id="p-slug" name="slug" type="text" required pattern="[a-z0-9][a-z0-9-]{0,62}" placeholder="musterfirma-neu"></div>
+      </div>
+      <p><button class="btn primary" type="submit">Projekt anlegen</button></p>
+      <div id="p-msg" role="status" aria-live="polite"></div>
+    </form>
+  </section>
+  <section>
+    <h2>Websites und Projekte</h2>
     <table>
       <thead><tr><th>Website</th><th class="num">Seiten</th><th class="num">Schritte</th><th>Abzug</th><th>Letzte Änderung</th><th class="actions">Aktionen</th></tr></thead>
       <tbody id="sites">${rows}</tbody>
@@ -148,7 +169,7 @@ export function renderStartPage({ sites, token }) {
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
+  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');
@@ -172,6 +193,18 @@ export function renderStartPage({ sites, token }) {
       upsert(job);
       f.reset();
     } catch (err) { say(err.message, 'err'); }
+  });
+
+  document.getElementById('new-project').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const pm = document.getElementById('p-msg');
+    try {
+      const { job } = await api('/api/projects', { method: 'POST', body: JSON.stringify({ slug: f.slug.value.trim(), title: f.title.value.trim() }) });
+      pm.textContent = 'Projekt ' + job.slug + ' wird angelegt …'; pm.className = 'ok';
+      upsert(job);
+      f.reset();
+    } catch (err) { pm.textContent = err.message; pm.className = 'err'; }
   });
 
   // Aktionsmenü je Website
@@ -293,6 +326,11 @@ export function renderStartPage({ sites, token }) {
       if ((j.type === 'local-commit' || j.type === 'inspect-apply') && j.status === 'done' && j.result) details.append(j.result.status === 'nochange' ? 'keine Änderungen' : 'übernommen als ' + (j.result.annotationId || ''));
       if ((j.type === 'local-commit' || j.type === 'inspect-apply') && j.status === 'review') details.append('Prüfung nötig – im Overlay entscheiden');
       if (j.type === 'areas-sync' && j.status === 'done' && j.result) details.append((j.result.areas || []).join(', ') + ': ' + ((j.result.changed || []).length ? (j.result.changed || []).length + ' Seite(n) angeglichen' : 'schon gleich'));
+      if (j.type === 'project-new' && j.status === 'done' && j.result) details.append('Angaben pflegen in ' + j.result.design + ', dann „Paket erstellen“');
+      if ((j.type === 'project-package' || j.type === 'project-export') && j.status === 'done' && j.result) {
+        details.append((j.type === 'project-package' ? 'Paket: ' : (j.result.components || []).length + ' Komponente(n): ') + j.result.dir);
+        for (const w of j.result.warnings || []) { const d = document.createElement('div'); d.className = 'muted'; d.textContent = '⚠ ' + w; details.append(d); }
+      }
       if (j.type === 'report' && j.status === 'done') { const a = document.createElement('a'); a.href = '/report/' + j.slug; a.target = '_blank'; a.textContent = 'Report ansehen'; details.append(a); }
       if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; details.append(e); }
       const when = new Date(j.created).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
@@ -306,7 +344,7 @@ export function renderStartPage({ sites, token }) {
   const es = new EventSource('/api/events?token=' + encodeURIComponent(TOKEN));
   es.addEventListener('job', (e) => upsert(JSON.parse(e.data)));
   // Liste neu laden, aber keine laufende Eingabe verwerfen
-  es.addEventListener('sites', () => { if (!document.getElementById('url').value && !document.getElementById('urls').value && !pagesDialog.open) location.reload(); });
+  es.addEventListener('sites', () => { if (!document.getElementById('url').value && !document.getElementById('urls').value && !document.getElementById('p-slug').value && !document.getElementById('p-title').value && !pagesDialog.open) location.reload(); });
 })();
 </script>
 </body>

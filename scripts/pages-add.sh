@@ -10,6 +10,7 @@ source "$(dirname "$0")/lib/common.sh"
 require_cmd git jq wget node
 source "$LIB_DIR/crawl.sh"
 require_site "${1:-}"
+[[ "$(jq -r '.kind // ""' "$SITE/site.json")" != neu ]] || die "Neues Projekt ohne Website: hier gibt es keinen Abzug zum Einlesen"
 URLS_FILE="${2:-}"
 [[ -f "$URLS_FILE" ]] || usage "pages-add.sh <slug> <urls.txt>"
 [[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen. Erst übernehmen („Änderungen übernehmen“ im Overlay) oder verwerfen."

@@ -48,6 +48,10 @@ if (( rc != 0 )); then
   restore
   die "$(jq -r '.error // "Übernahme fehlgeschlagen"' <<<"$OUT" 2>/dev/null || echo "Übernahme fehlgeschlagen")"
 fi
+# Neues Projekt: auf der Leinwand bleibt immer ein freier Platz für das nächste Design
+if [[ "$(jq -r '.kind // ""' "$SITE/site.json")" == "neu" ]]; then
+  node "$LIB_DIR/draft.mjs" ensure-platz "$SITE" "$PAGE" >/dev/null || log "$DID: freier Platz konnte nicht ergänzt werden"
+fi
 # Platzhalter und offene Befundpunkte in der Zusammenfassung des Schritts (Report, Verlauf)
 tmp="$(mktemp)"
 jq --argjson o "$OUT" '.result.summary += (

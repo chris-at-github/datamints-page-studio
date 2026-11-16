@@ -5,6 +5,7 @@
 source "$(dirname "$0")/lib/common.sh"
 require_cmd git jq
 require_site "${1:-}"
+[[ "$(jq -r '.kind // ""' "$SITE/site.json")" != neu ]] || die "Neues Projekt ohne Website: hier gibt es keinen Abzug zum Einlesen"
 KEEP_DESIGN=true
 case "${2:-}" in
   ""|--keep-design) ;;
