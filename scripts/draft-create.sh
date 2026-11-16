@@ -65,7 +65,7 @@ write_source() {
     note="Inhalt wird auf der Seite per Script erzeugt, Material aus dem Browser"
   else
     src=browser; printf '%s' "$browser" >"$target"
-    note="Element in der Seitendatei nicht gefunden ($(jq -r '.error // "unbekannt"' <<<"$ex" 2>/dev/null)), Material aus dem Browser"
+    note="Element in der Seitendatei nicht gefunden ($(jq -r '.error // "unbekannt"' <<<"$ex" 2>/dev/null || echo "Ausgabe unlesbar")), Material aus dem Browser"
     [[ "$browser" == *"…" ]] && truncated=true
   fi
   if (( $(wc -c <"$target") > SOURCE_MAX )); then

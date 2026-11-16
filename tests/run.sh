@@ -24,7 +24,7 @@ if ! curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then
   SERVER_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.3; done
 fi
-cleanup() { [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; [[ -n "${SRV_PID:-}" ]] && kill "$SRV_PID" 2>/dev/null; rm -rf "$S" "sites/modio-test-neu"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
+cleanup() { [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; [[ -n "${SRV_PID:-}" ]] && kill "$SRV_PID" 2>/dev/null; [[ -n "${TEST_JOBS_DIR:-}" ]] && rm -rf "$TEST_JOBS_DIR"; rm -rf "$S" "sites/modio-test-neu"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 rm -rf "$S"
 
@@ -316,7 +316,9 @@ fi
 check "Briefing: Originalseite mit Live-URL und Fundstelle" 'sed -n "/^## Originalseite/,/^## Raster/p" "$D/brief/briefing.md" | grep -qx "http://127.0.0.1:$PORT/" && grep -q "CSS-Selektor:" "$D/brief/briefing.md"'
 check "Briefing nicht im Abzug versioniert" '[[ -z "$(git -C "$S" status --porcelain)" ]]'
 SPORT="${TEST_SERVER_PORT:-3998}"; STOKEN="test-token-0123456789abcdef"
-MODIO_API_TOKEN="$STOKEN" BRIDGE_PORT="$SPORT" node tools/server/index.js >/dev/null 2>&1 &
+# Eigener Job-Ordner: ein laufender Worker darf die Test-Jobs nicht aufgreifen
+TEST_JOBS_DIR="$(mktemp -d)"; export TEST_JOBS_DIR
+JOBS_DIR="$TEST_JOBS_DIR" MODIO_API_TOKEN="$STOKEN" BRIDGE_PORT="$SPORT" node tools/server/index.js >/dev/null 2>&1 &
 SRV_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$SPORT/" && break; sleep 0.3; done
 check "Server: Vorschau und Entwurfs-API" 'node tests/draft-server-test.mjs "http://127.0.0.1:$SPORT" "$SLUG" "$ENTRY" "$STOKEN" before'
@@ -387,6 +389,11 @@ OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$
 TD="$(jq -r .draft <<<"$OUT")"
 check "Element nicht im Abzug: Browser-Material mit sichtbarer Warnung" 'jq -e ".material.source == \"browser\" and .material.truncated == true" "$S/drafts/$TD/draft.json" >/dev/null && jq -e "[.warnings[] | select(test(\"Material unvollständig\"))] | length == 1" <<<"$OUT" >/dev/null'
 ./scripts/draft-discard.sh "$SLUG" "$TD" >/dev/null 2>&1; rm -f "$JOBT" logs/claude-job-test-draft-trunc*.json logs/claude-job-test-draft-trunc*.stderr.log
+BIGD="$(mktemp -d)"; mkdir -p "$BIGD/www"
+node -e 'require("fs").writeFileSync(process.argv[1], "<html><body><div id=\"gross\">" + "<p>Produktkachel mit viel Text</p>\n".repeat(8000) + "</div></body></html>")' "$BIGD/www/gross.html"
+BIGOUT="$(node scripts/lib/draft.mjs extract "$BIGD" /gross.html "#gross" 2>/dev/null | (sleep 0.3; cat))"
+check "Großes Element (> 64 KB) kommt über die Pipe vollständig an" 'jq -e ".count == 1 and (.html | length) > 200000" <<<"$BIGOUT" >/dev/null'
+rm -rf "$BIGD"
 jq -n --arg d "$DN" '{id:"job-test-draft2", params:{draft:$d, prompt:"Etwas ruhiger"}}' >"$JOBF"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
 check "Neue Version 2 mit Session" '[[ "$(jq -r .version <<<"$OUT")" == 2 ]] && jq -e ".versions | length == 2" "$S/drafts/$DN/draft.json" >/dev/null && [[ "$(jq -r .sessionId "$S/drafts/$DN/draft.json")" == fake-session ]]'

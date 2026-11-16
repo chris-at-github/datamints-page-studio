@@ -698,7 +698,7 @@ async function handleApi(req, res, url) {
       if (await draftBusyCheck(res, slug)) return;
       const jobId = newJobId();
       const file = `jobs/assets/${jobId}-import.html`;
-      await fsp.writeFile(path.join(ROOT, file), body.html);
+      await fsp.writeFile(path.join(JOBS_DIR, 'assets', path.basename(file)), body.html);
       return send(res, 202, { job: await createJob('draft', slug, { draft: id, prompt: prompt || 'Übernahme des Entwurfs aus claude.ai', importFile: file }, jobId) });
     }
     if (action === 'versions') {
@@ -806,7 +806,7 @@ async function handleApi(req, res, url) {
       if (mode === 'brief') params.mode = 'brief';
       if (mode === 'import') {
         params.importFile = `jobs/assets/${id}-import.html`;
-        await fsp.writeFile(path.join(ROOT, params.importFile), annotation.importHtml);
+        await fsp.writeFile(path.join(JOBS_DIR, 'assets', path.basename(params.importFile)), annotation.importHtml);
       }
       return send(res, 202, { job: await createJob('draft', slug, params, id) });
     }

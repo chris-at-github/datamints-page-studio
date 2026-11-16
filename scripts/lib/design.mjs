@@ -13,6 +13,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readConfig as readConsistency, areaError } from './consistency.mjs';
+import { exitJson } from './stdout.mjs';
 
 export const CATEGORIES = ['color', 'font', 'size', 'radius', 'space', 'shadow', 'breakpoint'];
 const KEY_RE = new RegExp(`^(${CATEGORIES.join('|')})\\.[a-z0-9]+(?:-[a-z0-9]+)*$`);
@@ -459,6 +460,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   } catch (e) {
     r = { code: 1, out: { status: 'error', error: e.message } };
   }
-  process.stdout.write(JSON.stringify(r.out) + '\n');
-  process.exit(r.code);
+  exitJson(r.out, r.code);
 }

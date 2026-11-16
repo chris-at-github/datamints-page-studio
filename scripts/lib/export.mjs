@@ -8,8 +8,9 @@ import path from 'node:path';
 import { loadCheerio, sitePages } from './consistency.mjs';
 import { readText, extractElement } from './draft.mjs';
 import { cssVarName } from './design.mjs';
+import { exitJson } from './stdout.mjs';
 
-const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + '\n'); process.exit(code); };
+const out = exitJson;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 

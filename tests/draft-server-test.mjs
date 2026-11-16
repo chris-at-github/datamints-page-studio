@@ -2,6 +2,8 @@
 // Aufruf: node tests/draft-server-test.mjs <base-url> <slug> <entry> <token> before|after
 const [BASE, SLUG, ENTRY, TOKEN, MODE] = process.argv.slice(2);
 const auth = { 'X-Modio-Token': TOKEN };
+// Eigener Job-Ordner des Test-Servers (nicht jobs/, sonst greift ein laufender Worker die Test-Jobs auf)
+const JOBS = process.env.TEST_JOBS_DIR || 'jobs';
 let fail = 0;
 const check = (name, cond, extra = '') => {
   if (cond) console.log(`  \x1b[32m✓\x1b[0m ${name}`);
@@ -59,9 +61,9 @@ if (MODE === 'before') {
   check('Import über 1,5 MB abgewiesen', ib.status === 400 || ib.status === 413, ib.status);
   const io = await post({ html: '<section><h2>Import</h2></section>', prompt: 'Bitte übernehmen' });
   const ij = io.ok ? await io.json() : {};
-  const jf = ij.job ? `jobs/pending/${ij.job.id}.json` : '';
+  const jf = ij.job ? `${JOBS}/pending/${ij.job.id}.json` : '';
   const job = jf && fs.existsSync(jf) ? JSON.parse(fs.readFileSync(jf, 'utf8')) : null;
-  check('Import legt Entwurfs-Job mit Import-Datei an', io.status === 202 && job?.type === 'draft' && job.params.draft === 'D-001' && /^jobs\/assets\/job-[0-9a-f-]+-import\.html$/.test(job.params.importFile) && fs.readFileSync(job.params.importFile, 'utf8').includes('<h2>Import</h2>'), io.status);
+  check('Import legt Entwurfs-Job mit Import-Datei an', io.status === 202 && job?.type === 'draft' && job.params.draft === 'D-001' && /^jobs\/assets\/job-[0-9a-f-]+-import\.html$/.test(job.params.importFile) && fs.readFileSync(`${JOBS}/assets/${job.params.importFile.split('/').pop()}`, 'utf8').includes('<h2>Import</h2>'), io.status);
   if (job) { fs.rmSync(jf, { force: true }); fs.rmSync(job.params.importFile, { force: true }); }
 } else {
   const html = await (await fetch(page)).text();

@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadCheerio, sitePages } from './consistency.mjs';
+import { exitJson } from './stdout.mjs';
 
 function readHtml(file) {
   const buf = fs.readFileSync(file);
@@ -17,7 +18,7 @@ function readHtml(file) {
   return { text: buf.toString('latin1'), enc: 'latin1' };
 }
 
-const fail = (msg, code = 1) => { process.stdout.write(JSON.stringify({ error: msg }) + '\n'); process.exit(code); };
+const fail = (msg, code = 1) => exitJson({ error: msg }, code);
 
 const [site, payloadFile] = process.argv.slice(2);
 if (!site || !payloadFile) fail('Aufruf: node inspect.mjs <site-dir> <payload.json>', 2);

@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadCheerio, sitePages } from './consistency.mjs';
+import { writeStdout, exitJson } from './stdout.mjs';
 
 export const NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 export const MAX_HTML = 200 * 1024;
@@ -301,7 +302,7 @@ export function layerLegacyCss(html) {
 
 // ---------- Kommandozeile ----------
 
-const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + '\n'); process.exit(code); };
+const out = exitJson;
 
 async function main() {
   const [cmd, siteDir, draftDir, versionArg, pageArg, selector] = process.argv.slice(2);
@@ -315,7 +316,7 @@ async function main() {
     const { html, ...info } = r;
     out(info);
   }
-  if (cmd === 'platz') { process.stdout.write(platzHtml(Number(process.argv[3]) || 1)); process.exit(0); }
+  if (cmd === 'platz') { writeStdout(platzHtml(Number(process.argv[3]) || 1)); process.exit(0); }
   if (cmd === 'ensure-platz') {
     // node draft.mjs ensure-platz <site-dir> <seite>
     const [, sDir, pageRel] = process.argv.slice(2);

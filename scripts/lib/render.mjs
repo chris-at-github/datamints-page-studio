@@ -13,8 +13,9 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { layerLegacyCss } from './draft.mjs';
+import { exitJson } from './stdout.mjs';
 
-const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + '\n'); process.exit(code); };
+const out = exitJson;
 
 const MIME = {
   '.html': 'text/html', '.htm': 'text/html', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
