@@ -310,6 +310,7 @@ jq '.versions += [{v:2, prompt:"Zweite Fassung", name:"hero", title:"Hero 2", su
 OUT="$(./scripts/draft-brief.sh "$SLUG" D-001 2>/dev/null)" || true
 check "Briefing: Text, Element-HTML und Übersicht" 'jq -e ".status == \"ok\"" <<<"$OUT" >/dev/null && [[ -f "$D/brief/briefing.md" && -f "$D/brief/D-001-element.html" && -f "$D/brief/brief.json" ]] && cmp -s "$D/source.html" "$D/brief/D-001-element.html"'
 check "Briefing: Auftrag, Token-Block und Ausgabeformat" 'B="$D/brief/briefing.md"; grep -q "^## Auftrag" "$B" && grep -q -- "--modio-color-primary" "$B" && grep -q "Keine React-Komponente" "$B" && grep -q "D-001-element.html" "$B"'
+check "Briefing: Token-Block ohne doppelte Klammer, Auswahl aus dem Auftrag erlaubt" 'B="$D/brief/briefing.md"; ! grep -q "^}}" "$B" && grep -q "ausdrücklich eine Auswahl" "$B"'
 if node -e 'require("playwright")' 2>/dev/null; then
   check "Briefing: Screenshots Desktop und Mobil" '[[ -s "$D/brief/D-001-desktop.png" && -s "$D/brief/D-001-mobil.png" ]] && jq -e "[.files[] | select(.kind == \"png\")] | length == 2" "$D/brief/brief.json" >/dev/null'
 fi
@@ -417,6 +418,7 @@ jq -n --arg d "$XD" --arg f "$IMPF" '{id:"job-test-ext-imp", params:{draft:$d, i
 OUT="$(FAKE_CLAUDE_ARGS="$ARGF2" PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBX" 2>/dev/null)" || true
 check "Import als v1: bereinigt, Quelle import, Warnungen im Panel" '[[ "$(jq -r .version <<<"$OUT")" == 1 ]] && jq -e ".versions[0].source == \"import\"" "$S/drafts/$XD/draft.json" >/dev/null && ! grep -qiE "<script|onclick|fonts.googleapis" "$S/drafts/$XD/import-v1.html" && jq -e "[.warnings[] | select(test(\"^Import:\"))] | length >= 2" <<<"$OUT" >/dev/null'
 check "Import: frische Session, Effort medium" '! grep -qx -- "--resume" "$ARGF2" && grep -A1 -x -- "--effort" "$ARGF2" | grep -qx medium'
+check "Import: Inhaltsumfang wie im Import, Fehlendes nur im Befund" 'grep -q "Umfang und Auswahl wie im Import" "$ARGF2" && grep -q "ergänzt du NICHT" "$ARGF2"'
 printf '%s\n' '<html><body><div id="root"></div><script type="text/babel">ReactDOM.createRoot(root).render(<App/>)</script></body></html>' >"$IMPF"
 set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBX" 2>/dev/null)"; rc=$?; set -e
 check "React-Artefakt abgewiesen, keine Version 2" '(( rc != 0 )) && grep -q "React" <<<"$OUT" && [[ ! -d "$S/drafts/$XD/v2" ]]'

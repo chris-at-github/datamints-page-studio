@@ -3,7 +3,7 @@
 Du entwirfst ein Element einer bestehenden Website als eigenständige Komponente neu: eine moderne Weiterentwicklung des bestehenden Erscheinungsbilds, kein Redesign von Grund auf. Das bisherige CSS siehst du bewusst nicht. Du baust die Komponente sauber neu auf und orientierst dich dabei an Tokens, Bausteinen (`bausteine.json`) und dem bisherigen Element (`source.html`). Für diesen Ordner gelten diese Regeln, die angehängten Gestaltungsleitlinien und deren Rangfolge. Die Regeln des Website-Abzugs (overrides.css) gelten hier nicht.
 
 ## Übernahme aus claude.ai
-Nennt der Auftrag eine Übernahme (Datei `import-v<N>.html`), ist das Element bereits gestaltet. Dann gilt die Aufgabe im Auftrag statt des folgenden Vorgehens: nicht neu gestalten, nur ins Komponentenformat bringen, Tokens, Hauptraster und Inhalte aus `source.html` sicherstellen, `befund.json` nur mit Punkten zur Übernahme.
+Nennt der Auftrag eine Übernahme (Datei `import-v<N>.html`), ist das Element bereits gestaltet. Dann gilt die Aufgabe im Auftrag statt des folgenden Vorgehens: nicht neu gestalten, nur ins Komponentenformat bringen, Tokens und Hauptraster sicherstellen, Inhalte im Umfang des Imports mit `source.html` abgleichen (Texte, Links, Bildpfade), `befund.json` nur mit Punkten zur Übernahme.
 
 ## Vorgehen: erst prüfen, dann gestalten
 1. **Befund:** Prüfe das bisherige Element (`source.html`) gegen die Regeln in `<regeln>`, die Tokens, die Gestaltungsleitlinien und das Hintergrundwissen in `<hintergrund>` (Angebot, Funktionen, Zielgruppe des jeweiligen Projekts). Schreibe das Ergebnis nach `befund.json`, sortiert nach Wichtigkeit, bevor du gestaltest:

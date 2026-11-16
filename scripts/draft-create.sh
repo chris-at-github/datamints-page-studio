@@ -7,7 +7,7 @@
 #   Version: params = { draft: "D-001", prompt }
 #   mode "brief" (nur neu): Entwurf ohne Claude-Lauf anlegen und Briefing für claude.ai erzeugen (draft-brief.sh)
 #   importFile "jobs/assets/….html" (neu oder Version): Ergebnis aus claude.ai bereinigen und von Claude ohne
-#     Neugestaltung ins Komponentenformat übernehmen (Tokens, Raster, Inhalte aus source.html)
+#     Neugestaltung ins Komponentenformat übernehmen (Tokens, Raster; Inhaltsumfang wie im Import, Pfade aus source.html)
 # Ausgabe: {status:"ok", draft, version, name, title, summary, page, warnings}
 source "$(dirname "$0")/lib/common.sh"
 # shellcheck source=lib/draft-layout.sh
@@ -232,7 +232,7 @@ Anpassen musst du nur, was die Regeln in CLAUDE.md verlangen:
 1. Format: genau ein Wurzelelement mit der Klasse mx-<name>, alles CSS in @scope (.mx-<name>). Regeln für html, body, :root oder * auf :scope bzw. auf Elemente innerhalb umschreiben. Den :root-Block mit --modio-Variablen nicht übernehmen (die Tokens sind auf der Seite vorhanden).
 2. Tokens: Farben, Schriften, Größen, Radien und Abstände über var(--modio-…). Abweichende Werte auf den nächstliegenden passenden Token abbilden, fremde Schriften durch die Schrift der Website ersetzen. Gesperrte Tokens nie abwandeln.
 3. Hauptraster einhalten (siehe unten): nicht breiter, nichts außerhalb des Rasters.
-4. $( [[ "$SITE_KIND" == neu ]] && echo "Inhalte: Sie kommen aus dem Import (neues Projekt, source.html ist nur ein freier Platz). Übernimm sie vollständig. Externe Bilder oder Adressen ersetzt du durch Bildflächen mit festem Seitenverhältnis bzw. entfernst sie." || echo "Inhalte mit source.html abgleichen: alle Einträge, Links, Bilder und Downloads vollständig; src- und href-Werte exakt aus source.html; externe Adressen aus dem Import ersetzen. Inhalte, die im Import fehlen, im Stil des Imports ergänzen. Erfundene Angaben nur, wenn der Auftrag sie verlangt, dann mit data-mx-platzhalter.")
+4. $( [[ "$SITE_KIND" == neu ]] && echo "Inhalte: Sie kommen aus dem Import (neues Projekt, source.html ist nur ein freier Platz). Übernimm sie vollständig. Externe Bilder oder Adressen ersetzt du durch Bildflächen mit festem Seitenverhältnis bzw. entfernst sie." || echo "Inhalte: Umfang und Auswahl wie im Import (der Import kann bewusst nur eine Auswahl oder Beispiele zeigen). Was der Import zeigt, gleichst du mit source.html ab: Texte stimmen, src- und href-Werte exakt aus source.html, externe Adressen aus dem Import ersetzen. Einträge aus source.html, die im Import fehlen, ergänzt du NICHT, sondern nennst sie zusammengefasst als einen Punkt in befund.json mit \"umgesetzt\": false (Ausnahme: der Auftrag verlangt Vollständigkeit). Erfundene Angaben nur, wenn der Auftrag sie verlangt, dann mit data-mx-platzhalter.")
 5. Kein JavaScript, keine Event-Handler; Interaktion nur mit HTML und CSS.
 6. Bausteine: meta.json mit den Bausteinen des Imports (\"source\": \"neu\", klassen.neu); data-mx-baustein im Markup wie in CLAUDE.md beschrieben.
 befund.json enthält nur Punkte zur Übernahme: was du angepasst hast und warum (Token statt Wert, Schrift ersetzt, Inhalte ergänzt, Raster), jeweils \"umgesetzt\": true; Punkte, die eine Entscheidung brauchen, mit \"umgesetzt\": false. Leere Liste, wenn nichts anzupassen war.
