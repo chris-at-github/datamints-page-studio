@@ -36,7 +36,7 @@ const HTML_RULES = [
 ];
 const CSS_RULES = [
   ['css-import', /@import\b/i],
-  ['css-expression', /expression\s*\(|-moz-binding|behavior\s*:/i],
+  ['css-expression', /(?<![\w-])expression\s*\(|-moz-binding|(?<![\w-])behavior\s*:/i],
   ['javascript-url', /javascript\s*:/i],
   ['style-close', /<\/?\s*style/i],
   ['css-layer', /@layer\b/i],
@@ -86,7 +86,13 @@ export function validateComponent(cheerio, { html, css, name, allowedHosts = new
   const cls = `mx-${name}`;
 
   for (const [rule, re] of HTML_RULES) if (re.test(html)) errors.push(`HTML: ${rule}`);
-  for (const [rule, re] of CSS_RULES) if (re.test(css)) errors.push(`CSS: ${rule}`);
+  for (const [rule, re] of CSS_RULES) {
+    const m = css.match(re);
+    if (!m) continue;
+    // Fundstelle mit Zeilennummer, damit die Korrekturrunde die richtige Stelle ändert
+    const line = css.slice(0, m.index).split('\n').length;
+    errors.push(`CSS: ${rule} (Zeile ${line}: „${m[0].replace(/\s+/g, ' ').slice(0, 40)}“)`);
+  }
   for (const h of hostsIn(html)) if (!allowedHosts.has(h)) errors.push(`HTML: fremde Domain ${h}`);
   for (const h of hostsIn(css)) if (!allowedHosts.has(h)) errors.push(`CSS: fremde Domain ${h}`);
   if (/!important/i.test(css)) warnings.push('CSS enthält !important (in Komponenten nicht nötig)');

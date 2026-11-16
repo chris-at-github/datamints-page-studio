@@ -389,6 +389,12 @@ OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$
 TD="$(jq -r .draft <<<"$OUT")"
 check "Element nicht im Abzug: Browser-Material mit sichtbarer Warnung" 'jq -e ".material.source == \"browser\" and .material.truncated == true" "$S/drafts/$TD/draft.json" >/dev/null && jq -e "[.warnings[] | select(test(\"Material unvollständig\"))] | length == 1" <<<"$OUT" >/dev/null'
 ./scripts/draft-discard.sh "$SLUG" "$TD" >/dev/null 2>&1; rm -f "$JOBT" logs/claude-job-test-draft-trunc*.json logs/claude-job-test-draft-trunc*.stderr.log
+CSSRULES="$(node --input-type=module -e '
+  import { validateComponent } from "./scripts/lib/draft.mjs"; import { loadCheerio } from "./scripts/lib/consistency.mjs";
+  const c = await loadCheerio(); const html = "<section class=\"mx-test\"><p>x</p></section>";
+  const v = (css) => validateComponent(c, { html, css, name: "test" }).errors.filter((e) => e.includes("css-expression")).length;
+  console.log(v("@scope (.mx-test) { :scope { overscroll-behavior: contain; scroll-behavior: smooth; } }"), v("@scope (.mx-test) { :scope { behavior: url(x.htc); } }"), v("@scope (.mx-test) { :scope { width: expression(1); } }"));' 2>&1)"
+check "CSS-Prüfung: overscroll-behavior erlaubt, behavior und expression() abgewiesen" '[[ "$CSSRULES" == "0 1 1" ]]'
 BIGD="$(mktemp -d)"; mkdir -p "$BIGD/www"
 node -e 'require("fs").writeFileSync(process.argv[1], "<html><body><div id=\"gross\">" + "<p>Produktkachel mit viel Text</p>\n".repeat(8000) + "</div></body></html>")' "$BIGD/www/gross.html"
 BIGOUT="$(node scripts/lib/draft.mjs extract "$BIGD" /gross.html "#gross" 2>/dev/null | (sleep 0.3; cat))"

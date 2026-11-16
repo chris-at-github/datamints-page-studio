@@ -37,7 +37,7 @@ const rules = [
   { rule: 'iframe', re: /<\s*iframe\b/i },
   { rule: 'object-embed', re: /<\s*(object|embed)\b/i },
   { rule: 'javascript-url', re: /javascript\s*:/i },
-  { rule: 'css-expression', re: /expression\s*\(|-moz-binding|behavior\s*:/i, css: true },
+  { rule: 'css-expression', re: /(?<![\w-])expression\s*\(|-moz-binding|(?<![\w-])behavior\s*:/i, css: true },
   { rule: 'meta-refresh', re: /http-equiv\s*=\s*["']?refresh/i },
   { rule: 'base-tag', re: /<\s*base\b/i },
   { rule: 'form-action', re: /<\s*form\b[^>]*action\s*=\s*["']?(https?:)?\/\//i },
