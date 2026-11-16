@@ -12,6 +12,11 @@ require_site "${1:-}"
 "$SCRIPTS_DIR/tokens-scan.sh" "$SLUG" >/dev/null || die "Scan fehlgeschlagen"
 SCAN="$(jq -c '{colors, radii, fonts, fontSizes}' "$SITE/.scan.json")"
 [[ "$(jq '[.colors, .radii, .fonts, .fontSizes] | map(length) | add' <<<"$SCAN")" -gt 0 ]] || die "Der Scan hat keine Werte gefunden"
+# Inhaltsbreite und Seitenrand: regelbasiert aus der Messung, ohne Claude (nur, wenn der Token fehlt)
+CONTAINER_PROPOSALS="$(jq -c --slurpfile t "$SITE/design/tokens.json" '
+  ($t[0].tokens // {}) as $have
+  | [ (if (.container.maxWidth // null) != null and ($have | has("container.max-width") | not) then {key:"container.max-width", value:.container.maxWidth, note:"Inhaltsbreite (gemessen auf der Startseite)"} else empty end),
+      (if (.container.spacingX // null) != null and ($have | has("container.spacing-x") | not) then {key:"container.spacing-x", value:.container.spacingX, note:"Seitenrand auf schmalen Bildschirmen (gemessen bei 390 px)"} else empty end) ]' "$SITE/.scan.json")"
 EXISTING="$(jq -r '.tokens // {} | to_entries | map("\(.key) = \(.value.value)\(if .value.locked then " [gesperrt]" else "" end)") | join("\n")' "$SITE/design/tokens.json")"
 
 CLAUDE_SETTINGS="$(abspath "${CLAUDE_SETTINGS_FILE:-./tools/worker/claude-settings.json}")"
@@ -60,6 +65,7 @@ fi
 # Strukturierte Antwort; Rückfall: JSON im Ergebnistext
 jq -c '.structured_output // (.result | sub("^\\s*```(json)?"; "") | sub("```\\s*$"; "") | fromjson)' <<<"$RESULT_JSON" >"$PROPOSALS" 2>/dev/null \
   || die "Antwort von Claude enthält keine gültigen Vorschläge"
+tmp="$(mktemp)"; jq -c --argjson c "$CONTAINER_PROPOSALS" '{tokens: ([(.tokens // [])[] | select((.key // "") | startswith("container.") | not)] + $c)}' "$PROPOSALS" >"$tmp" && mv "$tmp" "$PROPOSALS"
 
 set +e
 MERGE="$(node "$LIB_DIR/design.mjs" merge "$SITE" "$PROPOSALS")"; rc=$?

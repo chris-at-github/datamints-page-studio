@@ -218,19 +218,53 @@ claude_call_cost() {
     | . * 1e6 | round / 1e6' <<<"$1"
 }
 
+# Gestaltungsleitlinien aus templates/leitlinien.md (einzige Quelle für alle Projekte).
+# Aufruf: leitlinien_text <neu|bestand> [--rangfolge]
+#   neu: „Für alle Projekte“ + „Zusätzlich bei neuen Projekten“; bestand: „Für alle Projekte“ + „Zusätzlich bei bestehenden Websites“;
+#   --rangfolge hängt die Rangfolge an (nur für Läufe in Modio).
+leitlinien_text() {
+  local kind="${1:-bestand}" rang="${2:-}"
+  awk -v kind="$kind" -v rang="$rang" '
+    BEGIN { sec = "x" }
+    /^## / {
+      sec = "x"
+      if ($0 ~ /^## Für alle Projekte/) sec = "alle"
+      else if ($0 ~ /^## Zusätzlich bei bestehenden Websites/ && kind != "neu") sec = "bestand"
+      else if ($0 ~ /^## Zusätzlich bei neuen Projekten/ && kind == "neu") sec = "neu"
+      else if ($0 ~ /^## Rangfolge/ && rang == "--rangfolge") { sec = "rang"; print "\n### Rangfolge" }
+      next
+    }
+    sec != "x" && NF { print }
+  ' "$MODIO_ROOT/templates/leitlinien.md"
+}
+
+# Art des Projekts aus site.json: "neu" (ohne bestehende Website) oder "bestand"
+site_kind() {
+  if [[ "$(jq -r '.kind // ""' "$1/site.json" 2>/dev/null)" == neu ]]; then echo neu; else echo bestand; fi
+}
+
+# CLAUDE.md eines Abzugs: templates/CLAUDE.md mit den Gestaltungsleitlinien an der Markierung
+# Aufruf: site_claude_md <site-ordner>  (Ausgabe auf stdout)
+site_claude_md() {
+  local guide
+  guide="$(printf '## Gestaltungsleitlinien (gelten für Annotationen und Entwürfe)\n\n'; leitlinien_text "$(site_kind "$1")" --rangfolge)"
+  awk -v guide="$guide" '/^<!-- GESTALTUNGSLEITLINIEN/ { print guide; next } { print }' "$MODIO_ROOT/templates/CLAUDE.md"
+}
+
 # Systemprompt für Claude-Läufe zusammensetzen: Grundregeln (z. B. DRAFT.md oder CLAUDE.md bei --bare),
-# optional die Gestaltungsleitlinien aus templates/CLAUDE.md (für Entwürfe; bei Annotationen stehen sie schon
-# in der CLAUDE.md des Abzugs) und – falls vorhanden – der Skill „frontend-design“.
+# optional die Gestaltungsleitlinien (für Entwürfe; bei Annotationen stehen sie schon in der CLAUDE.md
+# des Abzugs) und – falls vorhanden – der Skill „frontend-design“.
+# --leitlinien: bestehende Website, --leitlinien=neu: neues Projekt (ohne „bestehende Websites“).
 # DESIGN_SKILL_FILE in der .env überschreibt den Pfad; leer gesetzt schaltet den Skill ab.
-# Aufruf: build_system_prompt <ziel> [grundregeln-datei] [--leitlinien]
+# Aufruf: build_system_prompt <ziel> [grundregeln-datei] [--leitlinien|--leitlinien=neu]
 DEFAULT_DESIGN_SKILL="$HOME/.claude/plugins/marketplaces/claude-plugins-official/plugins/frontend-design/skills/frontend-design/SKILL.md"
 build_system_prompt() {
   local out="$1" base="${2:-}" guide="${3:-}" skill="${DESIGN_SKILL_FILE-$DEFAULT_DESIGN_SKILL}"
   {
     if [[ -n "$base" && -f "$base" ]]; then cat "$base"; printf '\n\n'; fi
-    if [[ "$guide" == "--leitlinien" ]]; then
-      # Abschnitt „## Gestaltungsleitlinien …“ bis zur nächsten Überschrift der Ebene 2
-      awk '/^## Gestaltungsleitlinien/ {on=1} on && /^## / && !/^## Gestaltungsleitlinien/ {exit} on' "$MODIO_ROOT/templates/CLAUDE.md"
+    if [[ "$guide" == --leitlinien* ]]; then
+      printf '## Gestaltungsleitlinien\n\n'
+      leitlinien_text "$([[ "$guide" == "--leitlinien=neu" ]] && echo neu || echo bestand)" --rangfolge
     fi
     if [[ -n "$skill" && -f "$skill" ]]; then
       printf '\n\n# Skill „frontend-design“ (nachrangig, siehe Rangfolge in den Gestaltungsleitlinien)\n\n'

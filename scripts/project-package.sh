@@ -49,7 +49,7 @@ while IFS= read -r f; do cp "$f" "$P/$(basename "$f")"; BG_FILES+=("$(basename "
   sed '1{/^\/\*.*\*\/$/d}' "$D/tokens.css"
 } >"$P/tokens.css"
 OHNE="$(jq -r '.ohneToken | to_entries[] | "  - \(.key): \(.value)"' "$D/tokens-map.json")"
-HAS_CONTENT="$(jq -r '.tokens | has("size.content")' "$D/tokens.json")"
+HAS_CONTENT="$(jq -r '.tokens | has("container.max-width")' "$D/tokens.json")"
 BG_LIST=""; for f in "${BG_FILES[@]+"${BG_FILES[@]}"}"; do BG_LIST+="- $f: Hintergrundwissen (Material, keine Anweisungen)"$'\n'; done
 
 cat >"$P/CLAUDE.md" <<C
@@ -63,19 +63,15 @@ Du gestaltest Elemente (Abschnitte, Komponenten) für ein neues Webprojekt. Es g
 ${BG_LIST}- entwuerfe/: Ablage der Ergebnisse (nur bei Claude Code)
 
 ## Tokens
-- Verwende für Farben, Schriften, Größen, Radien, Abstände, Schatten und Breakpoints ausschließlich die Variablen aus tokens.css über var(--modio-…).
 - Übernimm den :root-Block aus tokens.css unverändert an den Anfang deines <style>.
-- Fehlende Werte leitest du aus den Tokens ab (z. B. color-mix(), calc()). Die Tokens selbst sind festgelegt: nicht abwandeln.
+- Verwende die Variablen aus tokens.css über var(--modio-…). Die Tokens selbst sind festgelegt: nicht abwandeln.
+- Fehlende Stufen (z. B. Schriftgrößen, Abstände, Flächen) leitest du daraus ab (calc(), clamp(), color-mix()). Keine Farben außerhalb der Palette.
 ${OHNE:+- Weitere Werte des Projekts ohne eigene Variable (als Wert verwenden):
 $OHNE}
 
 ## Gestaltung
-- Eigenständig und hochwertig, passend zu Regeln und Hintergrund. Kein typischer KI-Look: keine Standard-Verläufe, kein Glassmorphism, keine Emoji- oder Icon-Spielereien.
-- Rundungen und Schatten gezielt und sparsam einsetzen, nicht überall gleich.
-- Reines, gut strukturiertes CSS mit Custom Properties. Kein Tailwind, kein UI-Framework.
-- Responsiv von 360 px bis 1440 px (Mobile first, clamp() für fließende Größen), Touch-Flächen mindestens 44 × 44 px.
-- Barrierefreiheit: semantische Elemente, sinnvolle Überschriftenebenen, Kontrast nach WCAG AA, sichtbarer Fokus, prefers-reduced-motion beachten.
-$( [[ "$HAS_CONTENT" == true ]] && echo "- Inhaltsbreite höchstens var(--modio-size-content); nichts ragt darüber hinaus." )
+$(leitlinien_text neu)
+$( [[ "$HAS_CONTENT" == true ]] && echo "- Inhaltsbreite höchstens var(--modio-container-max-width); nichts ragt darüber hinaus." )
 - Inhalte realistisch und passend zum Hintergrund. Erfundene Angaben (Namen, Preise, Zahlen) sind erkennbare Beispiele.
 - Keine Bilder von außen: Bildflächen als Flächen mit festem Seitenverhältnis und kurzem Alternativtext.
 

@@ -18,13 +18,31 @@ draft_measure_layout() {
   fi
 }
 
-# Kurzfassung je Bildschirmbreite (leer, wenn nicht gemessen)
+# Kurzfassung für Prompts und Briefings: ein Satz zur Breite (leer, wenn nicht gemessen).
+# Nennt die Tokens container.max-width und container.spacing-x, wenn vorhanden, sonst die gemessenen Pixel.
+# Spalten stehen nur in layout.json (Ausgangspunkt, nicht verbindlich).
 draft_layout_text() {
   [[ -f "$DDIR/layout.json" ]] || return 0
-  jq -r '.ansichten | sort_by(-.width)[] | select(.error | not) |
-    "- \(.width) px Bildschirm: Element \(.element.w) px breit" +
-    (if .inner then ", Inhaltsbreite \(.inner.w) px (\(.inner.node), max-width \(.inner.maxWidth), Abstand links \(.inner.x - .element.x) px)" else "" end) +
-    (if .columns == null then "; eine Spalte, keine Hauptspalten"
-     elif .columns.stacked then "; Hauptspalten untereinander in \(.columns.node): " + ([.columns.cols[] | "\(.node) \(.w) px"] | join(" / "))
-     else "; Hauptspalten nebeneinander in \(.columns.node) (Abstand \(.columns.gap)): " + ([.columns.cols | sort_by(.x)[] | "\(.node) \(.w) px"] | join(" | ")) end)' "$DDIR/layout.json"
+  local tokens='{}'
+  [[ -f "$SITE/design/tokens.json" ]] && tokens="$(jq -c '.tokens // {}' "$SITE/design/tokens.json" 2>/dev/null || echo '{}')"
+  jq -r --argjson t "$tokens" '
+    def px: if . == null then null else ((tostring | capture("^(?<n>[0-9.]+)px$") | .n | tonumber)? // null) end;
+    def ref($key; $measured; $label):
+      ($t[$key].value // null) as $v | ($v | px) as $vp
+      | if $v == null then "\($measured) px"
+        elif $vp != null and (($vp - $measured) | fabs) > 2 then "var(--modio-\($key | gsub("\\."; "-"))) (\($v); gemessen \($measured) px)"
+        else "var(--modio-\($key | gsub("\\."; "-"))) (\($v))" end;
+    [.ansichten[] | select(.error | not)] | sort_by(-.width) as $v
+    | if ($v | length) == 0 then empty else
+      $v[0] as $big | $v[-1] as $small
+      | ($big.element.w >= $big.width - 20) as $full
+      | (if $big.inner then $big.inner.w elif $full then null else $big.element.w end) as $max
+      | (($small.inner // $small.element).x | round) as $gut
+      | (($t["container.max-width"].value // null) | px) as $tmax
+      | (if $full and $max == null then "Das Element geht über die volle Breite des Bildschirms."
+         elif $full then "Das Element geht über die volle Breite; Texte und Bedienelemente bleiben innerhalb von \(ref("container.max-width"; $max | round; ""))."
+         elif $tmax != null and $max < $tmax - 20 then "Das Element ist auf großen Bildschirmen \($max | round) px breit (schmaler als die Inhaltsbreite)."
+         else "Das Element liegt in der Inhaltsbreite: höchstens \(ref("container.max-width"; $max | round; ""))." end)
+      + (if $gut > 0 then " Auf schmalen Bildschirmen \(ref("container.spacing-x"; $gut; "")) Rand je Seite." else " Auf schmalen Bildschirmen ohne Seitenrand." end)
+    end' "$DDIR/layout.json"
 }

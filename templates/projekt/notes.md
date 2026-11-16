@@ -8,6 +8,7 @@
 - Ansprache:
 
 ## Gestaltung
+- Rundungen und Schatten: erlaubt
 
 ## Icons
 

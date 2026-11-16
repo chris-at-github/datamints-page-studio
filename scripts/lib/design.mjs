@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { readConfig as readConsistency, areaError } from './consistency.mjs';
 import { exitJson } from './stdout.mjs';
 
-export const CATEGORIES = ['color', 'font', 'size', 'radius', 'space', 'shadow', 'breakpoint'];
+export const CATEGORIES = ['color', 'font', 'size', 'radius', 'space', 'shadow', 'breakpoint', 'container'];
 const KEY_RE = new RegExp(`^(${CATEGORIES.join('|')})\\.[a-z0-9]+(?:-[a-z0-9]+)*$`);
 const FORBIDDEN = ['url(', '@', ';', '{', '}', '<', '>', '\\', '/*', '*/', '\n', '\r'];
 const ALLOWED_FUNCS = new Set(['rgb', 'rgba', 'hsl', 'hsla', 'clamp', 'min', 'max', 'calc', 'var']);
@@ -67,6 +67,7 @@ export function checkValue(key, value) {
     case 'radius':
     case 'space':
     case 'breakpoint':
+    case 'container':
       return MEASURES_RE.test(v) ? null : 'kein gültiges Maß (Zahl mit Einheit)';
     case 'shadow':
       return SHADOW_RE.test(v) ? null : 'kein gültiger Schatten';
@@ -154,7 +155,7 @@ function context(site, currentId, count) {
   } catch { /* ungültig, meldet check-consistency */ }
   const vorgaben = [
     '<vorgaben prioritaet="verbindlich">',
-    '<tokens>',
+    '<tokens hinweis="gesperrte Tokens sind fest; fehlende Stufen aus den Tokens ableiten, siehe Gestaltungsleitlinien">',
     tl.length ? tl.join('\n') : '(noch keine Tokens)',
     '</tokens>',
     '<regeln>',
@@ -334,6 +335,7 @@ function merge(site, proposalsFile) {
   for (const r of scanData.radii || []) allowed.add('measure|' + normMeasure(r.value));
   for (const s of scanData.fontSizes || []) allowed.add('measure|' + normMeasure(s.value));
   for (const f of scanData.fonts || []) allowed.add('font|' + normFont(f.value));
+  for (const v of [scanData.container?.maxWidth, scanData.container?.spacingX]) if (v) allowed.add('measure|' + normMeasure(v));
   const kindOf = (key) => {
     const cat = key.split('.')[0];
     if (cat === 'color') return 'color';
@@ -378,7 +380,8 @@ const CAT_PREFIX = [
   [['space', 'spacing', 'gap', 'abstand', 'sp', 'margin', 'padding'], 'space'],
   [['shadow', 'elevation', 'schatten'], 'shadow'],
   [['breakpoint', 'bp', 'screen'], 'breakpoint'],
-  [['size', 'text', 'fs', 'width', 'container', 'content', 'max', 'h', 'height'], 'size'],
+  [['container'], 'container'],
+  [['size', 'text', 'fs', 'width', 'content', 'max', 'h', 'height'], 'size'],
 ];
 const NO_CATEGORY = ['font-weight', 'fw', 'weight', 'line-height', 'lh', 'leading', 'letter-spacing', 'tracking', 'z', 'z-index', 'duration', 'ease', 'easing', 'opacity', 'transition'];
 

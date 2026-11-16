@@ -44,6 +44,16 @@ check "integrity-Attribut entfernt" '! grep -q integrity "$P"'
 check "CSP-Meta entfernt" '! grep -qi content-security-policy "$P"'
 check "design/ in der Baseline" 'git -C "$S" cat-file -e baseline:design/tokens.json && git -C "$S" cat-file -e baseline:design/tokens.css && git -C "$S" cat-file -e baseline:design/notes.md'
 check "Token-Scan geschrieben" '[[ -f "$S/.scan.json" ]] && jq -e ".colors | length > 0" "$S/.scan.json" >/dev/null'
+LT="$(mktemp -d)"; mkdir -p "$LT/design"
+printf '%s' '{"ansichten":[{"width":1440,"element":{"x":240,"w":960},"inner":null},{"width":390,"element":{"x":15,"w":360},"inner":null}]}' >"$LT/layout.json"
+LT1="$(bash -c 'source scripts/lib/common.sh; source scripts/lib/draft-layout.sh; SITE="$1"; DDIR="$1"; draft_layout_text' _ "$LT")"
+printf '%s' '{"tokens":{"container.max-width":{"value":"960px","locked":true},"container.spacing-x":{"value":"15px","locked":true}}}' >"$LT/design/tokens.json"
+LT2="$(bash -c 'source scripts/lib/common.sh; source scripts/lib/draft-layout.sh; SITE="$1"; DDIR="$1"; draft_layout_text' _ "$LT")"
+printf '%s' '{"ansichten":[{"width":1440,"element":{"x":0,"w":1440},"inner":{"x":240,"w":960}},{"width":390,"element":{"x":0,"w":390},"inner":{"x":0,"w":390}}]}' >"$LT/layout.json"
+LT3="$(bash -c 'source scripts/lib/common.sh; source scripts/lib/draft-layout.sh; SITE="$1"; DDIR="$1"; draft_layout_text' _ "$LT")"
+rm -rf "$LT"
+check "Raster-Satz: Pixel ohne Tokens, Tokens wenn vorhanden, volle Breite ohne Rand" '[[ "$LT1" == "Das Element liegt in der Inhaltsbreite: höchstens 960 px. Auf schmalen Bildschirmen 15 px Rand je Seite." ]] && grep -q "höchstens var(--modio-container-max-width) (960px)" <<<"$LT2" && grep -q "var(--modio-container-spacing-x) (15px)" <<<"$LT2" && grep -q "volle Breite; Texte und Bedienelemente bleiben innerhalb von var(--modio-container-max-width)" <<<"$LT3" && grep -q "ohne Seitenrand" <<<"$LT3"'
+check "Token-Kategorie container gültig, Container-Werte aus dem Scan übernehmbar" 'node --input-type=module -e "import { validateTokens } from \"./scripts/lib/design.mjs\"; const r = validateTokens({tokens:{\"container.max-width\":{value:\"960px\"},\"container.spacing-x\":{value:\"15px\"}}}); process.exit(r.errors.length ? 1 : 0)"' 
 
 echo "Manuelle Änderung und Commit"
 sed -i 's/Willkommen bei Testfirma/Ihr Partner für gute Dinge/' "$P"
@@ -292,7 +302,7 @@ check "Gültige Komponente besteht die Prüfung" '(( rc == 0 )) && [[ "$(jq -r .
 check "Befund und Platzhalter erkannt" 'jq -e "(.befund | length == 2) and (.platzhalter[0].text == \"Merkliste anbinden\")" <<<"$OUT" >/dev/null'
 mv "$D/v1/befund.json" "$D/befund.bak"
 set +e; OUT="$(node scripts/lib/draft.mjs validate "$S" "$D" 1 2>/dev/null)"; rc=$?; set -e
-check "Ohne befund.json ungültig" '(( rc == 3 )) && jq -e ".errors | index(\"befund.json fehlt\")" <<<"$OUT" >/dev/null'
+check "Ohne befund.json gültig, mit Hinweis" '(( rc == 0 )) && jq -e "(.errors | length == 0) and ([.warnings[] | select(test(\"befund.json fehlt\"))] | length == 1)" <<<"$OUT" >/dev/null'
 mv "$D/befund.bak" "$D/v1/befund.json"
 check "drafts/ ist nicht versioniert" '[[ -z "$(git -C "$S" status --porcelain)" ]]'
 mkdir -p "$D/v2"; cp "$D/v1/meta.json" "$D/v2/"
@@ -311,6 +321,8 @@ OUT="$(./scripts/draft-brief.sh "$SLUG" D-001 2>/dev/null)" || true
 check "Briefing: Text, Element-HTML und Übersicht" 'jq -e ".status == \"ok\"" <<<"$OUT" >/dev/null && [[ -f "$D/brief/briefing.md" && -f "$D/brief/D-001-element.html" && -f "$D/brief/brief.json" ]] && cmp -s "$D/source.html" "$D/brief/D-001-element.html"'
 check "Briefing: Auftrag, Token-Block und Ausgabeformat" 'B="$D/brief/briefing.md"; grep -q "^## Auftrag" "$B" && grep -q -- "--modio-color-primary" "$B" && grep -q "Keine React-Komponente" "$B" && grep -q "D-001-element.html" "$B"'
 check "Briefing: Token-Block ohne doppelte Klammer, Auswahl aus dem Auftrag erlaubt" 'B="$D/brief/briefing.md"; ! grep -q "^}}" "$B" && grep -q "ausdrücklich eine Auswahl" "$B"'
+check "Briefing: Tokens beachten, fehlende Stufen ableiten (ohne „verbindlich“)" 'B="$D/brief/briefing.md"; grep -q "^## Design-Tokens$" "$B" && grep -q "leite sie aus den Tokens ab" "$B" && grep -q "Tokens beachten" "$B"'
+check "Briefing: Leitlinien aus templates/leitlinien.md (alle + bestehende Website, ohne Rangfolge)" 'B="$D/brief/briefing.md"; grep -q "Gestalterisch hochwertig" "$B" && grep -q "spürbar moderneres Erscheinungsbild" "$B" && ! grep -q "Rangfolge" "$B" && ! grep -q "nicht im Browser" "$B"'
 if node -e 'require("playwright")' 2>/dev/null; then
   check "Briefing: Screenshots Desktop und Mobil" '[[ -s "$D/brief/D-001-desktop.png" && -s "$D/brief/D-001-mobil.png" ]] && jq -e "[.files[] | select(.kind == \"png\")] | length == 2" "$D/brief/brief.json" >/dev/null'
 fi
@@ -366,7 +378,11 @@ printf '# Sortiment\nWir verkaufen Testdinge.\n' >"$S/design/sortiment.md"
 git -C "$S" add design/sortiment.md && git -C "$S" commit -q -m "[design] Sortiment" -- design/sortiment.md
 OUT="$(DESIGN_SKILL_FILE="$SKILLF" PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
 DN="$(jq -r .draft <<<"$OUT")"
-check "Systemprompt mit Entwurfsregeln, Leitlinien und Skill (ohne Frontmatter)" 'F="$S/drafts/$DN/SYSTEM.md"; grep -q "Regeln für Entwürfe" "$F" && grep -q "Gestaltungsleitlinien" "$F" && grep -q "Kein typischer KI-Look" "$F" && grep -q "TEST-SKILL-INHALT" "$F" && ! grep -q "^name: frontend-design" "$F"'
+check "Systemprompt mit Entwurfsregeln, Leitlinien und Skill (ohne Frontmatter)" 'F="$S/drafts/$DN/SYSTEM.md"; grep -q "Regeln für Entwürfe" "$F" && grep -q "Gestaltungsleitlinien" "$F" && grep -q "Kein Template-Look" "$F" && grep -q "TEST-SKILL-INHALT" "$F" && ! grep -q "^name: frontend-design" "$F"'
+check "Abzug: CLAUDE.md mit Leitlinien für bestehende Websites und Rangfolge" 'grep -q "spürbar moderneres Erscheinungsbild" "$S/CLAUDE.md" && grep -q "^### Rangfolge" "$S/CLAUDE.md" && ! grep -q "GESTALTUNGSLEITLINIEN" "$S/CLAUDE.md" && grep -q "spürbar moderneres Erscheinungsbild" "$S/drafts/$DN/SYSTEM.md"'
+check "Entwurfsregeln: erst gestalten, Befund zum Schluss, höchstens 12 Punkte" 'F="$S/drafts/$DN/SYSTEM.md"; grep -q "^## Vorgehen$" "$F" && grep -q "Schreibe zum Schluss \`befund.json\`, höchstens 12 Punkte" "$F" && ! grep -q "erst prüfen, dann gestalten" "$F"'
+check "Leitlinien: keine Emojis, Rundungen und Schatten per Projektregel abschaltbar, Option in den Vorlagen" 'F="$S/drafts/$DN/SYSTEM.md"; grep -q "Keine Emojis." "$F" && grep -q "Rundungen und Schatten: keine" "$F" && ! grep -q "sparsam" "$F" && grep -q "^- Rundungen und Schatten: erlaubt$" templates/design/notes.md && grep -q "^- Rundungen und Schatten: erlaubt$" templates/projekt/notes.md'
+check "Bausteine: nur mit Gegenstück im Bestand umschaltbar, Rest frei" 'F="$S/drafts/$DN/SYSTEM.md"; grep -q "Alle anderen Teile der Komponente gestaltest du frei" "$F" && grep -q "nur die Bausteine mit Gegenstück in \`bausteine.json\`" "$F"'
 check "Weitere design/*.md als Hintergrund im Kontext" 'node scripts/lib/design.mjs context "$S" A-000 0 | jq -r .context | grep -q "<datei name=\"design/sortiment.md\">"'
 echo "Neu: alles" >>"$S/design/sortiment.md"
 set +e; OUT2="$(./scripts/check-diff.sh "$SLUG" 2>/dev/null)"; rc=$?; set -e
@@ -419,6 +435,8 @@ OUT="$(FAKE_CLAUDE_ARGS="$ARGF2" PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/
 check "Import als v1: bereinigt, Quelle import, Warnungen im Panel" '[[ "$(jq -r .version <<<"$OUT")" == 1 ]] && jq -e ".versions[0].source == \"import\"" "$S/drafts/$XD/draft.json" >/dev/null && ! grep -qiE "<script|onclick|fonts.googleapis" "$S/drafts/$XD/import-v1.html" && jq -e "[.warnings[] | select(test(\"^Import:\"))] | length >= 2" <<<"$OUT" >/dev/null'
 check "Import: frische Session, Effort medium" '! grep -qx -- "--resume" "$ARGF2" && grep -A1 -x -- "--effort" "$ARGF2" | grep -qx medium'
 check "Import: Inhaltsumfang wie im Import, Fehlendes nur im Befund" 'grep -q "Umfang und Auswahl wie im Import" "$ARGF2" && grep -q "ergänzt du NICHT" "$ARGF2"'
+check "Import: Größen und Abstände des Imports bleiben, Farben auf Tokens" 'grep -q "Größen und Abstände des Imports bleiben" "$ARGF2" && grep -q "abweichende Farben auf den nächstliegenden passenden Token" "$ARGF2"'
+check "Import: Bausteine nur mit Gegenstück aus bausteine.json" 'grep -q "Nur Teile des Imports, die einem Baustein aus bausteine.json entsprechen" "$ARGF2"'
 printf '%s\n' '<html><body><div id="root"></div><script type="text/babel">ReactDOM.createRoot(root).render(<App/>)</script></body></html>' >"$IMPF"
 set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBX" 2>/dev/null)"; rc=$?; set -e
 check "React-Artefakt abgewiesen, keine Version 2" '(( rc != 0 )) && grep -q "React" <<<"$OUT" && [[ ! -d "$S/drafts/$XD/v2" ]]'
@@ -487,6 +505,7 @@ echo "Neues Projekt ohne Website (project-new, project-package, Import, project-
 NS="sites/modio-test-neu"; rm -rf "$NS"
 OUT="$(./scripts/project-new.sh modio-test-neu "Test <Neu>" 2 2>/dev/null)" || true
 check "Projekt angelegt: Leinwand mit Plätzen, Vorlagen, Baseline" '[[ "$(jq -r .kind <<<"$OUT")" == neu ]] && grep -q "id=\"platz-2\"" "$NS/www/leinwand/index.html" && grep -q "Test &lt;Neu&gt;" "$NS/www/leinwand/index.html" && [[ -f "$NS/design/tokens-quelle.css" && -f "$NS/design/projekt.md" ]] && git -C "$NS" rev-parse -q --verify baseline >/dev/null'
+check "Neues Projekt: CLAUDE.md mit Leitlinien für alle Projekte, ohne „bestehende Websites“" 'grep -q "Gestalterisch hochwertig" "$NS/CLAUDE.md" && ! grep -q "spürbar moderneres" "$NS/CLAUDE.md" && grep -q "^### Rangfolge" "$NS/CLAUDE.md"'
 set +e; OUT="$(./scripts/project-new.sh modio-test-neu 2>/dev/null)"; rc=$?; set -e
 check "Projekt doppelt: abgewiesen" '(( rc != 0 ))'
 cat >"$NS/design/tokens-quelle.css" <<'TQ'
@@ -497,15 +516,18 @@ cat >"$NS/design/tokens-quelle.css" <<'TQ'
   --text-h1: clamp(2rem, 1rem + 3vw, 3rem);
   --space-m: 1.5rem;
   --space-l: calc(var(--space-m) * 2);
+  --container-max-width: 1100px;
   --font-weight-bold: 700;
   --color-bad: url(x.png);
 }
 TQ
 printf '# Gestaltungsregeln\n- Ruhig und klar.\n' >"$NS/design/notes.md"
 OUT="$(./scripts/project-package.sh modio-test-neu 2>/dev/null)" || true
-check "Paket: Tokens aus CSS-Variablen (gesperrt, Verweise, clamp)" 'jq -e ".tokens == 6" <<<"$OUT" >/dev/null && jq -e ".tokens[\"color.link\"].value == \"var(--modio-color-primary)\" and .tokens[\"space.l\"].value == \"calc(var(--modio-space-m) * 2)\" and .tokens[\"size.h1\"].locked == true" "$NS/design/tokens.json" >/dev/null'
+check "Paket: Tokens aus CSS-Variablen (gesperrt, Verweise, clamp)" 'jq -e ".tokens == 7" <<<"$OUT" >/dev/null && jq -e ".tokens[\"color.link\"].value == \"var(--modio-color-primary)\" and .tokens[\"space.l\"].value == \"calc(var(--modio-space-m) * 2)\" and .tokens[\"size.h1\"].locked == true" "$NS/design/tokens.json" >/dev/null'
+check "Paket: --container-max-width als container.max-width, Inhaltsbreite im Paket" 'jq -e ".tokens[\"container.max-width\"].value == \"1100px\"" "$NS/design/tokens.json" >/dev/null && grep -q "var(--modio-container-max-width)" "$NS/paket/CLAUDE.md"'
 check "Paket: ungültige Variable gemeldet, Werte ohne Token im Paket" 'jq -e "[.warnings[] | select(test(\"--color-bad\"))] | length == 1" <<<"$OUT" >/dev/null && grep -q -- "--font-weight-bold: 700" "$NS/paket/CLAUDE.md"'
 check "Paket: CLAUDE.md, tokens.css, regeln.md, Hintergrund, README, entwuerfe/" 'P="$NS/paket"; [[ -f "$P/CLAUDE.md" && -f "$P/regeln.md" && -f "$P/projekt.md" && -f "$P/README.md" && -d "$P/entwuerfe" ]] && grep -q -- "--modio-color-primary: #0b5fa5" "$P/tokens.css" && grep -q "entwuerfe/<kurzer-name>.html" "$P/CLAUDE.md"'
+check "Paket: Leitlinien für alle Projekte aus templates/leitlinien.md" 'grep -q "Gestalterisch hochwertig" "$NS/paket/CLAUDE.md" && ! grep -q "spürbar moderneres" "$NS/paket/CLAUDE.md" && ! grep -q "Rangfolge" "$NS/paket/CLAUDE.md"'
 check "Paket: Angaben committet, Paket nicht versioniert" '[[ "$(git -C "$NS" log -1 --format=%s)" == "[design] Projektangaben übernommen"* ]] && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
 touch "$NS/paket/entwuerfe/a.html"; ./scripts/project-package.sh modio-test-neu >/dev/null 2>&1 || true
 check "Paket neu erzeugen: entwuerfe/ bleibt" '[[ -f "$NS/paket/entwuerfe/a.html" ]]'
@@ -515,6 +537,8 @@ jq -n --arg f "$IMPN" '{id:"job-test-neu", params:{page:"/leinwand/index.html", 
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_ARGS=/dev/null ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
 ND="$(jq -r .draft <<<"$OUT")"
 check "Import auf einen Platz der Leinwand" '[[ "$(jq -r .version <<<"$OUT")" == 1 ]]'
+check "Neues Projekt: Systemprompt ohne „bestehende Websites“" 'grep -q "Gestalterisch hochwertig" "$NS/drafts/$ND/SYSTEM.md" && ! grep -q "spürbar moderneres" "$NS/drafts/$ND/SYSTEM.md"'
+check "Tokens: neue Projekte als Palette, bestehende Websites Tokens beachten" 'grep -q "Die Tokens sind die Palette" "$NS/drafts/$ND/SYSTEM.md" && ! grep -q "Tokens beachten" "$NS/drafts/$ND/SYSTEM.md" && grep -q "Tokens beachten" "$S/CLAUDE.md" && ! grep -q "Die Tokens sind die Palette" "$S/CLAUDE.md" && grep -q "Die Tokens sind die Palette" "$NS/paket/CLAUDE.md"'
 OUT="$(./scripts/draft-apply.sh modio-test-neu "$ND" 2>/dev/null)" || true
 check "Übernahme ersetzt den Platz" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && ! grep -q "id=\"platz-1\"" "$NS/www/leinwand/index.html" && grep -q "class=\"mx-test\"" "$NS/www/leinwand/index.html"'
 printf '/* mx-test: Teaser */\n@scope (.mx-test) {\n  :scope { padding: var(--modio-space-l); color: var(--modio-color-link); }\n}\n' >"$NS/components/mx-test.css"

@@ -59,7 +59,7 @@ if (( ${#BG_DOCS[@]} )); then
   } | head -c "${DESIGN_DOCS_MAX_BYTES:-60000}" >"$OUT/$BG_FILE"
 fi
 NOTES="$(sed '/^\s*$/d' "$SITE/design/notes.md" 2>/dev/null | head -n "${NOTES_MAX_LINES:-40}" || true)"
-GUIDE="$(awk '/^## Gestaltungsleitlinien/ {on=1; next} on && /^### Rangfolge/ {exit} on' "$MODIO_ROOT/templates/CLAUDE.md" | sed '/Du kannst die Seite nicht im Browser ansehen/s/ Du kannst.*$//')"
+GUIDE="$(leitlinien_text bestand)"
 HOST="$(jq -r '.host // (.url // "" | sub("^https?://"; "") | sub("/.*$"; ""))' "$SITE/site.json")"
 
 # Originalseite: Live-Adresse der Seite (aus urls.txt, sonst abgeleitet) und Merkmale, um das Element dort zu finden
@@ -83,7 +83,7 @@ FILES_LIST="- $DID-element.html: das bisherige Element mit allen Inhalten (Texte
 while IFS= read -r f; do FILES_LIST+=$'\n'"- $f"; done < <(jq -r '.files[] | select(.file) | "\(.file): heutiger Stand, \(.width) px breit" + (if .cut then " (unten abgeschnitten)" else "" end)' <<<"$SHOTS")
 
 cat >"$OUT/briefing.md" <<B
-Gestalte ein Element einer bestehenden Website ($HOST) neu. Es ist eine Weiterentwicklung des bestehenden Erscheinungsbilds, kein Redesign von Grund auf. Das Ergebnis übernehme ich anschließend in mein Werkzeug und passe es dort im Detail an.
+Gestalte ein Element einer bestehenden Website ($HOST) neu. Das Ergebnis übernehme ich anschließend in mein Werkzeug und passe es dort im Detail an.
 
 ## Auftrag
 $PROMPT_USER
@@ -97,16 +97,16 @@ $ORIG_URL$ORIG_NOTE
 Das Element: ${LOC_TEXT:-siehe $DID-element.html}. CSS-Selektor: \`$SELECTOR\`.
 Du darfst diese Seite und die Seiten, auf die das Element verlinkt (z. B. Detailseiten), abrufen, um Zusammenhang, Inhalte und Funktionen zu verstehen: umgebende Bereiche, Navigation, Angaben auf Detailseiten. Ruf nur Seiten dieser Website ab. Maßgeblich für Inhalte, Links und Bildpfade bleibt $DID-element.html; die Screenshots zeigen den aktuellen Stand im Werkzeug, der von der Live-Seite schon abweichen kann.
 
-## Raster (verbindlich)
+## Raster
 ${LAYOUT_TEXT:-Nicht gemessen. Nutze die verfügbare Breite und setze keine festen Seitenbreiten.}
-Das Element wird nicht breiter als oben angegeben, nichts ragt über die Inhaltskante hinaus, keine vollflächigen Ausbrüche. Innerhalb der Spalten bist du frei.
+Fest: Das Element wird nicht breiter als angegeben, denn es ersetzt das bisherige Element auf der Seite. Texte und Bedienelemente bleiben innerhalb der Inhaltsbreite; Hintergründe, Flächen und Bilder dürfen bis zur Kante des Elements reichen. Die Spalten sind der Ausgangspunkt: Anzahl, Verhältnis und Anordnung darfst du ändern, wenn die Gestaltung dadurch besser wird.
 
-## Design-Tokens (verbindlich)
-Verwende für Farben, Schriften, Größen, Radien und Abstände diese CSS-Variablen über var(--modio-…). Übernimm den folgenden Block unverändert an den Anfang deines <style>. Fehlende Werte leitest du daraus ab (z. B. color-mix()).
+## Design-Tokens
+Übernimm den folgenden Block unverändert an den Anfang deines <style> (nötig für die Übernahme). Verwende für alles, wofür es einen passenden Token gibt, die Variable über var(--modio-…). Braucht die Gestaltung Stufen, die es als Token nicht gibt (z. B. Schriftgrößen einer Überschriften-Hierarchie, Abstände, Flächen), leite sie aus den Tokens ab (calc(), clamp(), color-mix()). Keine Farbtöne außerhalb der Palette.
 \`\`\`css
 $TOKENS_CSS
 \`\`\`
-${LOCKED:+Gesperrt (nicht abwandeln, keine Ersatzwerte): $LOCKED}
+${LOCKED:+Gesperrt (fest: nicht abwandeln, keine Ersatzwerte): $LOCKED}
 
 ## Regeln der Website
 ${NOTES:-Keine besonderen Regeln.}
@@ -122,7 +122,6 @@ $GUIDE
 - Icons nach den Regeln der Website: Nennen sie eine Icon-Schrift (z. B. Klassen wie ri-…), verwende deren Klassen; sie ist auf der Website eingebunden und fehlt nur in deiner Vorschau. Sonst Icons als Inline-SVG.
 - src- und href-Werte exakt aus $DID-element.html übernehmen. Die Bilder werden in deiner Vorschau nicht angezeigt (relative Pfade); gib Bildflächen deshalb feste Seitenverhältnisse.
 - Interaktion nur mit HTML und CSS (<details>, :has(), :target, Scroll-Snap).
-- Responsiv von 360 px bis 1440 px, Touch-Flächen mindestens 44 × 44 px, Kontrast nach WCAG AA, semantische Elemente.
 - Die Schrift aus den Tokens ist in deiner Vorschau eventuell nicht installiert; das ist in Ordnung.
 B
 

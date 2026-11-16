@@ -2,6 +2,7 @@
 // mit Playwright/Chromium, misst die gewählten Elemente und nimmt Ausschnitte auf.
 // Aufruf: node render.mjs <siteDir> <slug> <outDir> <spec.json-String>
 //         node render.mjs layout <siteDir> <slug> <seite> <selektor> <viewports-json>   (Hauptraster messen, für Entwürfe)
+//         node render.mjs container <siteDir> <slug> <seite>   (Inhaltsbreite und Seitenrand, für Token-Vorschläge)
 //         node render.mjs shot <siteDir> <slug> <seite> <selektor> <outDir> <prefix> <viewports-json>   (Ausschnitt des Elements, für Briefings)
 //   spec: { before: "HEAD", targets: [{page, selector}], viewports: [{name, width, height}] }
 // Ausgabe: eine JSON-Zeile. Exit 0 ohne Fehler-Befunde, 3 mit Fehler-Befunden, 4 Playwright/Browser fehlt, 1 Fehler.
@@ -435,6 +436,71 @@ async function layoutMain() {
   out({ status: ok ? 'ok' : 'error', error: ok ? undefined : result[0]?.error, viewports: result.map(({ path, ...r }) => r) }, ok ? 0 : 1);
 }
 
+// ---------- Inhaltsbreite und Seitenrand einer Seite (für Token-Vorschläge) ----------
+// Breit: häufigste Breite zentrierter Elemente mit max-width in px (600 px bis Bildschirm − 40 px).
+// Schmal: linker Abstand sichtbarer Textelemente (1–60 px); der kleinste häufige Wert ist der Seitenrand.
+export function measureContainer(mode) {
+  if (mode === 'breit') {
+    const counts = new Map();
+    for (const n of document.body.querySelectorAll('*')) {
+      const s = getComputedStyle(n);
+      if (!/px$/.test(s.maxWidth) || s.display === 'none') continue;
+      const r = n.getBoundingClientRect();
+      const left = r.left; const right = window.innerWidth - r.right;
+      if (r.width < 600 || r.width > window.innerWidth - 40 || Math.abs(left - right) > 20) continue;
+      const w = Math.round(r.width);
+      counts.set(w, (counts.get(w) || 0) + 1);
+    }
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0];
+    return top ? { maxWidth: top[0], count: top[1] } : null;
+  }
+  const counts = new Map();
+  for (const n of document.body.querySelectorAll('p, h1, h2, h3, h4, li, label, figcaption')) {
+    if (!n.textContent.trim()) continue;
+    const r = n.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    const x = Math.round(r.left);
+    if (x >= 1 && x <= 60) counts.set(x, (counts.get(x) || 0) + 1);
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  if (!sorted.length) return null;
+  // Eingerückte Inhalte (Karten, Listen) liegen weiter innen: kleinster Abstand, der mindestens ein Viertel so oft vorkommt wie der häufigste
+  const edge = Math.min(...sorted.filter(([, c]) => c >= Math.max(2, sorted[0][1] / 4)).map(([x]) => x));
+  return { spacingX: Number.isFinite(edge) ? edge : sorted[0][0], xs: sorted.slice(0, 6) };
+}
+
+async function containerMain() {
+  const [, siteDir, slug, page] = process.argv.slice(2);
+  if (!siteDir || !slug || !page) out({ status: 'error', error: 'Aufruf: render.mjs container <siteDir> <slug> <seite>' }, 1);
+  let chromium;
+  try { ({ chromium } = await import('playwright')); } catch { out({ status: 'unavailable', error: 'Playwright ist nicht installiert (npm install)' }, 4); }
+  let browser;
+  try { browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined }); } catch (e) {
+    out({ status: 'unavailable', error: `Chromium startet nicht: ${String(e.message).split('\n')[0]}` }, 4);
+  }
+  const srv = await startServer(makeReader(siteDir, 'after'), slug);
+  const res = {};
+  try {
+    for (const [mode, width, height] of [['breit', 1440, 900], ['schmal', 390, 844]]) {
+      const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block' });
+      await ctx.route('**/*', (route) => {
+        const u = route.request().url();
+        return u.startsWith(srv.origin + '/') || u.startsWith('data:') || u.startsWith('blob:') ? route.continue() : route.abort();
+      });
+      const pg = await ctx.newPage();
+      try {
+        await pg.goto(`${srv.origin}${srv.base}/${page.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}`, { waitUntil: 'load', timeout: Number(process.env.RENDER_TIMEOUT_MS || 20000) });
+        Object.assign(res, await pg.evaluate(measureContainer, mode) || {});
+      } catch { /* Ansicht ohne Ergebnis */ }
+      await ctx.close();
+    }
+  } finally {
+    await browser.close().catch(() => {});
+    srv.server.close();
+  }
+  out({ status: 'ok', maxWidth: res.maxWidth ? `${res.maxWidth}px` : null, spacingX: res.spacingX ? `${res.spacingX}px` : null, xs: res.xs || [] });
+}
+
 // ---------- Ausschnitt eines Elements (für Briefings) ----------
 async function shotMain() {
   const [, siteDir, slug, page, selector, outDir, prefix, vpArg] = process.argv.slice(2);
@@ -493,6 +559,7 @@ async function shotMain() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === 'layout') layoutMain().catch((e) => out({ status: 'error', error: e.message }, 1));
+  else if (process.argv[2] === 'container') containerMain().catch((e) => out({ status: 'error', error: e.message }, 1));
   else if (process.argv[2] === 'shot') shotMain().catch((e) => out({ status: 'error', error: e.message }, 1));
   else main().catch((e) => out({ status: 'error', error: e.message }, 1));
 }

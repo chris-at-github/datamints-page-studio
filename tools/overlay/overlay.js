@@ -738,7 +738,7 @@
 
   // ---------------------------------------------------- Design-Vorgaben
 
-  var CAT_LABEL = { color: 'Farbe', font: 'Schrift', size: 'Größe', radius: 'Radius', space: 'Abstand', shadow: 'Schatten', breakpoint: 'Breakpoint' };
+  var CAT_LABEL = { color: 'Farbe', font: 'Schrift', size: 'Größe', radius: 'Radius', space: 'Abstand', shadow: 'Schatten', breakpoint: 'Breakpoint', container: 'Container' };
   var CATS = Object.keys(CAT_LABEL);
   var dErr = el('div', { class: 'err', role: 'alert' });
   var dInfo = el('div');
@@ -3481,10 +3481,12 @@
     if (v.platzhalter) dBody.appendChild(el('p', { class: 'hint', text: v.platzhalter + ' Platzhalter (ergänzte Funktionen, im echten Projekt anzubinden). In der Vorschau mit „Platzhalter zeigen“ markieren.' }));
 
     // Bausteine: neu oder wie bisher – live, wenn die Version beide Klassen kennt
-    if (v.bausteine && v.bausteine.length) {
+    // Bausteine mit Klassen-Angaben, aber ohne Gegenstück im Bestand sind nicht umschaltbar und erscheinen nicht
+    var bstList = (v.bausteine || []).filter(function (b) { return !b.klassen || splitCls((b.klassen || {}).bestand).length > 0 || b.source === 'bestand'; });
+    if (bstList.length) {
       var tb = el('div', { class: 'bst' });
       var liveHere = live && pvLive.shown === v.v;
-      v.bausteine.forEach(function (b) {
+      bstList.forEach(function (b) {
         var key = String(b.key || b.label);
         var cur = draftToggles[key] || (b.source === 'bestand' ? 'bestand' : 'neu');
         var lv = liveHere && canLiveToggle(b);
@@ -3505,7 +3507,7 @@
           seg,
         ]));
       });
-      var anyLive = v.bausteine.some(canLiveToggle);
+      var anyLive = bstList.some(canLiveToggle);
       dBody.appendChild(el('section', { class: 'dsec' }, [
         el('h3', { text: 'Bausteine' }), tb,
         el('p', { class: 'hint', text: liveHere && anyLive ? 'Umschalten zeigt die Wirkung sofort. Mit „Neue Version“ setzt Claude die Wahl sauber um.' : anyLive ? 'Live umschalten geht in der Vorschau dieser Version:' : 'Die Wirkung zeigt erst eine neue Version (diese Version ist noch ohne Klassen-Angaben entstanden und nicht live umschaltbar).' }),

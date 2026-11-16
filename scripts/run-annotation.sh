@@ -44,7 +44,7 @@ jq -e 'all(.[]; (.prompt // "") | length > 0)' <<<"$ITEMS" >/dev/null || die "An
 [[ -z "$(git_site status --porcelain)" ]] || die "Der Abzug enthält nicht übernommene Änderungen (offene Prüfung?). Erst übernehmen („Änderungen übernehmen“ im Overlay) oder verwerfen."
 
 # Ältere Abzüge ohne Design-Gedächtnis oder mit veralteter CLAUDE.md nachrüsten (eigener Commit "[design] …")
-if [[ ! -f "$SITE/design/tokens.json" || ! -f "$SITE/design/consistency.json" ]] || ! cmp -s "$MODIO_ROOT/templates/CLAUDE.md" "$SITE/CLAUDE.md"; then
+if [[ ! -f "$SITE/design/tokens.json" || ! -f "$SITE/design/consistency.json" ]] || ! cmp -s <(site_claude_md "$SITE") "$SITE/CLAUDE.md"; then
   "$SCRIPTS_DIR/design-init.sh" "$SLUG" >/dev/null || die "design/ konnte nicht angelegt werden"
 fi
 

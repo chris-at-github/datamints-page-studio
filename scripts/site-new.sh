@@ -29,7 +29,7 @@ trap cleanup_on_fail EXIT
 jq -n --arg url "$URL" --arg slug "$SLUG" --arg host "$(url_host "$URL")" \
   '{url:$url, slug:$slug, host:$host, entry:null, crawledAt:null}' >"$SITE/site.json"
 
-cp "$MODIO_ROOT/templates/CLAUDE.md" "$SITE/CLAUDE.md"
+site_claude_md "$SITE" >"$SITE/CLAUDE.md"
 : >"$SITE/overrides.css"
 touch "$SITE/annotations/assets/.keep"
 cat >"$SITE/.gitignore" <<'GI'

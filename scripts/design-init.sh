@@ -31,8 +31,8 @@ set +e
 BUILD="$(node "$LIB_DIR/design.mjs" build "$SITE")"; rc=$?
 set -e
 (( rc == 0 )) || die "tokens.json ist ungültig: $(jq -r '.error // empty' <<<"$BUILD")"
-if ! cmp -s "$MODIO_ROOT/templates/CLAUDE.md" "$SITE/CLAUDE.md"; then
-  cp "$MODIO_ROOT/templates/CLAUDE.md" "$SITE/CLAUDE.md"
+if ! cmp -s <(site_claude_md "$SITE") "$SITE/CLAUDE.md"; then
+  site_claude_md "$SITE" >"$SITE/CLAUDE.md"
   CREATED+=("CLAUDE.md")
 fi
 grep -qxF '.scan.json' "$SITE/.gitignore" 2>/dev/null || { printf '.scan.json\n' >>"$SITE/.gitignore"; CREATED+=(".gitignore"); }

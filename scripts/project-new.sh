@@ -24,7 +24,7 @@ trap cleanup_on_fail EXIT
 jq -n --arg slug "$SLUG" --arg title "$TITLE" --arg created "$(now_iso)" \
   '{url:null, slug:$slug, host:null, kind:"neu", title:$title, entry:"/leinwand/index.html", crawledAt:null, created:$created}' >"$SITE/site.json"
 : >"$SITE/urls.txt"
-cp "$MODIO_ROOT/templates/CLAUDE.md" "$SITE/CLAUDE.md"
+site_claude_md "$SITE" >"$SITE/CLAUDE.md"
 : >"$SITE/overrides.css"
 touch "$SITE/annotations/assets/.keep"
 cat >"$SITE/.gitignore" <<'GI'

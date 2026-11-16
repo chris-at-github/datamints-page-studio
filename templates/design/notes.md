@@ -5,5 +5,6 @@
 ## Struktur
 
 ## Gestaltung
+- Rundungen und Schatten: erlaubt
 
 ## Nicht ändern

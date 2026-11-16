@@ -251,7 +251,7 @@ export function placeholdersIn(cheerio, html) {
 }
 
 // Liest und prüft eine Version: { name, html, css, meta, befund, platzhalter, errors, warnings }
-// requireBefund: nur beim Erzeugen (draft-create); ältere Entwürfe ohne befund.json bleiben für Vorschau und Übernahme gültig
+// requireBefund: nur beim Erzeugen (draft-create) meldet ein fehlender Befund einen Hinweis; ältere Entwürfe ohne befund.json bleiben gültig
 export async function loadVersion(siteDir, draftDir, version, { requireBefund = false } = {}) {
   const vdir = path.join(draftDir, `v${version}`);
   const read = (f) => { try { return fs.readFileSync(path.join(vdir, f), 'utf8'); } catch { return null; } };
@@ -264,7 +264,9 @@ export async function loadVersion(siteDir, draftDir, version, { requireBefund = 
   const { errors, warnings } = validateComponent(cheerio, { html, css, name, allowedHosts: allowedHostsFor(siteDir, draftDir) });
   if (!meta.name) errors.unshift('meta.json ohne name');
   const befundText = read('befund.json');
-  const b = befundText === null && !requireBefund ? { befund: [], errors: [] } : validateBefund(befundText);
+  // Fehlt nur der Befund (z. B. Lauf am Ende abgebrochen), bleibt die Version gültig: Hinweis statt Fehler
+  const b = befundText === null ? { befund: [], errors: [] } : validateBefund(befundText);
+  if (befundText === null && requireBefund) warnings.push('befund.json fehlt: Version ohne Befund');
   errors.push(...b.errors);
   const platzhalter = errors.length ? [] : placeholdersIn(cheerio, html);
   return { name, html, css, meta, befund: b.befund, platzhalter, errors, warnings };
