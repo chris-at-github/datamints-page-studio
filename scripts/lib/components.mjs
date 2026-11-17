@@ -14,6 +14,9 @@
 // Aufruf: node components.mjs list <site-dir>                  -> { components: [...] }
 //         node components.mjs render <site-dir> <name> [variante] -> HTML der Variante auf stdout
 //         node components.mjs delete <site-dir> <name> [variante]  -> Komponente bzw. Variante löschen (siehe deleteFromLibrary)
+//         node components.mjs sync <site-dir> <name>           -> abweichende Kopien angleichen (siehe syncLibrary)
+//         node components.mjs uses <site-dir> <name>           -> { total, refs, variants }
+//         node components.mjs deviations <site-dir>            -> { <name>: abweichende Kopien }
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +36,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 function rootOf($) {
   const top = $.root().contents().toArray().filter((n) => n.type !== 'comment' && !(n.type === 'text' && !n.data.trim()));
   return top.length === 1 && top[0].type === 'tag' ? top[0] : null;
+}
+// Seite byte-treu lesen: UTF-8, sonst latin1 (alte Abzüge)
+function readPage(file) {
+  const buf = fs.readFileSync(file);
+  const utf8 = buf.toString('utf8');
+  const enc = Buffer.from(utf8, 'utf8').equals(buf) ? 'utf8' : 'latin1';
+  return { text: enc === 'utf8' ? utf8 : buf.toString('latin1'), enc };
 }
 const classesOf = (node) => String(node.attribs?.class || '').split(/\s+/).filter(Boolean);
 
@@ -185,6 +195,27 @@ function structure($, node, name, libNames, optional, isRoot = true) {
   return `${node.name}${own.length ? '.' + own.join('.') : ''}(${kids.join(',')})`;
 }
 
+// Abweichung einer gekennzeichneten Kopie von ihrer Variante (Grund) oder null. cache: Map variantKey -> erwarteter Aufbau
+function nodeIssue(cheerio, $, node, c, libNames, cache) {
+  const vk = node.attribs['data-mx-variant'];
+  const v = c.varianten.find((x) => x.key === vk);
+  if (!v) return `unbekannte Variante „${vk}“`;
+  const optional = new Set(c.slots.filter((x) => !x.pflicht).map((x) => x.key));
+  if (!cache.has(v.key)) {
+    const t = cheerio.load(renderVariant(cheerio, c.template, c, v.key), null, false);
+    const tr = rootOf(t);
+    cache.set(v.key, { sig: structure(t, tr, c.name, libNames, optional), rootClasses: classesOf(tr).filter((k) => k !== `mx-${c.name}` && !k.startsWith(`mx-${c.name}--`)) });
+  }
+  const exp = cache.get(v.key);
+  const cls = classesOf(node);
+  const want = v.klassen ? v.klassen.split(' ') : [];
+  const mods = cls.filter((k) => k.startsWith(`mx-${c.name}--`));
+  if (want.some((k) => !cls.includes(k)) || mods.some((k) => !want.includes(k))) return 'Klassen passen nicht zur Variante';
+  // Klassen der Vorlage müssen bleiben, zusätzliche Kontextklassen auf der Wurzel sind erlaubt
+  if (exp.rootClasses.some((k) => !cls.includes(k)) || structure($, node, c.name, libNames, optional) !== exp.sig) return 'Aufbau außerhalb der austauschbaren Inhalte geändert';
+  return null;
+}
+
 // Abweichende Instanzen in einem HTML-Text: [{ name, variant, reason }]
 export function instanceIssues(cheerio, text, library) {
   const issues = [];
@@ -192,27 +223,11 @@ export function instanceIssues(cheerio, text, library) {
   const $ = cheerio.load(text);
   const libNames = new Set(library.map((c) => c.name));
   for (const c of library) {
-    const nodes = $(`.mx-${c.name}`).toArray();
-    if (!nodes.length) continue;
-    const expected = new Map();
-    const optional = new Set(c.slots.filter((x) => !x.pflicht).map((x) => x.key));
-    for (const node of nodes) {
-      const vk = node.attribs['data-mx-variant'];
-      if (vk === undefined) continue; // nicht (mehr) als Komponente gekennzeichnet
-      const v = c.varianten.find((x) => x.key === vk);
-      if (!v) { issues.push({ name: c.name, variant: vk, reason: `unbekannte Variante „${vk}“` }); continue; }
-      if (!expected.has(v.key)) {
-        const t = cheerio.load(renderVariant(cheerio, c.template, c, v.key), null, false);
-        const tr = rootOf(t);
-        expected.set(v.key, { sig: structure(t, tr, c.name, libNames, optional), rootClasses: classesOf(tr).filter((k) => k !== `mx-${c.name}` && !k.startsWith(`mx-${c.name}--`)) });
-      }
-      const exp = expected.get(v.key);
-      const cls = classesOf(node);
-      const want = v.klassen ? v.klassen.split(' ') : [];
-      const mods = cls.filter((k) => k.startsWith(`mx-${c.name}--`));
-      if (want.some((k) => !cls.includes(k)) || mods.some((k) => !want.includes(k))) { issues.push({ name: c.name, variant: v.key, reason: 'Klassen passen nicht zur Variante' }); continue; }
-      // Klassen der Vorlage müssen bleiben, zusätzliche Kontextklassen auf der Wurzel sind erlaubt
-      if (exp.rootClasses.some((k) => !cls.includes(k)) || structure($, node, c.name, libNames, optional) !== exp.sig) issues.push({ name: c.name, variant: v.key, reason: 'Aufbau außerhalb der austauschbaren Inhalte geändert' });
+    const cache = new Map();
+    for (const node of $(`.mx-${c.name}`).toArray()) {
+      if (node.attribs['data-mx-variant'] === undefined) continue; // nicht (mehr) als Komponente gekennzeichnet
+      const reason = nodeIssue(cheerio, $, node, c, libNames, cache);
+      if (reason) issues.push({ name: c.name, variant: node.attribs['data-mx-variant'], reason });
     }
   }
   return issues;
@@ -236,6 +251,120 @@ export function countInstances(cheerio, siteDir, names) {
         out[n].variants[vk] = (out[n].variants[vk] || 0) + 1;
       }
     }
+  }
+  return out;
+}
+
+// ---------- Angleichen: Kopie aus der Vorlage ihrer Variante neu aufbauen ----------
+
+const SLOT_ATTRS = ['src', 'srcset', 'sizes', 'alt', 'width', 'height', 'href', 'target', 'rel', 'title', 'aria-label', 'datetime', 'loading'];
+const nestedComp = (node, name, libNames) => classesOf(node).find((k) => k.startsWith('mx-') && k !== `mx-${name}` && !k.startsWith(`mx-${name}--`) && libNames.has(k.slice(3)));
+
+// Slots und eingebettete Komponenten (Schlüssel "@mx-<name>") einer Kopie in Dokumentreihenfolge; nicht in eingebettete hinein
+function partsOf(root, name, libNames) {
+  const map = new Map();
+  const add = (k, n) => { if (!map.has(k)) map.set(k, []); map.get(k).push(n); };
+  const walk = (n) => {
+    for (const c of n.children || []) {
+      if (c.type !== 'tag') continue;
+      const nested = nestedComp(c, name, libNames);
+      if (nested) { add('@' + nested, c); continue; }
+      if (c.attribs['data-mx-slot'] !== undefined) { add(c.attribs['data-mx-slot'], c); continue; }
+      walk(c);
+    }
+  };
+  walk(root);
+  return map;
+}
+
+// Neues HTML für eine Kopie ({ html, placeholders }) oder { skip: Grund }.
+// placeholders: Pflicht-Slots, die die Kopie nicht hatte (bleiben mit dem Beispielinhalt der Vorlage)
+export function syncInstance(cheerio, $, node, comp, libNames) {
+  const vk = node.attribs['data-mx-variant'];
+  if (!comp.varianten.some((v) => v.key === vk)) return { skip: `unbekannte Variante „${vk}“` };
+  const f = cheerio.load(renderVariant(cheerio, comp.template, comp, vk), null, false);
+  const froot = rootOf(f);
+  if (!froot) return { skip: 'Vorlage ohne eindeutiges Wurzelelement' };
+  const oldParts = partsOf(node, comp.name, libNames);
+  const newParts = partsOf(froot, comp.name, libNames);
+  for (const [k, srcs] of oldParts) {
+    const tgts = newParts.get(k) || [];
+    if (srcs.length > 1 && tgts.length !== srcs.length) return { skip: `„${k.replace(/^@/, '')}“ kommt ${srcs.length}× vor, in der Vorlage ${tgts.length}×` };
+  }
+  const placeholders = [];
+  for (const [k, tgts] of newParts) {
+    const srcs = oldParts.get(k) || [];
+    if (!srcs.length) {
+      if (k.startsWith('@')) continue; // eingebettete Komponente aus der Vorlage bleibt
+      const slot = comp.slots.find((s) => s.key === k);
+      if (slot && !slot.pflicht) tgts.forEach((t) => f(t).remove());
+      else placeholders.push(k);
+      continue;
+    }
+    tgts.forEach((t, i) => {
+      const s = srcs[Math.min(i, srcs.length - 1)];
+      if (k.startsWith('@')) { f(t).replaceWith($.html(s)); return; }
+      for (const a of SLOT_ATTRS) {
+        if (s.attribs[a] !== undefined) t.attribs[a] = s.attribs[a];
+        else delete t.attribs[a];
+      }
+      if (comp.slots.find((x) => x.key === k)?.typ === 'icon' && s.attribs.class !== undefined) t.attribs.class = s.attribs.class;
+      f(t).html($(s).html());
+    });
+  }
+  // Wurzel: Kontextklassen und id der Kopie bleiben
+  const own = new Set(classesOf(froot));
+  const ctx = classesOf(node).filter((k) => k !== `mx-${comp.name}` && !k.startsWith(`mx-${comp.name}--`) && !own.has(k));
+  if (ctx.length) f(froot).addClass(ctx.join(' '));
+  if (node.attribs.id) froot.attribs.id = node.attribs.id;
+  return { html: f.html(froot), placeholders };
+}
+
+// Alle abweichenden Kopien einer Komponente auf allen Seiten angleichen (schreibt die Seiten). Byte-genau: nur die
+// Quelltext-Spanne der betroffenen Kopie wird ersetzt.
+export async function syncLibrary(siteDir, name) {
+  const cheerio = await loadCheerio();
+  const library = await listLibrary(siteDir, { withTemplate: true });
+  const comp = library.find((c) => c.name === name);
+  if (!comp) throw new Error(`Komponente nicht in der Bibliothek: mx-${name}`);
+  const libNames = new Set(library.map((c) => c.name));
+  const out = { name, synced: 0, pages: [], skipped: [], placeholders: [] };
+  for (const p of sitePages(siteDir)) {
+    const file = path.join(siteDir, 'www', p);
+    const src = readPage(file);
+    if (!src.text.includes(`mx-${name}`)) continue;
+    const $ = cheerio.load(src.text, { sourceCodeLocationInfo: true });
+    const cache = new Map();
+    const edits = [];
+    for (const node of $(`.mx-${name}`).toArray()) {
+      if (node.attribs['data-mx-variant'] === undefined) continue;
+      const loc = node.sourceCodeLocation;
+      if (!loc || loc.endOffset === undefined) { out.skipped.push({ page: '/' + p, reason: 'Stelle im Quelltext nicht eindeutig' }); continue; }
+      // in einer bereits ersetzten Kopie: kommt mit ihr neu
+      if (edits.some((e) => loc.startOffset >= e.a && loc.endOffset <= e.b)) continue;
+      if (!nodeIssue(cheerio, $, node, comp, libNames, cache)) continue;
+      const r = syncInstance(cheerio, $, node, comp, libNames);
+      if (r.skip) { out.skipped.push({ page: '/' + p, reason: r.skip }); continue; }
+      edits.push({ a: loc.startOffset, b: loc.endOffset, html: r.html });
+      r.placeholders.forEach((s) => out.placeholders.push({ page: '/' + p, slot: s }));
+    }
+    if (!edits.length) continue;
+    let text = src.text;
+    for (const e of edits.sort((x, y) => y.a - x.a)) text = text.slice(0, e.a) + e.html + text.slice(e.b);
+    fs.writeFileSync(file, text, src.enc);
+    out.synced += edits.length;
+    out.pages.push('/' + p);
+  }
+  return out;
+}
+
+// Abweichende Kopien je Komponente (für die Komponentenseite): { <name>: n }
+export function deviations(cheerio, siteDir, library) {
+  const out = Object.fromEntries(library.map((c) => [c.name, 0]));
+  for (const p of sitePages(siteDir)) {
+    const text = readFile(path.join(siteDir, 'www', p));
+    if (!text || !/\bmx-/.test(text)) continue;
+    for (const i of instanceIssues(cheerio, text, library)) out[i.name]++;
   }
   return out;
 }
@@ -298,10 +427,7 @@ export async function deleteFromLibrary(siteDir, name, variantKey) {
   const pages = [];
   for (const p of sitePages(siteDir)) {
     const file = path.join(siteDir, 'www', p);
-    const buf = fs.readFileSync(file);
-    const utf8 = buf.toString('utf8');
-    const enc = Buffer.from(utf8, 'utf8').equals(buf) ? 'utf8' : 'latin1';
-    const text = enc === 'utf8' ? utf8 : buf.toString('latin1');
+    const { text, enc } = readPage(file);
     if (!text.includes(`mx-${name}`)) continue;
     const r = unmarkInstances(cheerio, text, name, variantKey, libNames);
     if (r.count) { fs.writeFileSync(file, r.text, enc); unmarked += r.count; pages.push('/' + p); }
@@ -430,7 +556,10 @@ async function main() {
     process.exit(0);
   }
   if (cmd === 'delete' && siteDir && name) exitJson(await deleteFromLibrary(siteDir, name, variant || null));
-  exitJson({ error: 'Aufruf: node components.mjs list <site-dir> | render <site-dir> <name> [variante] | delete <site-dir> <name> [variante]' }, 2);
+  if (cmd === 'sync' && siteDir && name) exitJson(await syncLibrary(siteDir, name));
+  if (cmd === 'uses' && siteDir && name) exitJson(countInstances(await loadCheerio(), siteDir, [name])[name]);
+  if (cmd === 'deviations' && siteDir) exitJson(deviations(await loadCheerio(), siteDir, await listLibrary(siteDir, { withTemplate: true })));
+  exitJson({ error: 'Aufruf: node components.mjs list <site-dir> | render <site-dir> <name> [variante] | delete <site-dir> <name> [variante] | sync <site-dir> <name> | uses <site-dir> <name> | deviations <site-dir>' }, 2);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

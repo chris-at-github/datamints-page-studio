@@ -671,6 +671,19 @@ check "Bibliotheks-Komponente: Name bleibt, Hinweis" '[[ "$(jq -r .name <<<"$OUT
 ./scripts/draft-discard.sh modio-test-neu "$(jq -r .draft <<<"$OUT")" >/dev/null 2>&1 || true
 ./scripts/rollback.sh modio-test-neu "$REN_BEFORE" >/dev/null 2>&1 || true
 rm -f "$JOBN.3"
+# Angleichen: Vorlage mit geändertem Aufbau, Kopien werden neu aufgebaut, Inhalte und Kontextklassen bleiben
+SYNC_BEFORE="$(git -C "$NS" rev-parse HEAD)"
+SYNC_KOPF='const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("<h3 data-mx-slot=\"titel\">Beispiel</h3>","<header class=\"kopf\"><h3 data-mx-slot=\"titel\">Beispiel</h3></header>"))'
+node -e "$SYNC_KOPF" "$NS/components/mx-held.html"
+git -C "$NS" add -A && git -C "$NS" commit -qm "Test: Vorlage mit Kopf"
+check "uses: Verwendungen je Variante" 'jq -e ".total >= 3 and .variants.standard >= 2" <<<"$(node scripts/lib/components.mjs uses "$NS" held)" >/dev/null'
+check "deviations: alle Kopien weichen von der neuen Vorlage ab" 'jq -e ".held >= 3" <<<"$(node scripts/lib/components.mjs deviations "$NS")" >/dev/null'
+cp "$P_NS" "$NS/sync-vorher.html"
+R="$(node scripts/lib/components.mjs sync "$NS" held)"
+check "syncLibrary: Kopien neu aufgebaut, Inhalte und Kontextklasse bleiben" '[[ "$(jq -r .synced <<<"$R")" -ge 3 ]] && [[ "$(grep -o "<header class=\"kopf\">" "$P_NS" | wc -l)" -ge 3 ]] && grep -q "Zweite Kachel" "$P_NS" && grep -q "class=\"mx-held kachel__ctx\"" "$P_NS" && ! grep -q "class=\"extra\"" "$P_NS"'
+check "syncLibrary: Rest der Seite byte-genau unverändert" 'node -e "const fs=require(\"fs\");const [a,b]=[fs.readFileSync(process.argv[1],\"utf8\"),fs.readFileSync(process.argv[2],\"utf8\")];const pre=(t)=>t.slice(0,t.lastIndexOf(\"<\",t.indexOf(\"mx-held\")));const post=(t)=>t.slice(t.lastIndexOf(\"</main>\"));process.exit(pre(a)===pre(b)&&post(a)===post(b)?0:1)" "$NS/sync-vorher.html" "$P_NS" && [[ "$(git -C "$NS" diff --stat -- www | tail -1)" == *"1 file changed"* ]]'
+check "syncLibrary: danach keine Abweichung" 'jq -e ".held == 0" <<<"$(node scripts/lib/components.mjs deviations "$NS")" >/dev/null'
+rm -f "$NS/sync-vorher.html"; git -C "$NS" checkout -q -- . && git -C "$NS" reset -q --hard "$SYNC_BEFORE"
 # Bibliotheks-Komponente neu gestalten: Beschreibung bleibt Pflicht
 jq -n '{id:"job-test-neu-comp4", params:{page:"/seiten/startseite.html", selector:".mx-held", html:"", text:"", prompt:"Ruhiger gestalten", viewport:{width:1440,height:900}}}' >"$JOBN.2"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true
