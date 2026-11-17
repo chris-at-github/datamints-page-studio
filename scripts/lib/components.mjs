@@ -494,20 +494,28 @@ function pageStyles(siteDir, page) {
 
 // Komponentenseite. Die Stylesheets der Herkunftsseite stehen davor (Schriften, Icon-Fonts usw.); der Server legt sie wie
 // auf jeder Seite in @layer legacy und bindet Tokens, overrides.css und das Komponenten-CSS darüber ein (injectHtml).
-export async function libraryPage(siteDir, { slug, title }) {
+// override = { name, template, spec }: Entwurfsvorschau, die Komponente erscheint mit Vorlage und Beschreibung des Entwurfs.
+// Jeder Abschnitt trägt data-kb-off: Kopien auf den Seiten, die von der (gezeigten) Vorlage abweichen.
+export async function libraryPage(siteDir, { slug, title, override = null }) {
   const library = await listLibrary(siteDir, { withTemplate: true });
+  if (override) {
+    const i = library.findIndex((c) => c.name === override.name);
+    const entry = { ...override.spec, herkunft: (library[i] || {}).herkunft || null, template: override.template };
+    if (i >= 0) library[i] = entry; else library.push(entry);
+  }
   const cheerio = await loadCheerio();
+  const off = deviations(cheerio, siteDir, library);
   const b = `/s/${slug}`;
   // Pfade der Vorlagen sind relativ zur Seite, aus der die Komponente stammt
   const herkunft = library.find((c) => c.herkunft)?.herkunft || '/seiten/x.html';
   const baseDir = path.posix.dirname(herkunft).split('/').map(encodeURIComponent).join('/');
   const uses = countInstances(cheerio, siteDir, library.map((c) => c.name));
   const usesText = (n) => (n ? `${n}× verwendet` : 'nicht verwendet');
-  const sections = library.map((c) => `<section class="kb-comp" id="mx-${esc(c.name)}" data-kb-name="${esc(c.name)}" data-kb-uses="${uses[c.name].total}">
+  const sections = library.map((c) => ({ c, u: uses[c.name] || { total: 0, variants: {} }, n: off[c.name] || 0 })).map(({ c, u, n }) => `<section class="kb-comp" id="mx-${esc(c.name)}" data-kb-name="${esc(c.name)}" data-kb-uses="${u.total}" data-kb-off="${n}">
 <h2>${esc(c.title)} <code>mx-${esc(c.name)}</code></h2>
 ${c.beschreibung ? `<p class="kb-desc">${esc(c.beschreibung)}</p>` : ''}
-<p class="kb-meta">Austauschbar: ${c.slots.length ? c.slots.map((s) => `<code>${esc(s.key)}</code> ${esc(s.label)} (${esc(s.typ)}${s.pflicht ? '' : ', optional'})`).join(' · ') : 'nichts'}${c.herkunft ? ` · aus ${esc(c.herkunft)}` : ''} · ${usesText(uses[c.name].total)}</p>
-${c.varianten.map((v) => `<div class="kb-var" data-kb-variant="${esc(v.key)}" data-kb-uses="${uses[c.name].variants[v.key] || 0}"><p class="kb-vlabel">${esc(v.label)} <code>${esc(v.key)}</code> <span class="kb-uses">${usesText(uses[c.name].variants[v.key] || 0)}</span></p>
+<p class="kb-meta">Austauschbar: ${c.slots.length ? c.slots.map((s) => `<code>${esc(s.key)}</code> ${esc(s.label)} (${esc(s.typ)}${s.pflicht ? '' : ', optional'})`).join(' · ') : 'nichts'}${c.herkunft ? ` · aus ${esc(c.herkunft)}` : ''} · ${usesText(u.total)}${n ? ` · <strong>${n} Kopie(n) weichen ab</strong>` : ''}</p>
+${c.varianten.map((v) => `<div class="kb-var" data-kb-variant="${esc(v.key)}" data-kb-uses="${u.variants[v.key] || 0}"><p class="kb-vlabel">${esc(v.label)} <code>${esc(v.key)}</code> <span class="kb-uses">${usesText(u.variants[v.key] || 0)}</span></p>
 <div class="kb-stage">${renderVariant(cheerio, c.template, c, v.key)}</div></div>`).join('\n')}
 </section>`).join('\n');
   const t = esc(title || slug);

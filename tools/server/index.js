@@ -219,7 +219,8 @@ async function readDraft(slug, id) {
   const brief = await readJson(path.join(dir, 'brief', 'brief.json'), null);
   return { id: d.id, page: d.page, selector: d.selector, prompt: d.prompt, created: d.created, status: draftStatus(slug, d),
     external: d.external === true, brief: brief ? { created: brief.created } : null,
-    appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, revises: d.revises || null, renames: d.renames || null, component: d.component?.name || null, versions };
+    appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, revises: d.revises || null, renames: d.renames || null, component: d.component?.name || null,
+    target: d.target || null, newVariant: d.newVariant || null, variant: d.variant || null, versions };
 }
 
 async function listDrafts(slug) {
@@ -283,8 +284,26 @@ async function serveSite(req, res, slug, rest, search) {
   }
   if (rest === '/__komponenten' || rest === '/__komponenten/') {
     // Komponenten-Bibliothek: alle Komponenten mit ihren Varianten (nicht Teil des Abzugs)
+    // ?__modio_draft=D-xxx&__modio_v=n: Vorschau eines Entwurfs mit Ziel Bibliothek (die Komponente in der Entwurfsversion)
     const site = await readJson(path.join(dir, 'site.json'), {});
-    const buf = injectHtml(Buffer.from(await libraryPage(dir, { slug, title: site.title || slug }), 'utf8'), slug, { layered: true, kind: site.kind === 'neu' ? 'neu' : 'abzug', library: true });
+    let override = null, preview = null;
+    const did = sp.get('__modio_draft');
+    if (did !== null) {
+      const d = validDraftId(did) ? await readDraft(slug, did) : null;
+      if (!d || d.status !== 'open' || d.target !== 'library') {
+        // Verworfen, übernommen oder kein Bibliotheks-Entwurf: zur normalen Komponentenseite
+        res.writeHead(302, { Location: `/s/${slug}/__komponenten`, 'Cache-Control': 'no-store' });
+        return res.end();
+      }
+      const version = Number(sp.get('__modio_v')) || Math.max(0, ...d.versions.map((v) => v.v));
+      if (!d.versions.some((v) => v.v === version)) return sendError(res, 409, `Vorschau nicht möglich: Version ${sp.get('__modio_v')} nicht gefunden`);
+      const v = await loadVersion(dir, path.join(dir, 'drafts', did), version).catch(() => null);
+      if (!v || v.errors.length || !v.library) return sendError(res, 409, 'Vorschau nicht möglich: Entwurf ungültig');
+      override = { name: v.name, template: v.html, spec: v.library };
+      preview = { draft: did, version, name: v.name };
+    }
+    const buf = injectHtml(Buffer.from(await libraryPage(dir, { slug, title: site.title || slug, override }), 'utf8'), slug,
+      { layered: true, kind: site.kind === 'neu' ? 'neu' : 'abzug', library: true, preview });
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': SITE_CSP, 'Content-Length': buf.length });
     return res.end(req.method === 'HEAD' ? undefined : buf);
   }
@@ -831,6 +850,29 @@ async function handleApi(req, res, url) {
     if (!(await listLibrary(siteDir(slug))).some((c) => c.name === name)) return sendError(res, 404, 'Komponente nicht in der Bibliothek');
     if (await busyCheck(res, slug, 'Das Angleichen')) return;
     return send(res, 202, { job: await createJob('component-sync', slug, { name }) });
+  }
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/components\/draft$/)) && req.method === 'POST') {
+    // Komponente auf der Komponentenseite ändern oder Variante hinzufügen (Entwurf mit Ziel Bibliothek, nur neue Projekte)
+    const slug = m[1];
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
+    if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    if ((await readJson(path.join(siteDir(slug), 'site.json'), {})).kind !== 'neu') return sendError(res, 400, 'Komponenten-Bibliothek gibt es nur bei neuen Projekten');
+    const body = await readBody(req);
+    const name = String(body.name || ''), prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    const variant = body.variant ? String(body.variant) : '';
+    const comp = (await listLibrary(siteDir(slug))).find((c) => c.name === name);
+    if (!comp) return sendError(res, 404, 'Komponente nicht in der Bibliothek');
+    if (!prompt || prompt.length > 10000) return sendError(res, 400, 'Bitte beschreiben, was sich ändern soll');
+    if (variant && !comp.varianten.some((v) => v.key === variant)) return sendError(res, 404, 'Variante nicht gefunden');
+    let newVariant = null;
+    if (body.newVariant) {
+      const key = String(body.newVariant.key || ''), label = String(body.newVariant.label || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(key) || key.length > 40) return sendError(res, 400, 'Ungültiger Variantenname (a-z, 0-9, Bindestrich, mit Buchstaben beginnen)');
+      if (comp.varianten.some((v) => v.key === key)) return sendError(res, 400, `Variante ${key} gibt es schon`);
+      newVariant = { key, label: label || key };
+    }
+    if (await draftBusyCheck(res, slug)) return;
+    return send(res, 202, { job: await createJob('draft', slug, { site: slug, mode: 'library', component: name, variant, newVariant, prompt, viewport: null, references: [] }) });
   }
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/pages\/delete$/)) && req.method === 'POST') {
     // Seite löschen (Abzüge und neue Projekte) als Schritt; die Startseite eines Abzugs bleibt

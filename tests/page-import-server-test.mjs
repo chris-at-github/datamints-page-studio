@@ -116,4 +116,45 @@ d = await r.json();
 check('Angleichen: Job component-sync', r.status === 202 && d.job?.type === 'component-sync' && d.job.params.name === 'held', JSON.stringify(d));
 if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: true });
 
+// Komponente auf der Komponentenseite ändern, Variante hinzufügen (Entwurf mit Ziel Bibliothek)
+const compDraft = (slug, body) => fetch(`${BASE}/api/sites/${slug}/components/draft`, { method: 'POST', headers: auth, body: JSON.stringify(body) });
+r = await compDraft(ABZUG, { name: 'held', prompt: 'x' });
+check('Bibliothek ändern: bei Abzügen 400', r.status === 400, String(r.status));
+r = await compDraft(NEU, { name: 'gibt-es-nicht', prompt: 'x' });
+check('Bibliothek ändern: unbekannt 404', r.status === 404, String(r.status));
+r = await compDraft(NEU, { name: 'held', prompt: '' });
+check('Bibliothek ändern: ohne Prompt 400', r.status === 400, String(r.status));
+r = await compDraft(NEU, { name: 'held', prompt: 'x', variant: 'gibt-es-nicht' });
+check('Bibliothek ändern: unbekannte Variante 404', r.status === 404, String(r.status));
+r = await compDraft(NEU, { name: 'held', prompt: 'x', newVariant: { key: 'standard', label: 'S' } });
+check('Variante hinzufügen: vorhandener Name 400', r.status === 400, String(r.status));
+r = await compDraft(NEU, { name: 'held', prompt: 'x', newVariant: { key: 'Kompakt', label: 'S' } });
+check('Variante hinzufügen: ungültiger Name 400', r.status === 400, String(r.status));
+r = await compDraft(NEU, { name: 'held', prompt: 'Kompakter', newVariant: { key: 'kompakt', label: 'Kompakt' } });
+d = await r.json();
+check('Variante hinzufügen: Job draft mode library', r.status === 202 && d.job?.type === 'draft' && d.job.params.mode === 'library' && d.job.params.component === 'held' && d.job.params.newVariant?.key === 'kompakt' && d.job.params.newVariant.label === 'Kompakt', JSON.stringify(d));
+if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: true });
+r = await fetch(`${BASE}/s/${NEU}/__komponenten`);
+text = await r.text();
+check('Komponentenseite: Abweichungen je Komponente', /data-kb-name="held"[^>]*data-kb-off="\d+"/.test(text));
+r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=D-999&__modio_v=1`, { redirect: 'manual' });
+check('Komponentenseite: Vorschau eines fehlenden Entwurfs leitet zurück', r.status === 302 && r.headers.get('location') === `/s/${NEU}/__komponenten`, String(r.status));
+// Offener Bibliotheks-Entwurf aus tests/run.sh (Vorlage mit Kopf, nach dem Rücksprung wieder offen)
+r = await fetch(`${BASE}/api/sites/${NEU}/drafts`, { headers: auth });
+d = await r.json();
+const libDraft = (d.drafts || []).find((x) => x.target === 'library' && x.status === 'open' && x.versions.length >= 2);
+const pageDraft = (d.drafts || []).find((x) => !x.target && x.status === 'open');
+check('Entwürfe: Ziel Bibliothek in der Liste', !!libDraft && libDraft.page === '/__komponenten' && libDraft.component === 'held', JSON.stringify((d.drafts || []).map((x) => [x.id, x.target, x.status])));
+if (libDraft) {
+  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=${libDraft.id}&__modio_v=2`);
+  text = await r.text();
+  check('Komponentenseite: Vorschau mit der Entwurfsversion', r.status === 200 && text.includes('<header class="kopf">') && text.includes(`"preview":{"draft":"${libDraft.id}","version":2,"name":"held"}`) && text.includes(`__draft.css?d=${libDraft.id}&amp;v=2`) && /data-kb-name="held"[^>]*data-kb-off="[1-9]\d*"/.test(text) && text.includes('Kopie(n) weichen ab'), r.status);
+  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=${libDraft.id}&__modio_v=9`);
+  check('Komponentenseite: Vorschau einer fehlenden Version 409', r.status === 409, String(r.status));
+}
+if (pageDraft) {
+  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=${pageDraft.id}`, { redirect: 'manual' });
+  check('Komponentenseite: Entwurf für eine Seite leitet zurück', r.status === 302, String(r.status));
+}
+
 process.exit(fail ? 1 : 0);
