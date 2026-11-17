@@ -696,6 +696,38 @@ set +e; OUT="$(./scripts/component-sync.sh modio-test-neu gibt-es-nicht 2>/dev/n
 check "component-sync.sh: unbekannte Komponente Exit 4" '(( rc == 4 ))'
 ./scripts/rollback.sh modio-test-neu "$SYNC_BEFORE" >/dev/null 2>&1 || true
 check "component-sync.sh: Rücksprung stellt die Kopien wieder her" 'grep -q "class=\"extra\"" "$P_NS" && ! grep -q "<header class=\"kopf\"><h3 data-mx-slot" "$P_NS" "$NS/components/mx-held.html" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+# Komponente auf der Komponentenseite ändern bzw. Variante hinzufügen (Entwurf ohne Kopie auf einer Seite)
+LIBD_BEFORE="$(git -C "$NS" rev-parse HEAD)"
+jq -n '{id:"job-test-neu-lib1", params:{mode:"library", component:"held", variant:"", newVariant:null, prompt:"Ruhiger", viewport:{width:1440,height:900}}}' >"$JOBN.2"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_LIB_WRAP=1 FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true
+LD="$(jq -r .draft <<<"$OUT")"
+check "Bibliothek ändern: Entwurf mit Vorlage als Material" '[[ "$(jq -r .page <<<"$OUT")" == /__komponenten ]] && jq -e ".target == \"library\" and .component.name == \"held\" and .revises == \"held\" and .material.source == \"bibliothek\"" "$NS/drafts/$LD/draft.json" >/dev/null && cmp -s "$NS/components/mx-held.html" "$NS/drafts/$LD/source.html" && [[ -f "$NS/drafts/$LD/bestand-komponente.json" && ! -f "$NS/drafts/$LD/layout.json" ]] && grep -q "Vorlage der Komponente" "$JOBN.args" && grep -q "Komponentenseite der Bibliothek" "$JOBN.args" && ! grep -q "Seite: www/__komponenten" "$JOBN.args"'
+set +e; OUT2="$(./scripts/draft-brief.sh modio-test-neu "$LD" 2>/dev/null)"; rc=$?; set -e
+check "Bibliothek ändern: kein Briefing für claude.ai" '(( rc != 0 )) && grep -q "Komponentenseite" <<<"$OUT2" && [[ ! -d "$NS/drafts/$LD/brief" ]]'
+# Nachbessern: Folgeversion ohne Seite (kein Extrahieren aus www/__komponenten, keine Messung)
+jq -n --arg d "$LD" '{id:"job-test-neu-lib1v2", params:{draft:$d, prompt:"Etwas mehr Luft"}}' >"$JOBN.3"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_LIB_WRAP=1 FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh modio-test-neu "$JOBN.3" 2>/dev/null)" || true
+check "Bibliothek ändern: Folgeversion ohne Seite" '[[ "$(jq -r .status <<<"$OUT")" == ok && "$(jq -r .version <<<"$OUT")" == 2 && "$(jq -r .name <<<"$OUT")" == held ]] && [[ -f "$NS/drafts/$LD/v2/component.json" && ! -f "$NS/drafts/$LD/layout.json" ]] && cmp -s "$NS/components/mx-held.html" "$NS/drafts/$LD/source.html" && jq -e ".target == \"library\" and (.versions | length) == 2" "$NS/drafts/$LD/draft.json" >/dev/null && grep -q "Überarbeite den Entwurf" "$JOBN.args" && grep -q "Komponentenseite der Bibliothek" "$JOBN.args"'
+OUT="$(./scripts/draft-apply.sh modio-test-neu "$LD" 2>/dev/null)" || true
+check "Bibliothek ändern: Übernahme ändert nur components/, Herkunft bleibt" '[[ "$(jq -r .status <<<"$OUT")" == committed && "$(jq -r .version <<<"$OUT")" == 2 ]] && grep -q "class=\"kopf\"" "$NS/components/mx-held.html" && jq -e ".herkunft == \"/seiten/startseite.html\"" "$NS/components/mx-held.json" >/dev/null && [[ -z "$(git -C "$NS" diff --name-only HEAD~1 -- www)" && -n "$(git -C "$NS" diff --name-only HEAD~1 -- components)" && -z "$(git -C "$NS" status --porcelain)" ]]'
+check "Bibliothek ändern: Schritt ohne Seite, abweichende Kopien gemeldet" 'jq -e ".page == null and .selector == null and (.prompt | contains(\"Bibliothek\")) and (.result.summary | startswith(\"Komponente mx-held in der Bibliothek geändert\"))" "$NS/annotations/$(jq -r .annotationId <<<"$OUT").json" >/dev/null && (( $(jq -r .deviating <<<"$OUT") >= 3 ))'
+jq -n '{id:"job-test-neu-lib2", params:{mode:"library", component:"held", variant:"", newVariant:{key:"kompakt", label:"Kompakt"}, prompt:"Weniger Abstand", viewport:{width:1440,height:900}}}' >"$JOBN.2"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true
+check "Variante hinzufügen: Auftrag nennt die Variante, Entwurf enthält sie" 'grep -q "Neue Variante \"kompakt\"" "$JOBN.args" && jq -e "[.varianten[].key] | index(\"kompakt\")" "$NS/drafts/$(jq -r .draft <<<"$OUT")/v1/component.json" >/dev/null && jq -e ".newVariant == {key:\"kompakt\", label:\"Kompakt\"}" "$NS/drafts/$(jq -r .draft <<<"$OUT")/draft.json" >/dev/null'
+./scripts/draft-discard.sh modio-test-neu "$(jq -r .draft <<<"$OUT")" >/dev/null 2>&1 || true
+set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_DROP_VARIANT=1 ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)"; rc=$?; set -e
+check "Verwendete Variante darf nicht wegfallen" '(( rc != 0 )) && grep -q "Variante „hervorgehoben“" <<<"$OUT"'
+jq '.id = "job-test-neu-lib3" | .params.newVariant = {key:"standard", label:"S"}' "$JOBN.2" >"$JOBN.3"
+set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.3" 2>/dev/null)"; rc=$?; set -e
+check "Variante hinzufügen: vorhandener Name abgewiesen" '(( rc != 0 )) && grep -q "gibt es schon" <<<"$OUT"'
+jq '.id = "job-test-neu-lib3" | .params.component = "gibt-es-nicht"' "$JOBN.2" >"$JOBN.3"
+set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.3" 2>/dev/null)"; rc=$?; set -e
+check "Bibliothek ändern: unbekannte Komponente abgewiesen" '(( rc != 0 ))'
+set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBN.2" 2>/dev/null)"; rc=$?; set -e
+check "Bibliothek ändern: bei Abzügen abgewiesen" '(( rc != 0 )) && grep -q "nur bei neuen Projekten" <<<"$OUT"'
+./scripts/rollback.sh modio-test-neu "$LIBD_BEFORE" >/dev/null 2>&1 || true
+check "Bibliothek ändern: Rücksprung stellt die Vorlage wieder her" '! grep -q "class=\"kopf\"" "$NS/components/mx-held.html" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+rm -f "$JOBN.3"
 # Bibliotheks-Komponente neu gestalten: Beschreibung bleibt Pflicht
 jq -n '{id:"job-test-neu-comp4", params:{page:"/seiten/startseite.html", selector:".mx-held", html:"", text:"", prompt:"Ruhiger gestalten", viewport:{width:1440,height:900}}}' >"$JOBN.2"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true

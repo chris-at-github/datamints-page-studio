@@ -14,6 +14,8 @@ valid_draft_id "$DID" || usage "draft-brief.sh <slug> <entwurf-id>"
 DDIR="$SITE/drafts/$DID"
 [[ -f "$DDIR/draft.json" && -f "$DDIR/source.html" ]] || die "Entwurf nicht gefunden: $DID"
 [[ "$(draft_status "$DID")" == "open" ]] || die "$DID ist nicht mehr offen (übernommen oder verworfen)"
+# Entwurf auf der Komponentenseite: kein Element auf einer Seite (keine Bilder, kein Raster), Briefing gibt es dafür nicht
+[[ "$(jq -r '.target // ""' "$DDIR/draft.json")" != library ]] || die "Briefing für claude.ai gibt es nur für Elemente auf einer Seite, nicht für Entwürfe auf der Komponentenseite"
 PAGE="$(jq -r .page "$DDIR/draft.json")"; SELECTOR="$(jq -r .selector "$DDIR/draft.json")"
 PROMPT_USER="$(jq -r .prompt "$DDIR/draft.json")"
 OUT="$DDIR/brief"

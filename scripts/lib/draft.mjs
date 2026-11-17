@@ -423,6 +423,11 @@ async function main() {
   const v = await loadVersion(siteDir, draftDir, version, { requireBefund: cmd === 'validate', requireLibrary: process.env.DRAFT_REQUIRE_LIBRARY === '1' });
   const expect = process.env.DRAFT_EXPECT_NAME || '';
   if (cmd === 'validate' && expect && v.name !== expect) v.errors.push(`Überarbeitung: Name muss "${expect}" bleiben (meta.json, Klasse mx-${expect}, @scope (.mx-${expect}))`);
+  // Bibliotheks-Komponente: Varianten, die auf Seiten verwendet werden oder verlangt sind (DRAFT_REQUIRED_VARIANTS="a,b")
+  const required = (process.env.DRAFT_REQUIRED_VARIANTS || '').split(',').map((k) => k.trim()).filter(Boolean);
+  if (cmd === 'validate' && v.library) {
+    for (const k of required) if (!v.library.varianten.some((x) => x.key === k)) v.errors.push(`Variante „${k}“ fehlt in component.json (sie wird auf Seiten verwendet oder wurde verlangt; nicht entfernen)`);
+  }
   if (cmd === 'validate') out({ name: v.name, title: v.meta.title || '', bausteine: v.meta.bausteine || [], befund: v.befund, platzhalter: v.platzhalter, library: v.library, errors: v.errors, warnings: v.warnings }, v.errors.length ? 3 : 0);
 
   if (v.errors.length) out({ error: `Komponente ungültig: ${v.errors.join('; ')}`, errors: v.errors }, 3);
@@ -431,13 +436,21 @@ async function main() {
     out({ error: `mx-${v.name} ist eine Bibliotheks-Komponente: Die Version braucht eine component.json (Entwurf nachbessern).` }, 3);
   }
   const page = String(pageArg || '').replace(/^\/+/, '');
-  if (!sitePages(siteDir).includes(page)) out({ error: `Seite nicht im Abzug: /${page}` }, 1);
-  const cheerio = await loadCheerio();
-  const file = path.join(siteDir, 'www', page);
-  const src = readText(file);
-  const r = replaceElement(cheerio, src.text, selector, instanceHtml(cheerio, v));
-  if (r.error) out({ error: r.error }, 1);
-  fs.writeFileSync(file, r.text, src.enc);
+  // Ziel Bibliothek (Entwurf auf der Komponentenseite): nur components/, kein Element auf einer Seite; herkunft bleibt
+  const toLibrary = page === '__komponenten';
+  if (toLibrary && !v.library) out({ error: 'Ziel Bibliothek: Die Version braucht eine component.json' }, 3);
+  let herkunft = '/' + page;
+  if (toLibrary) {
+    try { herkunft = JSON.parse(fs.readFileSync(path.join(siteDir, 'components', `mx-${v.name}.json`), 'utf8')).herkunft || null; } catch { herkunft = null; }
+  } else {
+    if (!sitePages(siteDir).includes(page)) out({ error: `Seite nicht im Abzug: /${page}` }, 1);
+    const cheerio = await loadCheerio();
+    const file = path.join(siteDir, 'www', page);
+    const src = readText(file);
+    const r = replaceElement(cheerio, src.text, selector, instanceHtml(cheerio, v));
+    if (r.error) out({ error: r.error }, 1);
+    fs.writeFileSync(file, r.text, src.enc);
+  }
   const compDir = path.join(siteDir, 'components');
   fs.mkdirSync(compDir, { recursive: true });
   const cssFile = path.join(compDir, `mx-${v.name}.css`);
@@ -446,9 +459,9 @@ async function main() {
   if (v.library) {
     // Vorlage und Beschreibung für die Bibliothek; herkunft: Seite, auf die sich relative Pfade der Vorlage beziehen
     fs.writeFileSync(path.join(compDir, `mx-${v.name}.html`), v.html.trim() + '\n');
-    fs.writeFileSync(path.join(compDir, `mx-${v.name}.json`), JSON.stringify({ ...v.library, herkunft: '/' + page }, null, 2) + '\n');
+    fs.writeFileSync(path.join(compDir, `mx-${v.name}.json`), JSON.stringify({ ...v.library, ...(typeof herkunft === 'string' ? { herkunft } : {}) }, null, 2) + '\n');
   }
-  out({ name: v.name, title: v.meta.title || '', page: '/' + page, cssFile: `components/mx-${v.name}.css`, library: !!v.library, warnings: v.warnings,
+  out({ name: v.name, title: v.meta.title || '', page: '/' + page, cssFile: `components/mx-${v.name}.css`, library: !!v.library, target: toLibrary ? 'library' : 'page', warnings: v.warnings,
     platzhalter: v.platzhalter, offen: v.befund.filter((b) => !b.umgesetzt).map((b) => `${b.id} ${b.titel}`) });
 }
 

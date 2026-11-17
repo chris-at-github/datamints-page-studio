@@ -11,6 +11,10 @@
 #   mode "component" (nur neu, nur neue Projekte), componentName: Element ohne Neugestaltung als Komponente für die
 #     Bibliothek anlegen (Vorlage mit Slots, Varianten, component.json; CSS aus seiten-css.css). Entwürfe mit
 #     draft.json .component (auch Überarbeitungen von Bibliotheks-Komponenten) verlangen in jeder Version component.json.
+#   mode "library" (nur neu, nur neue Projekte), component, variant, newVariant {key,label}: Bibliotheks-Komponente auf der
+#     Komponentenseite ändern oder Variante hinzufügen. Material ist die Vorlage components/mx-<name>.html, kein Element
+#     einer Seite; draft.json .target = "library", page "/__komponenten". Varianten, die auf Seiten verwendet werden
+#     (und die neue), sind in jeder Version Pflicht.
 # Ausgabe: {status:"ok", draft, version, name, title, summary, page, warnings}
 source "$(dirname "$0")/lib/common.sh"
 # shellcheck source=lib/draft-layout.sh
@@ -28,7 +32,7 @@ IMPORT_FILE="$(jq -r '.importFile // ""' <<<"$P")"
 MODE="$(jq -r '.mode // ""' <<<"$P")"
 [[ -n "$IMPORT_FILE" ]] && MODE=import
 [[ -n "$MODE" ]] || MODE=create
-case "$MODE" in create|brief|import|component) ;; *) die "Ungültiger Modus: $MODE" ;; esac
+case "$MODE" in create|brief|import|component|library) ;; *) die "Ungültiger Modus: $MODE" ;; esac
 COMP_NAME=""
 if [[ "$MODE" == component ]]; then
   [[ -z "$DID" ]] || die "Komponente anlegen nur für neue Entwürfe"
@@ -36,6 +40,25 @@ if [[ "$MODE" == component ]]; then
   COMP_NAME="$(jq -r '.componentName // ""' <<<"$P")"
   [[ "$COMP_NAME" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ && ${#COMP_NAME} -le 40 ]] || die "Ungültiger Komponentenname: $COMP_NAME (a-z, 0-9, Bindestrich)"
   [[ -n "$PROMPT_USER" ]] || PROMPT_USER="Als Komponente für die Bibliothek anlegen"
+fi
+LIB_COMP=""; LIB_VARIANT=""; NEW_VARIANT="null"
+if [[ "$MODE" == library ]]; then
+  # Komponente auf der Komponentenseite ändern oder Variante hinzufügen: Material ist die Vorlage, kein Element einer Seite
+  [[ -z "$DID" ]] || die "Bibliothek ändern nur für neue Entwürfe"
+  [[ "$(site_kind "$SITE")" == neu ]] || die "Komponenten-Bibliothek gibt es nur bei neuen Projekten"
+  LIB_COMP="$(jq -r '.component // ""' <<<"$P")"; LIB_VARIANT="$(jq -r '.variant // ""' <<<"$P")"
+  NEW_VARIANT="$(jq -c '.newVariant // null' <<<"$P")"
+  [[ "$LIB_COMP" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ && -f "$SITE/components/mx-$LIB_COMP.json" && -f "$SITE/components/mx-$LIB_COMP.html" && -f "$SITE/components/mx-$LIB_COMP.css" ]] \
+    || die "Komponente nicht in der Bibliothek: mx-$LIB_COMP"
+  if [[ -n "$LIB_VARIANT" ]]; then
+    jq -e --arg k "$LIB_VARIANT" 'any(.varianten[]; .key == $k)' "$SITE/components/mx-$LIB_COMP.json" >/dev/null || die "Variante nicht gefunden: $LIB_VARIANT"
+  fi
+  if [[ "$NEW_VARIANT" != null ]]; then
+    NV_KEY="$(jq -r '.key // ""' <<<"$NEW_VARIANT")"
+    [[ "$NV_KEY" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ && ${#NV_KEY} -le 40 ]] || die "Ungültiger Variantenname: $NV_KEY"
+    jq -e --arg k "$NV_KEY" 'any(.varianten[]; .key == $k)' "$SITE/components/mx-$LIB_COMP.json" >/dev/null && die "Variante $NV_KEY gibt es schon"
+    NEW_VARIANT="$(jq -c '{key, label:((.label // "") | tostring | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ") | .[0:60] | if . == "" then null else . end)} | .label //= .key' <<<"$NEW_VARIANT")"
+  fi
 fi
 [[ "$MODE" == brief && -n "$DID" ]] && die "Briefing für bestehende Entwürfe: draft-brief.sh"
 if [[ "$MODE" == import ]]; then
@@ -92,10 +115,14 @@ write_source() {
 CREATED_DIR=""
 if [[ -z "$DID" ]]; then
   # ----- neuer Entwurf -----
-  PAGE="/$(jq -r '.page // ""' <<<"$P" | sed 's#^/##')"
-  SELECTOR="$(jq -r '.selector // ""' <<<"$P")"
-  [[ "$PAGE" != *".."* && -f "$SITE/www$PAGE" ]] || die "Seite nicht im Abzug gefunden: $PAGE"
-  [[ -n "$SELECTOR" ]] || die "Selektor fehlt"
+  if [[ "$MODE" == library ]]; then
+    PAGE="/__komponenten"; SELECTOR=".mx-$LIB_COMP"
+  else
+    PAGE="/$(jq -r '.page // ""' <<<"$P" | sed 's#^/##')"
+    SELECTOR="$(jq -r '.selector // ""' <<<"$P")"
+    [[ "$PAGE" != *".."* && -f "$SITE/www$PAGE" ]] || die "Seite nicht im Abzug gefunden: $PAGE"
+    [[ -n "$SELECTOR" ]] || die "Selektor fehlt"
+  fi
   N="$(next_draft_number)"
   state_set draftCounter "$N"
   DID="$(printf 'D-%03d' "$N")"
@@ -103,7 +130,12 @@ if [[ -z "$DID" ]]; then
   mkdir -p "$DDIR"
   CREATED_DIR="$DDIR"
   VERSION=1
-  write_source "$DDIR/source.html" "$(jq -r '.html // ""' <<<"$P")"
+  if [[ "$MODE" == library ]]; then
+    cp "$SITE/components/mx-$LIB_COMP.html" "$DDIR/source.html"
+    MATERIAL="$(jq -cn --argjson bytes "$(wc -c <"$DDIR/source.html")" '{source:"bibliothek", bytes:$bytes, truncated:false, note:null}')"
+  else
+    write_source "$DDIR/source.html" "$(jq -r '.html // ""' <<<"$P")"
+  fi
   jq '.bausteine // []' <<<"$P" >"$DDIR/bausteine.json"
   # Überarbeitung: Ist das Element selbst eine übernommene Komponente (Wurzel mit Klasse mx-<name>), bleibt der Name,
   # und das bisherige CSS liegt als Material bei
@@ -152,6 +184,10 @@ if [[ -z "$DID" ]]; then
   if [[ -n "${RENAMES:-}" ]]; then tmp="$(mktemp)"; jq --arg r "$RENAMES" '.renames = $r' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
   LIB_NAME="$COMP_NAME"; [[ -z "$LIB_NAME" && -f "$DDIR/bestand-komponente.json" ]] && LIB_NAME="$REVISES"
   if [[ -n "$LIB_NAME" ]]; then tmp="$(mktemp)"; jq --arg n "$LIB_NAME" '.component = {name:$n}' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
+  if [[ "$MODE" == library ]]; then
+    [[ "$REVISES" == "$LIB_COMP" && "$LIB_NAME" == "$LIB_COMP" ]] || { rm -rf "$DDIR"; die "Vorlage der Komponente mx-$LIB_COMP ohne Wurzel mit Klasse mx-$LIB_COMP"; }
+    tmp="$(mktemp)"; jq --argjson nv "$NEW_VARIANT" --arg v "$LIB_VARIANT" '.target = "library" | .newVariant = $nv | .variant = (if $v == "" then null else $v end)' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
+  fi
   # Referenzbilder
   while IFS= read -r REF; do
     [[ -n "$REF" ]] || continue
@@ -197,7 +233,9 @@ else
   log "$DID v$VERSION (Job $JOB_ID): $(head -c 120 <<<"$PROMPT_USER" | tr '\n' ' ')"
 fi
 # ----- Hauptraster des bisherigen Elements (layout.json), siehe lib/draft-layout.sh -----
-draft_measure_layout
+# Bibliotheks-Entwürfe (auch Folgeversionen) haben kein Element auf einer Seite: keine Messung
+TARGET="$(jq -r '.target // ""' "$DDIR/draft.json")"
+[[ "$TARGET" == library ]] || draft_measure_layout
 LAYOUT_TEXT="$(draft_layout_text)"
 
 # ----- Nur Briefing: Entwurf ohne Version, Gestaltung extern in claude.ai -----
@@ -235,7 +273,7 @@ if [[ "$PLATZ" == true ]]; then
   NEU_NOTE=$'\n'"Neues Projekt ohne bestehende Website: source.html ist nur ein freier Platz auf einer Leinwand, kein Material. Inhalte entstehen aus Auftrag und Hintergrund (erfundene Angaben als erkennbare Beispiele). Maßgeblich sind Regeln, Tokens und Hintergrund. bausteine.json beschreibt nur die Leinwand."
 fi
 NO_LAYOUT_NOTE=""
-[[ -n "$LAYOUT_TEXT" ]] || NO_LAYOUT_NOTE=$'\n'"Das Hauptraster konnte nicht gemessen werden: Rate keine festen Breiten, nutze die verfügbare Breite (Inhaltsbreite und Seitenrand aus den Tokens, falls vorhanden) und nenne das in der Zusammenfassung."
+[[ -n "$LAYOUT_TEXT" || "$TARGET" == library ]] || NO_LAYOUT_NOTE=$'\n'"Das Hauptraster konnte nicht gemessen werden: Rate keine festen Breiten, nutze die verfügbare Breite (Inhaltsbreite und Seitenrand aus den Tokens, falls vorhanden) und nenne das in der Zusammenfassung."
 cp "$MODIO_ROOT/templates/DRAFT.md" "$DDIR/CLAUDE.md"
 # Systemprompt (Regeln, Gestaltungsleitlinien, Skill) als Kopie im Entwurf: nachvollziehbar, womit er entstand
 build_system_prompt "$DDIR/SYSTEM.md" "$DDIR/CLAUDE.md" "--leitlinien$([[ "$SITE_KIND" == neu ]] && echo =neu)"
@@ -261,6 +299,16 @@ while IFS= read -r R; do
 done < <(jq -r '.references[]?' "$DDIR/draft.json")
 VIEWPORT="$(jq -r 'if .viewport then "\(.viewport.width)×\(.viewport.height) px" else "unbekannt" end' "$DDIR/draft.json")"
 WIDTH="$(jq -r 'if .rect.width then "\(.rect.width|floor) px" else "unbekannt" end' "$DDIR/draft.json")"
+if [[ "$TARGET" == library ]]; then
+  # Bibliothek: kein Element auf einer Seite; die Komponente steht auf der Komponentenseite, Kopien auf den Seiten
+  PLACE_TEXT="Ort: Komponentenseite der Bibliothek (kein Element auf einer Seite). Kopien auf den Seiten werden nach der Übernahme an die Vorlage angeglichen. Breite: wie bisher, die Komponente füllt den Platz, den ihr Einsatzort ihr gibt."
+  MATERIAL_TEXT="Ausgangsmaterial: source.html (Vorlage der Komponente), bestand-komponente.css und bestand-komponente.json in diesem Ordner."
+else
+  PLACE_TEXT="Seite: www$PAGE
+Selektor des Elements: $SELECTOR
+Breite des Elements beim Auswählen: $WIDTH (Viewport $VIEWPORT)"
+  MATERIAL_TEXT="Ausgangsmaterial: source.html (bisheriges Element) und bausteine.json (Bausteine der Seite) in diesem Ordner."
+fi
 
 LIB_NAME="$(jq -r '.component.name // ""' "$DDIR/draft.json")"
 REQUIRE_LIBRARY=0; [[ -n "$LIB_NAME" ]] && REQUIRE_LIBRARY=1
@@ -299,6 +347,20 @@ Du gestaltest NICHT neu: Die Komponente sieht genauso aus wie das Element in sou
 3. Varianten: Die Standardvariante ist das Element, wie es ist. Weitere Varianten nur, wenn der Auftrag sie nennt oder die Seite gleichartige Elemente in anderer Ausprägung zeigt (z. B. zweiter Button-Stil, mit/ohne Icon); jede als Modifier-Klasse mx-$LIB_NAME--… mit eigenem CSS. Keine Variante für eine Anpassung an einen Einsatzort (z. B. Button in einer Produktkarte): Gestaltung, die nur der Einsatzort braucht, gehört nicht in die Komponente; nenne sie in der Zusammenfassung (sie wird dort über eine Kontextklasse gestaltet).
 4. befund.json enthält nur Punkte zur Übernahme (was angepasst wurde, z. B. Werte als Token, CSS zusammengefasst), jeweils \"umgesetzt\": true; Entscheidungen mit \"umgesetzt\": false. Leere Liste, wenn nichts anzupassen war.
 Die Zusammenfassung nennt Slots, Varianten und jede sichtbare Abweichung vom Element mit Grund."
+elif [[ "$TARGET" == library ]] && (( VERSION == 1 )); then
+  NV_TEXT=""
+  if [[ "$(jq -r '.newVariant // null' "$DDIR/draft.json")" != null ]]; then
+    NV_K="$(jq -r .newVariant.key "$DDIR/draft.json")"
+    NV_TEXT="
+Neue Variante \"$NV_K\" („$(jq -r .newVariant.label "$DDIR/draft.json" | sanitize_block)“): Ergänze sie in component.json (key und label wie angegeben, klassen mx-$LIB_NAME--$NV_K, slots nur, wenn sie andere Slots zeigt) und ihr CSS als Modifier :scope.mx-$LIB_NAME--$NV_K in component.css. Die übrigen Varianten bleiben unverändert."
+  fi
+  VAR_TEXT=""
+  [[ -n "$(jq -r '.variant // ""' "$DDIR/draft.json")" ]] && VAR_TEXT=" Der Auftrag bezieht sich auf die Variante \"$(jq -r .variant "$DDIR/draft.json")\"; die anderen Varianten bleiben, wie sie sind."
+  TASK="Ändere die Bibliotheks-Komponente \"$LIB_NAME\" (Entwurf $DID, Version 1). Der Name bleibt \"$LIB_NAME\". Schreibe nach v1/: component.html, component.css, meta.json, component.json und befund.json.
+Material: source.html ist die Vorlage der Komponente (alle Slots, data-mx-variant der dargestellten Variante), bestand-komponente.css ihr CSS, bestand-komponente.json ihre Beschreibung.$VAR_TEXT$NV_TEXT
+Ändere nur, was der Auftrag verlangt. Varianten- und Slot-Namen bleiben (Kopien auf den Seiten hängen daran); Varianten, die auf Seiten verwendet werden, dürfen nicht wegfallen. Ein neuer Slot nur, wenn der Auftrag ihn verlangt.
+befund.json enthält nur Punkte zur Änderung, jeweils \"umgesetzt\": true; Entscheidungen mit \"umgesetzt\": false.
+Die Zusammenfassung nennt die Änderung und ob sich der Aufbau geändert hat (dann müssen die Kopien angeglichen werden)."
 elif (( VERSION == 1 )); then
   TASK="Entwirf das gewählte Element als Komponente (Entwurf $DID, Version 1). Schreibe component.html, component.css und meta.json nach v1/ und zum Schluss den Befund nach v1/befund.json (höchstens 12 Punkte)."
 else
@@ -313,12 +375,10 @@ $VORGABEN
 $TASK$REVISE_NOTE$LIB_NOTE
 Es gelten ausschließlich die Regeln in CLAUDE.md dieses Ordners (Entwürfe), nicht die Regeln des Website-Abzugs.
 
-Seite: www$PAGE
-Selektor des Elements: $SELECTOR
-Breite des Elements beim Auswählen: $WIDTH (Viewport $VIEWPORT)
+$PLACE_TEXT
 ${LAYOUT_TEXT:+Hauptraster (gemessen in der ausgelieferten Seite; Rahmen, siehe CLAUDE.md „Hauptraster“): $LAYOUT_TEXT
 }Vorhandene Komponenten (Namen nicht verwenden, außer bei neuer Version desselben Entwurfs): ${COMPONENTS:-keine}
-Ausgangsmaterial: source.html (bisheriges Element) und bausteine.json (Bausteine der Seite) in diesem Ordner.$NO_LAYOUT_NOTE$NEU_NOTE
+$MATERIAL_TEXT$NO_LAYOUT_NOTE$NEU_NOTE
 Dateien in diesem Ordner: $DRAFT_FILES. Weitere gibt es nicht, insbesondere keine Screenshots oder Bilder des Elements; suche nicht danach. Neue Dateien im Versionsordner legst du direkt mit Write an.
 
 Auftrag:
@@ -397,8 +457,15 @@ SESSION_COST="$(jq -r '.total_cost_usd // 0' <<<"$R")"
 SUMMARY="$(jq -r '.result // ""' <<<"$R")"
 
 # ----- Prüfen, bei Fehlern eine Korrekturrunde -----
+# Bibliotheks-Komponente: Varianten, die auf Seiten verwendet werden (und eine verlangte neue), dürfen nicht wegfallen
+REQUIRED_VARIANTS=""
+if [[ -n "$LIB_NAME" && -f "$SITE/components/mx-$LIB_NAME.json" ]]; then
+  REQUIRED_VARIANTS="$(node "$LIB_DIR/components.mjs" uses "$SITE" "$LIB_NAME" 2>/dev/null | jq -r '.variants // {} | to_entries | map(select(.value > 0) | .key) | join(",")' 2>/dev/null || true)"
+fi
+NV_KEY="$(jq -r '.newVariant.key // ""' "$DDIR/draft.json")"
+[[ -n "$NV_KEY" ]] && REQUIRED_VARIANTS="${REQUIRED_VARIANTS:+$REQUIRED_VARIANTS,}$NV_KEY"
 set +e
-CHECK="$(DRAFT_REQUIRE_LIBRARY="$REQUIRE_LIBRARY" DRAFT_EXPECT_NAME="${LIB_NAME:-$REVISES}" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?
+CHECK="$(DRAFT_REQUIRED_VARIANTS="$REQUIRED_VARIANTS" DRAFT_REQUIRE_LIBRARY="$REQUIRE_LIBRARY" DRAFT_EXPECT_NAME="${LIB_NAME:-$REVISES}" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?
 set -e
 if (( crc == 3 )) && [[ -n "$SESSION" ]]; then
   ERRS="$(jq -r '.errors | map("- " + .) | join("\n")' <<<"$CHECK")"
@@ -412,7 +479,7 @@ $ERRS"
   if (( rc == 0 )) && [[ "$(jq -r '.is_error // false' <<<"$R")" != "true" ]]; then
     COST="$(jq -rn --argjson a "$COST" --argjson b "$(claude_call_cost "$R" "$SESSION" "$SESSION_COST")" '$a + $b | . * 1e6 | round / 1e6')"
     SESSION_COST="$(jq -r '.total_cost_usd // 0' <<<"$R")"
-    set +e; CHECK="$(DRAFT_REQUIRE_LIBRARY="$REQUIRE_LIBRARY" DRAFT_EXPECT_NAME="${LIB_NAME:-$REVISES}" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?; set -e
+    set +e; CHECK="$(DRAFT_REQUIRED_VARIANTS="$REQUIRED_VARIANTS" DRAFT_REQUIRE_LIBRARY="$REQUIRE_LIBRARY" DRAFT_EXPECT_NAME="${LIB_NAME:-$REVISES}" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?; set -e
   fi
 fi
 (( crc == 0 )) || fail "Entwurf ungültig: $(jq -r '(.errors // [.error]) | join("; ")' <<<"$CHECK" 2>/dev/null | head -c 500)"
@@ -432,7 +499,7 @@ jq --argjson v "$VERSION" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)"
   .sessionId = (if $session == "" then .sessionId else $session end)
   | .sessionCostUsd = (if $session == "" then .sessionCostUsd else $scost end)
   | .versions += [{v:$v, prompt:$prompt, created:$created, summary:$summary, name:$name, title:$title, model:$model, effort:$effort, costUsd:$cost, warnings:$warn, befund:$nbef, offen:$nopen, platzhalter:$nph}
-      + (if $mode == "import" then {source:"import"} elif $mode == "component" then {source:"component"} else {} end)]' \
+      + (if $mode == "import" then {source:"import"} elif $mode == "component" then {source:"component"} elif $mode == "library" then {source:"library"} else {} end)]' \
   "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
 chmod 644 "$DDIR/draft.json"
 log "$DID v$VERSION: Komponente mx-$NAME fertig ($NBEF Befundpunkte, $NOPEN offen, $NPH Platzhalter, $(printf '%.2f' "$COST") USD)"

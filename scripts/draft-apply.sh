@@ -2,6 +2,8 @@
 # Übernimmt eine Version eines Entwurfs als Schritt A-xxx – ohne Claude:
 # ersetzt das Element in der Seite byte-genau durch das Markup der Komponente, schreibt components/mx-<name>.css
 # und läuft dann durch commit-step.sh (Prüfung, gleiche Bereiche übertragen, Commit).
+# Ziel Bibliothek (draft.json .target == "library", Entwurf auf der Komponentenseite): nur components/mx-<name>.css|.html|.json,
+# kein Element auf einer Seite; herkunft der Beschreibung bleibt. Ausgabe nennt abweichende Kopien (deviating).
 # Aufruf: draft-apply.sh <slug> <entwurf-id> [version]
 # Exit 0: committed, Exit 3: Prüfung nötig
 source "$(dirname "$0")/lib/common.sh"
@@ -33,10 +35,10 @@ mkdir -p "$SITE/annotations"
 jq --arg id "$ID" --arg created "$(now_iso)" --argjson v "$VERSION" '
   (.versions[] | select(.v == $v)) as $ver
   | {id:$id, source:"draft", created:$created,
-     prompt:("Entwurf \(.id) v\($v) übernommen (mx-\($ver.name)\(if .renames then ", umbenannt aus mx-\(.renames)" elif .revises then ", Überarbeitung" else "" end)): \(.prompt)"),
-     page, selector, remember:false, allow_token_change:false,
+     prompt:("Entwurf \(.id) v\($v) übernommen (mx-\($ver.name)\(if .target == "library" then ", Bibliothek" elif .renames then ", umbenannt aus mx-\(.renames)" elif .revises then ", Überarbeitung" else "" end)): \(.prompt)"),
+     page:(if .target == "library" then null else .page end), selector:(if .target == "library" then null else .selector end), remember:false, allow_token_change:false,
      draft:{id, version:$v, name:$ver.name, title:$ver.title, prompts:[.versions[] | select(.v <= $v) | .prompt]},
-     result:{summary:("Element durch die Komponente mx-\($ver.name) ersetzt (components/mx-\($ver.name).css).\n\n" + ($ver.summary // ""))}}' \
+     result:{summary:((if .target == "library" then "Komponente mx-\($ver.name) in der Bibliothek geändert (Vorlage, CSS, Beschreibung)." else "Element durch die Komponente mx-\($ver.name) ersetzt (components/mx-\($ver.name).css)." end) + "\n\n" + ($ver.summary // ""))}}' \
   "$DDIR/draft.json" >"$SITE/annotations/$ID.json"
 chmod 644 "$SITE/annotations/$ID.json"
 
@@ -81,5 +83,8 @@ set +e
 COMMIT_OUT="$("$SCRIPTS_DIR/commit-step.sh" "$SLUG" "$ID")"; rc=$?
 set -e
 if (( rc != 0 && rc != 3 )); then restore; die "commit-step.sh fehlgeschlagen: $(jq -r '.error // empty' <<<"$COMMIT_OUT" 2>/dev/null)"; fi
-emit_json "$(jq -c --arg d "$DID" --argjson v "$VERSION" --arg n "$NAME" '. + {draft:$d, version:$v, name:$n}' <<<"$COMMIT_OUT")"
+# Abweichende Kopien der Komponente auf den Seiten (Hinweis „N Kopien weichen ab“, Angleichen über component-sync.sh)
+OFF="$(node "$LIB_DIR/components.mjs" deviations "$SITE" 2>/dev/null | jq -r --arg n "$NAME" '.[$n] // 0' 2>/dev/null || true)"
+[[ "$OFF" =~ ^[0-9]+$ ]] || OFF=0
+emit_json "$(jq -c --arg d "$DID" --argjson v "$VERSION" --arg n "$NAME" --argjson off "$OFF" '. + {draft:$d, version:$v, name:$n, deviating:$off}' <<<"$COMMIT_OUT")"
 exit "$rc"

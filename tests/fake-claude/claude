@@ -11,6 +11,11 @@ RESUMED=0; for a in "$@"; do [[ "$a" == "--resume" ]] && RESUMED=1; done
 PROMPT="$(cat)"
 # Für Tests: Aufrufparameter und Anmeldung protokollieren
 if [[ -n "${FAKE_CLAUDE_ARGS:-}" ]]; then printf '%s\n' "$@" >"$FAKE_CLAUDE_ARGS"; echo "KEY=${ANTHROPIC_API_KEY:-}" >>"$FAKE_CLAUDE_ARGS"; printf "PROMPT:\n%s\n" "$PROMPT" >>"$FAKE_CLAUDE_ARGS"; fi
+# Verwendete Variante weggelassen: die Korrekturrunde behebt nichts (Dateien bleiben, Prüfung meldet die Variante)
+if [[ "${FAKE_CLAUDE_DROP_VARIANT:-}" == "1" && "$PROMPT" == "Die Prüfung von "* ]]; then
+  printf '{"type":"result","is_error":false,"result":"Nichts geändert.","session_id":"fake-session","total_cost_usd":'"$(fake_total 0.01)"',"num_turns":1}\n'
+  exit 0
+fi
 V="$(grep -oE 'v[0-9]+/' <<<"$PROMPT" | head -1 | tr -d /)"
 [[ -n "$V" ]] || V=v1
 # Bei einer Überarbeitung den Namen der bestehenden Komponente beibehalten
@@ -42,6 +47,13 @@ if grep -q 'component.json' <<<"$PROMPT"; then
     printf '{"name":"%s","title":"Kachel","bausteine":[]}\n' "$NAME" >"$V/meta.json"
     printf '[]\n' >"$V/befund.json"
     printf '{"name":"%s","title":"Kachel","beschreibung":"Kachel für Übersichten.","slots":[{"key":"titel","label":"Überschrift","typ":"text"},{"key":"text","label":"Text","typ":"richtext"},{"key":"icon","label":"Icon","typ":"icon","pflicht":false},{"key":"link","label":"Link","typ":"link"}],"varianten":[{"key":"standard","label":"Standard","klassen":"","slots":["titel","text","link"]},{"key":"hervorgehoben","label":"Hervorgehoben mit Icon","klassen":"mx-%s--hervorgehoben"}]}\n' "$NAME" "$NAME" >"$V/component.json"
+    # Variante hinzufügen (Entwurf auf der Komponentenseite): neue Variante aus dem Auftrag ergänzen
+    NV="$(grep -oE 'Neue Variante "[a-z0-9-]+"' <<<"$PROMPT" | head -1 | sed -E 's/.*"([a-z0-9-]+)"/\1/')"
+    if [[ -n "$NV" ]]; then
+      jq --arg k "$NV" --arg n "$NAME" '.varianten += [{key:$k, label:"Neu", klassen:("mx-" + $n + "--" + $k)}]' "$V/component.json" >"$V/component.json.tmp" && mv "$V/component.json.tmp" "$V/component.json"
+      printf '  :scope.mx-%s--%s { border: 1px solid; }\n}\n' "$NAME" "$NV" | { sed '$d' "$V/component.css"; cat; } >"$V/component.css.tmp" && mv "$V/component.css.tmp" "$V/component.css"
+    fi
+    if [[ "${FAKE_CLAUDE_DROP_VARIANT:-}" == "1" ]]; then jq '.varianten |= .[:1]' "$V/component.json" >"$V/component.json.tmp" && mv "$V/component.json.tmp" "$V/component.json"; fi
   fi
 fi
 printf '{"type":"result","is_error":false,"result":"Entwurf %s erstellt.","session_id":"fake-session","total_cost_usd":'"$(fake_total 0.01)"',"num_turns":1}\n' "$V"
