@@ -606,6 +606,79 @@ check "Briefing im neuen Projekt: Auftrag, Paket, Element als Material" 'BD="$NS
 set +e; OUT="$(./scripts/site-recrawl.sh modio-test-neu 2>/dev/null)"; rc=$?; set -e
 check "Neu einlesen bei neuem Projekt abgewiesen" '(( rc != 0 )) && grep -q "Neues Projekt" <<<"$OUT"'
 
+echo "Komponenten-Bibliothek (Als Komponente, Varianten, Slots, Kontext, Prüfung, Export)"
+jq -n '{id:"job-test-neu-comp", params:{page:"/seiten/startseite.html", selector:"#hero", html:"", text:"", prompt:"", viewport:{width:1440,height:900}, mode:"component", componentName:"held"}}' >"$JOBN"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
+CD="$(jq -r .draft <<<"$OUT")"
+check "Als Komponente: Entwurf mit component.json, Name aus dem Dialog" '[[ "$(jq -r .name <<<"$OUT")" == held ]] && [[ -f "$NS/drafts/$CD/v1/component.json" ]] && jq -e ".component.name == \"held\" and .versions[0].source == \"component\"" "$NS/drafts/$CD/draft.json" >/dev/null'
+check "Als Komponente: CSS der Seite als Material, Auftrag ohne Neugestaltung" 'grep -q "\.hero{padding:2rem}" "$NS/drafts/$CD/seiten-css.css" && grep -q "Du gestaltest NICHT neu" "$JOBN.args" && grep -q "seiten-css.css" "$JOBN.args" && grep -q "Komponente für die Bibliothek" "$NS/drafts/$CD/SYSTEM.md"'
+for bad in "Held" "test"; do
+  jq --arg n "$bad" '.id = "job-test-neu-comp2" | .params.componentName = $n' "$JOBN" >"$JOBN.2"
+  set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)"; rc=$?; set -e
+  check "Als Komponente: Name „$bad“ abgewiesen" '(( rc != 0 ))'
+done
+set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBN" 2>/dev/null)"; rc=$?; set -e
+check "Als Komponente: bei Abzügen abgewiesen" '(( rc != 0 )) && grep -q "nur bei neuen Projekten" <<<"$OUT"'
+jq '.id = "job-test-neu-comp3" | .params.componentName = "kaputt"' "$JOBN" >"$JOBN.2"
+set +e; OUT="$(FAKE_CLAUDE_LIB_BAD=1 PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)"; rc=$?; set -e
+check "Als Komponente: Vorlage ohne Variante und Slots ungültig" '(( rc != 0 )) && grep -q "data-mx-variant" <<<"$OUT"'
+OUT="$(./scripts/draft-apply.sh modio-test-neu "$CD" 2>/dev/null)" || true
+check "Übernahme: Vorlage, Beschreibung und CSS in components/, Instanz auf der Seite" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e ".herkunft == \"/seiten/startseite.html\" and (.varianten | length) == 2" "$NS/components/mx-held.json" >/dev/null && grep -q "data-mx-slot=\"titel\"" "$NS/components/mx-held.html" && [[ -f "$NS/components/mx-held.css" ]] && grep -q "class=\"mx-held\" data-mx-variant=\"standard\"" "$NS/www/seiten/startseite.html" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+check "Übernahme: Seite bekommt die Standardvariante (ohne Slots anderer Varianten), kein Strukturhinweis" '! grep -q "data-mx-slot=\"icon\"" "$NS/www/seiten/startseite.html" && ! jq -e ".warnings | map(.rule) | index(\"component-structure\")" <<<"$OUT" >/dev/null'
+VAR="$(node scripts/lib/components.mjs render "$NS" held hervorgehoben)"; STD="$(node scripts/lib/components.mjs render "$NS" held)"
+check "Varianten: Klassen getauscht, Slots je Variante" 'grep -q "mx-held mx-held--hervorgehoben" <<<"$VAR" && grep -q "data-mx-slot=\"icon\"" <<<"$VAR" && ! grep -q "data-mx-slot=\"icon\"" <<<"$STD" && grep -q "data-mx-variant=\"standard\"" <<<"$STD"'
+CTX="$(./scripts/context.sh modio-test-neu A-999 2>/dev/null | jq -r .context)"
+check "Kontext: Bibliothek mit Varianten, Slots und Vorlage" 'grep -q "^<komponenten" <<<"$CTX" && grep -q "mx-held „Kachel“ – Kachel für Übersichten." <<<"$CTX" && grep -q "hervorgehoben („Hervorgehoben mit Icon“: mx-held--hervorgehoben)" <<<"$CTX" && grep -q "Vorlage: components/mx-held.html (Pfade relativ zu www/seiten/)" <<<"$CTX"'
+# Eingesetzte Kopie mit anderen Inhalten: kein Hinweis; veränderter Aufbau: Hinweis, kein Block
+printf '%s\n' "$VAR" | sed 's/Beispiel/Zweite Kachel/' >"$JOBN.inst"
+node -e 'const fs=require("fs");const f=process.argv[1];const t=fs.readFileSync(f,"utf8");fs.writeFileSync(f,t.replace("</main>",fs.readFileSync(process.argv[2],"utf8").trim()+"</main>"))' "$NS/www/seiten/startseite.html" "$JOBN.inst"
+OUT="$(./scripts/local-commit.sh modio-test-neu "Kachel eingesetzt" 2>/dev/null)" || true
+check "Eingesetzte Komponente mit eigenem Inhalt: kein Strukturhinweis" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && ! jq -e ".warnings | map(.rule) | index(\"component-structure\")" <<<"$OUT" >/dev/null'
+sed -i 's#<h3 data-mx-slot="titel">Zweite Kachel</h3>#<div class="extra"><h3 data-mx-slot="titel">Zweite Kachel</h3></div>#' "$NS/www/seiten/startseite.html"
+OUT="$(./scripts/local-commit.sh modio-test-neu "Kachel umgebaut" 2>/dev/null)" || true
+check "Veränderter Aufbau: Hinweis component-structure, trotzdem committet" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e "[.warnings[] | select(.rule == \"component-structure\")] | length == 1 and (.[0].text | test(\"mx-held .Variante hervorgehoben.: Aufbau\"))" <<<"$OUT" >/dev/null'
+OUT="$(./scripts/project-export.sh modio-test-neu 2>/dev/null)" || true
+EX="$(jq -r .dir <<<"$OUT")"
+check "Export: Bibliotheks-Komponente mit component.json und allen Varianten" 'jq -e ".varianten | length == 2" "$EX/komponenten/held/component.json" >/dev/null && grep -q "data-mx-slot" "$EX/komponenten/held/component.html" && grep -q "Variante Hervorgehoben mit Icon" "$EX/vorschau.html"'
+# Kontextklasse auf der Wurzel einer eingesetzten Komponente: kein Hinweis
+printf '%s\n' "$STD" | sed 's/class="mx-held"/class="mx-held kachel__ctx"/' >"$JOBN.inst"
+node -e 'const fs=require("fs");const f=process.argv[1];const t=fs.readFileSync(f,"utf8");fs.writeFileSync(f,t.replace("</main>",fs.readFileSync(process.argv[2],"utf8").trim()+"</main>"))' "$NS/www/seiten/startseite.html" "$JOBN.inst"
+OUT="$(./scripts/local-commit.sh modio-test-neu "Kachel mit Kontextklasse" 2>/dev/null)" || true
+check "Kontextklasse auf der Wurzel: kein Strukturhinweis" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && ! jq -e ".warnings | map(.rule) | index(\"component-structure\")" <<<"$OUT" >/dev/null'
+check "Kontext: Regel Kontextklasse statt Variante" 'grep -q "zusätzliche Kontextklasse" <<<"$(./scripts/context.sh modio-test-neu A-999 2>/dev/null | jq -r .context)" && grep -q "Keine Varianten für Anpassungen an einen Einsatzort" templates/DRAFT.md'
+# Variante und Komponente löschen: Verwendungen bleiben als Markup ohne Kennzeichnung
+LIB_BEFORE="$(git -C "$NS" rev-parse HEAD)"
+OUT="$(./scripts/component-delete.sh modio-test-neu held hervorgehoben 2>/dev/null)" || true
+P_NS="$NS/www/seiten/startseite.html"
+check "Variante löschen: Eintrag weg, nur ihr Slot entfällt, Verwendungen ohne Kennzeichnung" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e "(.varianten | map(.key)) == [\"standard\"] and (.slots | map(.key) | index(\"icon\") | not)" "$NS/components/mx-held.json" >/dev/null && ! grep -q "data-mx-slot=\"icon\"" "$NS/components/mx-held.html" && jq -e ".unmarked == 1" <<<"$OUT" >/dev/null && ! grep -q "data-mx-variant=\"hervorgehoben\"" "$P_NS" && grep -q "mx-held mx-held--hervorgehoben" "$P_NS" && [[ "$(git -C "$NS" log -1 --format=%s)" == *"Variante hervorgehoben der Komponente mx-held gelöscht" ]]'
+set +e; OUT="$(./scripts/component-delete.sh modio-test-neu held standard 2>/dev/null)"; rc=$?; set -e
+check "Einzige Variante nicht löschbar" '(( rc == 2 )) && grep -q "einzige Variante" <<<"$OUT" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+OUT="$(./scripts/component-delete.sh modio-test-neu held 2>/dev/null)" || true
+check "Komponente löschen: Bibliothek leer, Markup und CSS bleiben ohne Kennzeichnung" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && [[ ! -f "$NS/components/mx-held.json" && ! -f "$NS/components/mx-held.html" && -f "$NS/components/mx-held.css" ]] && jq -e ".keptCss == true and .unmarked == 2" <<<"$OUT" >/dev/null && ! grep -q "data-mx-variant" "$P_NS" && ! grep -q "data-mx-slot" "$P_NS" && grep -q "class=\"mx-held\"" "$P_NS" && ! grep -q "<komponenten" <<<"$(./scripts/context.sh modio-test-neu A-999 2>/dev/null | jq -r .context)"'
+./scripts/rollback.sh modio-test-neu "$LIB_BEFORE" >/dev/null 2>&1 || true
+check "Rücksprung holt Komponente und Kennzeichnung zurück" 'jq -e ".varianten | length == 2" "$NS/components/mx-held.json" >/dev/null && grep -q "data-mx-variant=\"hervorgehoben\"" "$P_NS"'
+# Bestehende Komponente (ohne Bibliotheks-Eintrag) mit anderem Namen als Komponente anlegen: umbenennen
+REN_BEFORE="$(git -C "$NS" rev-parse HEAD)"
+jq -n '{id:"job-test-neu-comp5", params:{page:"/seiten/startseite.html", selector:".mx-test", html:"", text:"", prompt:"", viewport:{width:1440,height:900}, mode:"component", componentName:"teaser"}}' >"$JOBN.2"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true
+RD="$(jq -r .draft <<<"$OUT")"
+check "Als Komponente mit neuem Namen: bestehende Komponente wird umbenannt" '[[ "$(jq -r .name <<<"$OUT")" == teaser ]] && jq -e ".component.name == \"teaser\" and .renames == \"test\"" "$NS/drafts/$RD/draft.json" >/dev/null && grep -q "umbenannt" <<<"$OUT" && grep -q "in mx-teaser um" "$JOBN.args"'
+OUT="$(./scripts/draft-apply.sh modio-test-neu "$RD" 2>/dev/null)" || true
+check "Umbenennen übernommen: neue Klasse, altes CSS entfernt" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && [[ -f "$NS/components/mx-teaser.json" && ! -f "$NS/components/mx-test.css" ]] && grep -q "class=\"mx-teaser\"" "$P_NS" && ! grep -qE "mx-test([^a-z0-9-]|--)" "$P_NS"'
+jq '.id = "job-test-neu-comp6" | .params.selector = ".mx-held" | .params.componentName = "kachel"' "$JOBN.2" >"$JOBN.3"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.3" 2>/dev/null)" || true
+check "Bibliotheks-Komponente: Name bleibt, Hinweis" '[[ "$(jq -r .name <<<"$OUT")" == held ]] && grep -q "Bibliotheks-Komponente mx-held" <<<"$OUT"'
+./scripts/draft-discard.sh modio-test-neu "$(jq -r .draft <<<"$OUT")" >/dev/null 2>&1 || true
+./scripts/rollback.sh modio-test-neu "$REN_BEFORE" >/dev/null 2>&1 || true
+rm -f "$JOBN.3"
+# Bibliotheks-Komponente neu gestalten: Beschreibung bleibt Pflicht
+jq -n '{id:"job-test-neu-comp4", params:{page:"/seiten/startseite.html", selector:".mx-held", html:"", text:"", prompt:"Ruhiger gestalten", viewport:{width:1440,height:900}}}' >"$JOBN.2"
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true
+RD="$(jq -r .draft <<<"$OUT")"
+check "Überarbeitung einer Bibliotheks-Komponente: bisherige Beschreibung als Material, component.json Pflicht" '[[ "$(jq -r .name <<<"$OUT")" == held ]] && [[ -f "$NS/drafts/$RD/bestand-komponente.json" && -f "$NS/drafts/$RD/v1/component.json" ]] && jq -e ".component.name == \"held\" and .revises == \"held\"" "$NS/drafts/$RD/draft.json" >/dev/null'
+./scripts/draft-discard.sh modio-test-neu "$RD" >/dev/null 2>&1 || true
+rm -f "$JOBN.2" "$JOBN.args" "$JOBN.inst" logs/claude-job-test-neu-comp*.json logs/claude-job-test-neu-comp*.stderr.log
+
 # Server: Platzhalter ohne Seiten, Seitenliste, Import-Endpunkt (ohne Worker)
 ./scripts/project-new.sh modio-test-leer "Leer" >/dev/null 2>&1 || true
 # wie ein Altprojekt nach dem Löschen der Leinwand: entry zeigt auf eine Seite, die es nicht mehr gibt

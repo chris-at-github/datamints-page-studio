@@ -44,10 +44,11 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `pages-add` | `{ urls: [..] }` | `pages-add.sh <slug> <urls.txt>` |
 | `page-import` | `{ name, page, file, replace }` | `page-import.sh <slug> <name> <file> [--replace]` (Exit 3 → `review`) |
 | `page-delete` | `{ page }` | `page-delete.sh <slug> <page>` (Exit 3 → `review`) |
+| `component-delete` | `{ name, variant? }` | `component-delete.sh <slug> <name> [variante]` (Exit 3 → `review`) |
 | `local-commit` | `{}` | `local-commit.sh <slug>` (Exit 3 → `review` wie bei Annotationen) |
 | `inspect-apply` | `{ file: "jobs/assets/<job-id>-inspect.json", page, selector }` | `inspect-apply.sh <slug> <datei>` (Exit 3 → `review`) |
 | `areas-sync` | `{ page, add?: { name, selector } }` | `areas-sync.sh <slug> <page> [--add <name> <selector>]` |
-| `draft` | neu: Annotation (wie `annotate`, ohne Nachbessern) plus `rect: {width, height}` und `bausteine: [{ kind, tag, classes, count, sample, style }]`; neue Version: `{ draft: "D-001", prompt }` | `draft-create.sh <slug> <job.json>` |
+| `draft` | neu: Annotation (wie `annotate`, ohne Nachbessern) plus `rect: {width, height}` und `bausteine: [{ kind, tag, classes, count, sample, style }]`, optional `mode: "brief"\|"component"` (mit `componentName`) oder `importFile`; neue Version: `{ draft: "D-001", prompt }` | `draft-create.sh <slug> <job.json>` |
 | `draft-apply` | `{ draft, version? }` | `draft-apply.sh <slug> <draft> [version]` (Exit 3 → `review`) |
 | `draft-discard` | `{ draft }` | `draft-discard.sh <slug> <draft>` |
 
@@ -66,7 +67,7 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | Regel | Stufe | Auslöser |
 |---|---|---|
 | `script-tag`, `event-handler`, `iframe`, `object-embed`, `javascript-url`, `css-expression`, `meta-refresh`, `base-tag`, `form-action`, `unknown-domain` | block | riskante Inhalte (unverändert) |
-| `path-outside` | block | Änderung außerhalb von `www/`, `overrides.css`, `components/mx-*.css`, `design/`, `annotations/` |
+| `path-outside` | block | Änderung außerhalb von `www/`, `overrides.css`, `components/mx-*.css\|.html\|.json`, `design/`, `annotations/` |
 | `tokens-invalid`, `tokens-removed` | block | `design/tokens.json` kein gültiges JSON, Wert abgelehnt oder Datei gelöscht |
 | `token-locked` | block | gesperrten Token geändert, entfernt oder entsperrt (außer `allow_token_change`) |
 | `notes-without-remember` | block | `design/notes.md` geändert ohne `remember` |
@@ -79,6 +80,7 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `consistency` | warn | Bereich aus `consistency.json` weicht auf einzelnen Seiten ab oder fehlt (`check-consistency.sh`, nur durch den Schritt neu entstandene Abweichungen) |
 | `areas-unclear` | warn | Gleicher Bereich wurde im Schritt auf mehreren Seiten unterschiedlich geändert und deshalb nicht übertragen |
 | `consistency-config` | warn | `consistency.json` ungültig oder Selektor nicht auswertbar |
+| `component-structure` | warn | Eingesetzte Bibliotheks-Komponente weicht außerhalb ihrer Slots von der Vorlage ihrer Variante ab, hat eine unbekannte Variante oder falsche Modifier (nur durch den Schritt neu entstandene Abweichungen; optionale Slots dürfen fehlen) |
 
 `design/consistency.json`:
 
@@ -126,8 +128,10 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `PUT /api/sites/<slug>/design` | JSON `{ tokens?, notes?, consistency? }` | `202 { job }` (`design-save`) |
 | `POST /api/sites/<slug>/tokens/propose` | – | `202 { job }` (`tokens-propose`) |
 | `GET /api/sites/<slug>/history` | – | Inhalt von `.history.json` |
-| `GET /api/sites/<slug>/drafts` | – | `{ drafts: [{ id, page, selector, prompt, created, status: "open"|"applied"|"discarded", appliedAs, appliedVersion, revises, versions: [{ v, prompt, created, summary, name, title, costUsd, warnings, bausteine, befund, platzhalter }] }], components: ["mx-…"] }` |
-| `POST /api/sites/<slug>/drafts` | wie `annotations` (multipart), Annotation zusätzlich mit `rect` und `bausteine`; optional `mode: "brief"` (nur anlegen und Briefing für claude.ai erzeugen, kein Claude-Lauf) oder `mode: "import"` mit `importHtml` (HTML aus claude.ai, höchstens 1,5 MB; Prompt dann optional) | `202 { job }` (`draft`); `409` nur, wenn ein Auftrag läuft oder wartet (eine offene Prüfung blockiert nicht) |
+| `POST /api/sites/<slug>/components/delete` | JSON `{ name, variant? }` | `202 { job }` (`component-delete`); `404` unbekannte Komponente oder Variante; `400` für die einzige Variante; `409` bei laufendem Auftrag |
+| `GET /api/sites/<slug>/components` | – | `{ components: [{ name, title, beschreibung, herkunft, slots, varianten }], url }` Komponenten-Bibliothek (gültige `components/mx-<name>.json` mit Vorlage), `url` der Komponentenseite |
+| `GET /api/sites/<slug>/drafts` | – | `{ drafts: [{ id, page, selector, prompt, created, status: "open"|"applied"|"discarded", appliedAs, appliedVersion, revises, renames, component, versions: [{ v, prompt, created, summary, name, title, costUsd, warnings, bausteine, befund, platzhalter }] }], components: ["mx-…"] }` |
+| `POST /api/sites/<slug>/drafts` | wie `annotations` (multipart), Annotation zusätzlich mit `rect` und `bausteine`; optional `mode: "brief"` (nur anlegen und Briefing für claude.ai erzeugen, kein Claude-Lauf) oder `mode: "import"` mit `importHtml` (HTML aus claude.ai, höchstens 1,5 MB; Prompt dann optional) oder `mode: "component"` mit `componentName` (nur neue Projekte, sonst `400`; Prompt optional) | `202 { job }` (`draft`); `409` nur, wenn ein Auftrag läuft oder wartet (eine offene Prüfung blockiert nicht) |
 | `GET /api/sites/<slug>/drafts/<D-xxx>` | – | `{ draft }` |
 | `GET /api/sites/<slug>/drafts/<D-xxx>/versions/<n>` | – | `{ version, name, html }` Markup einer Version (geprüft) für das Live-Umschalten in der Vorschau |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/versions` | JSON `{ prompt }` | `202 { job }` (`draft`, neue Version, setzt die Claude-Session des Entwurfs fort) |
@@ -189,11 +193,30 @@ Vor `</head>` bindet er `/s/<slug>/__tokens.css` (aus `design/tokens.css`) und d
 
 **CSS-Ebenen:** Sobald `components/mx-*.css` existiert (oder in der Vorschau eines Entwurfs), legt der Server alle Stylesheets des Originals (`<link rel="stylesheet">` als `@import … layer(legacy)`, `<style>` als `@layer legacy { … }`) sowie `__tokens.css` und `__overrides.css` in `@layer legacy`. `/s/<slug>/__components.css` (alle Komponenten, `?exclude=<name>` lässt eine aus) steht ohne Ebene darüber. Das Verhalten bestehender Overrides bleibt dadurch gleich.
 
+**Komponentenseite:** `/s/<slug>/__komponenten` (nicht im Abzug) zeigt alle Bibliotheks-Komponenten mit jeder Variante, gerendert aus der Vorlage. Die Stylesheets der Herkunftsseite (Schriften, Icon-Fonts) liegen wie auf jeder Seite in `@layer legacy`, darüber Tokens, `overrides.css` und `__components.css`; `<base>` zeigt auf den Ordner der Herkunftsseite. Das Overlay läuft mit `window.__MODIO__.library = true` (keine Auswahl, keine Änderungserkennung; im Panel „Seiten“ als feste, nicht löschbare Seite „Komponenten“). `window.__MODIO__.kind` ist `"neu"` oder `"abzug"` (Overlay: „Als Komponente …“ nur bei neuen Projekten).
+
 **Vorschau eines Entwurfs:** `<seite>?__modio_draft=D-001&__modio_v=2` liefert die Seite mit dem Element des Entwurfs durch die Komponente ersetzt (gleiches Verfahren wie `draft-apply.sh`) und bindet `/s/<slug>/__draft.css?d=D-001&v=2` ein. `window.__MODIO__.preview = { draft, version }`; das Overlay sperrt dort Auswahl und Änderungserkennung.
 
 ### Neue Projekte ohne Website (`site.json` mit `kind: "neu"`)
 
 `project-new.sh` legt ein Projekt ohne Seiten an (`entry: null`). `/s/<slug>/` liefert dann eine Platzhalterseite mit Overlay (`window.__MODIO__.empty = true`, das Panel „Seiten“ öffnet sich), die nicht im Abzug liegt. Seiten kommen mit `page-import.sh` dazu: die HTML-Datei wird byte-genau `www/seiten/<name>.html` (bei Altprojekten mit Leinwand im Ordner der Einstiegsseite), als Schritt A-xxx mit `source: "import"` über `commit-step.sh` (Sicherheitsprüfung, dabei Links `<a href>` auf fremde Domains nur als Hinweis `link-domain` je Domain, `CHECK_LINKS_AS_WARNINGS`; gleiche Bereiche werden bei Importen nicht übertragen). `--replace` ersetzt eine vorhandene Seite (Exit 4 ohne). Altprojekte mit Leinwand (`www/leinwand/index.html`, freie Plätze `<section class="modio-platz" … data-modio-platz>`) funktionieren weiter: Nur auf Seiten mit Plätzen ergänzt `draft-apply.sh` nach der Übernahme einen neuen Platz, und nur dort gilt `source.html` in Entwurf und Briefing als „kein Material“. Gepflegt wird in `design/`: `notes.md` (Regeln), `projekt.md` und weitere `.md` (Hintergrund), `tokens-quelle.css` (Design-Tokens als CSS-Variablen im `:root`-Block). `project-package.sh` übernimmt die Variablen als gesperrte Tokens (`design.mjs import-css`: Kategorie aus dem Namen, Verweise per `var()` werden zu `var(--modio-…)`, `clamp()`/`calc()` erlaubt, Werte ohne Kategorie wie Schriftstärken landen in `tokens-map.json` unter `ohneToken`) und schreibt `paket/` (`CLAUDE.md`, `tokens.css`, `regeln.md`, Hintergrund, `README.md`, `entwuerfe/`; nicht versioniert, `entwuerfe/` bleibt beim Neuerzeugen). `project-export.sh` schreibt je Komponente `component.html`/`component.css` und schreibt dabei `var(--modio-…)` über `tokens-map.json` auf die Variablen des Projekts zurück; Tokens nur aus Modio stehen in `modio-zusatz.css`. Neu einlesen und Seiten hinzufügen sind für neue Projekte gesperrt.
+
+### Komponenten-Bibliothek (neue Projekte)
+
+Eine Bibliotheks-Komponente besteht aus `components/mx-<name>.css` (wie jede übernommene Komponente), `components/mx-<name>.html` (Vorlage: Wurzel mit Klasse `mx-<name>`, `data-mx-variant="<Standard>"` und dessen Modifiern, `data-mx-slot="<key>"` an jeder austauschbaren Stelle, Slots aller Varianten) und `components/mx-<name>.json`:
+
+```json
+{ "name": "button", "title": "Button", "beschreibung": "Aktion auslösen", "herkunft": "/seiten/startseite.html",
+  "slots": [{ "key": "text", "label": "Beschriftung", "typ": "text", "pflicht": true }, { "key": "icon", "label": "Icon", "typ": "icon", "pflicht": false }],
+  "varianten": [{ "key": "primary", "label": "Primary", "klassen": "mx-button--primary", "slots": ["text"] },
+                { "key": "primary-icon", "label": "Primary mit Icon", "klassen": "mx-button--primary mx-button--icon" }] }
+```
+
+Slot-Typen: `text`, `richtext`, `bild`, `icon`, `link`, `liste`. Varianten sind feste, benannte Kombinationen von Modifiern `mx-<name>--…` (CSS im selben `@scope`, z. B. `:scope.mx-button--primary`); `slots` einer Variante nennt die Slots, die es in ihr gibt (ohne Angabe: alle). Die erste Variante ist der Standard. Eingesetzte Komponenten (Instanzen) sind Kopien der gerenderten Variante (`components.mjs render`: Modifier getauscht, fremde Slots entfernt) mit `data-mx-variant`. Die Wurzel einer Instanz darf zusätzliche Kontextklassen tragen (Anpassung an den Einsatzort, gestaltet von der Umgebung); Klassen der Vorlage müssen bleiben. Elemente mit Klasse `mx-<name>` ohne `data-mx-variant` gelten nicht als Instanz.
+
+`component-delete.sh` (Schritt mit `source: "component-delete"`, keine Übertragung gleicher Bereiche): Ohne Variante entfallen `mx-<name>.json` und `.html`; `mx-<name>.css` bleibt, solange Elemente mit der Klasse auf den Seiten stehen. Mit Variante entfällt deren Eintrag; Slots, die keine verbliebene Variante hat, fallen aus Beschreibung und Vorlage; zeigt die Vorlage die gelöschte Variante, zeigt sie danach die erste verbliebene. Die einzige Variante lässt sich nicht löschen (Exit 2). In beiden Fällen verlieren die betroffenen Instanzen byte-genau `data-mx-variant` und ihre `data-mx-slot` (eingebettete andere Komponenten bleiben gekennzeichnet); Markup und Klassen bleiben. Ausgabe: Ergebnis von `commit-step.sh` plus `{ name, variant, unmarked, pages, removedFiles, keptCss, removedSlots }`. Die Komponentenseite zeigt je Komponente und Variante die Zahl der Verwendungen (`data-kb-uses`) und im Overlay Papierkorb-Symbole zum Löschen.
+
+Entstehung: `draft-create.sh` mit `mode: "component"` legt einen Entwurf mit `draft.json .component = { name }` an. Claude bekommt `seiten-css.css` (CSS der Seite, `draft.mjs page-css`) und gestaltet nicht neu; jede Version braucht `component.json` (`draft.mjs validate` mit `DRAFT_REQUIRE_LIBRARY=1`, geprüft von `validateLibrary`). Ist das Element schon eine übernommene Komponente, bleibt deren Name. Überarbeitungen von Bibliotheks-Komponenten (normaler Entwurf auf `.mx-<name>`) bekommen `bestand-komponente.json` und brauchen ebenfalls `component.json`. `draft-apply.sh` schreibt Vorlage und Beschreibung (`herkunft` = Seite des Entwurfs) und setzt auf der Seite die gerenderte Variante ein. Kontext für Claude (`context.sh`, auch in Entwürfen): Block `<komponenten>` mit Name, Titel, Beschreibung, Varianten, Slots und Pfad der Vorlage sowie den Regeln zum Einsetzen. `project-export.sh` exportiert Bibliotheks-Komponenten mit Vorlage, `component.json` und allen Varianten in `vorschau.html`.
 
 `page-delete.sh` löscht eine Seite (Abzüge und neue Projekte) als Schritt A-xxx mit `source: "delete"` über `commit-step.sh`; ein Rücksprung holt sie zurück. Bei Abzügen entfernt es die URL der Seite aus `urls.txt` (dafür erlaubt `check-diff.sh` bei diesem Schritt Änderungen an `urls.txt`, `CHECK_ALLOW_URLS`), die Startseite (`entry`) lässt sich nicht löschen. Links anderer Seiten auf die gelöschte Seite bleiben und erscheinen als Hinweis `page-links`; Bilder und CSS der Seite bleiben liegen. Ausgabe: Ergebnis von `commit-step.sh` plus `{ page, removedUrls, links: { count, files } }`.
 
@@ -203,7 +226,7 @@ Vor `</head>` bindet er `/s/<slug>/__tokens.css` (aus `design/tokens.css`) und d
 
 Prüfung (`scripts/lib/draft.mjs`): genau ein Wurzelelement mit Klasse `mx-<name>`; CSS nur in `@scope (.mx-<name>)` (auch innerhalb von `@media`/`@supports`/`@container`), Keyframes `mx-<name>…`; verboten sind Scripts, Event-Handler, iframes, `<style>`/`<link>`/`<meta>`/`<base>`, `@import`, `@layer`, `javascript:` und Domains, die nicht im Ausgangsmaterial oder als Host der Website vorkommen. Ist eine Version ungültig, bekommt Claude eine Korrekturrunde.
 
-**Überarbeitung:** Ist das gewählte Element selbst eine übernommene Komponente (Wurzel mit Klasse `mx-<name>` und `components/mx-<name>.css` vorhanden), setzt `draft-create.sh` `revises: <name>`, legt das bisherige CSS als `bestand-komponente.css` bei und verlangt denselben Namen; `draft-apply.sh` ersetzt dann die vorhandene CSS-Datei.
+**Überarbeitung:** Ist das gewählte Element selbst eine übernommene Komponente (Wurzel mit Klasse `mx-<name>` und `components/mx-<name>.css` vorhanden), setzt `draft-create.sh` `revises: <name>`, legt das bisherige CSS als `bestand-komponente.css` bei und verlangt denselben Namen; `draft-apply.sh` ersetzt dann die vorhandene CSS-Datei. Ausnahme „Als Komponente“ mit anderem Namen: Eine Komponente ohne Bibliotheks-Eintrag wird umbenannt (`renames: <alter Name>`, neue Klasse und neuer Scope); `draft-apply.sh` entfernt das alte CSS, sobald keine Seite die alte Klasse mehr verwendet. Bibliotheks-Komponenten behalten ihren Namen (Hinweis im Entwurf).
 
 **Gestaltung in claude.ai:** `draft-create.sh` mit `mode: "brief"` legt den Entwurf ohne Version an und ruft `draft-brief.sh`: Briefing-Text (Auftrag, Hauptraster, Token-Block, gesperrte Tokens, Regeln aus `notes.md`, Gestaltungsleitlinien, Ausgabeformat: ein HTML-Artefakt ohne React/JavaScript, ein `<style>`, ein Wurzelelement, keine externen Schriften/Bilder) und Dateien zum Hochladen. Ein Import (`importFile`) wird mit `draft.mjs import-clean` bereinigt (Scripts, Handler, Frames, `<link>`, `@import`, externe `@font-face`; React-Artefakte ohne statisches HTML werden abgewiesen) und von Claude in einer frischen Session ohne Neugestaltung übernommen: Komponentenformat, Werte auf Tokens, Hauptraster, Inhalte und Pfade aus `source.html`. Bereinigungshinweise erscheinen als Warnungen der Version.
 

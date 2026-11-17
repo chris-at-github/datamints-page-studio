@@ -2,12 +2,14 @@
 // Aufruf: node draft.mjs <befehl> …
 //   validate <site-dir> <draft-dir> <version>                Komponente einer Version prüfen
 //   apply <site-dir> <draft-dir> <version> <seite> <selektor> Element ersetzen, components/mx-<name>.css schreiben
+//     (Bibliotheks-Komponente mit component.json: dazu components/mx-<name>.json und .html, siehe components.mjs)
 // Ausgabe: eine JSON-Zeile auf stdout. Exit 0 ok, 3 Komponente ungültig, 1 Fehler.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadCheerio, sitePages } from './consistency.mjs';
 import { writeStdout, exitJson } from './stdout.mjs';
+import { validateLibrary, renderVariant } from './components.mjs';
 
 export const NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 export const MAX_HTML = 200 * 1024;
@@ -250,9 +252,10 @@ export function placeholdersIn(cheerio, html) {
   return $('[data-mx-platzhalter]').toArray().slice(0, 50).map((n) => ({ tag: n.name, text: String($(n).attr('data-mx-platzhalter') || '').slice(0, 200) }));
 }
 
-// Liest und prüft eine Version: { name, html, css, meta, befund, platzhalter, errors, warnings }
+// Liest und prüft eine Version: { name, html, css, meta, befund, platzhalter, library, errors, warnings }
 // requireBefund: nur beim Erzeugen (draft-create) meldet ein fehlender Befund einen Hinweis; ältere Entwürfe ohne befund.json bleiben gültig
-export async function loadVersion(siteDir, draftDir, version, { requireBefund = false } = {}) {
+// requireLibrary: Komponente für die Bibliothek, component.json ist Pflicht (sonst nur geprüft, wenn vorhanden)
+export async function loadVersion(siteDir, draftDir, version, { requireBefund = false, requireLibrary = false } = {}) {
   const vdir = path.join(draftDir, `v${version}`);
   const read = (f) => { try { return fs.readFileSync(path.join(vdir, f), 'utf8'); } catch { return null; } };
   let meta = {};
@@ -268,8 +271,27 @@ export async function loadVersion(siteDir, draftDir, version, { requireBefund = 
   const b = befundText === null ? { befund: [], errors: [] } : validateBefund(befundText);
   if (befundText === null && requireBefund) warnings.push('befund.json fehlt: Version ohne Befund');
   errors.push(...b.errors);
+  // Bibliothek: Beschreibung mit Varianten und Slots
+  let library = null;
+  const libText = read('component.json');
+  if (libText !== null || requireLibrary) {
+    let json = null;
+    if (libText !== null) { try { json = JSON.parse(libText); } catch { errors.push('component.json ist kein gültiges JSON'); } }
+    if (libText === null || json) {
+      const r = validateLibrary(cheerio, { name, html, json, css: css || '' });
+      errors.push(...r.errors); warnings.push(...r.warnings);
+      library = r.spec;
+    }
+  }
   const platzhalter = errors.length ? [] : placeholdersIn(cheerio, html);
-  return { name, html, css, meta, befund: b.befund, platzhalter, errors, warnings };
+  return { name, html, css, meta, befund: b.befund, platzhalter, library, errors, warnings };
+}
+
+// Markup, das auf der Seite landet: bei Bibliotheks-Komponenten die Variante der Vorlage (ohne Slots anderer Varianten)
+export function instanceHtml(cheerio, v) {
+  if (!v.library) return v.html;
+  const m = v.html.match(/\bdata-mx-variant\s*=\s*["']([^"']*)["']/);
+  return renderVariant(cheerio, v.html, v.library, m ? m[1] : v.library.varianten[0].key);
 }
 
 // ---------- CSS-Ebenen für die Auslieferung ----------
@@ -357,6 +379,34 @@ async function main() {
     const title = clean($('title').first().text());
     out({ title, headings, before, anchor, text: clean(n.text()).slice(0, 120) });
   }
+  if (cmd === 'page-css') {
+    // node draft.mjs page-css <site-dir> <seite> <ausgabe.css>: CSS einer Seite (<style>-Blöcke und lokale Stylesheets)
+    // als Material für „Als Komponente …“ (neue Projekte: das CSS steckt meist im <style> der importierten Seite)
+    const [, sDir, pageRel, outFile] = process.argv.slice(2);
+    const page = String(pageRel || '').replace(/^\/+/, '');
+    if (!sDir || !page || !outFile) out({ error: 'Aufruf: node draft.mjs page-css <site-dir> <seite> <ausgabe.css>' }, 2);
+    if (!sitePages(sDir).includes(page)) out({ error: `Seite nicht im Abzug: /${page}` }, 1);
+    const www = path.join(sDir, 'www');
+    const text = readText(path.join(www, page)).text;
+    const max = Number(process.env.DRAFT_PAGE_CSS_MAX_BYTES || 300000);
+    const parts = [];
+    let n = 0;
+    for (const m of text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>|<link\b[^>]*>/gi)) {
+      if (m[1] !== undefined) { parts.push(`/* ---- <style> ${++n} ---- */\n${m[1].trim()}`); continue; }
+      const tag = m[0];
+      if (!/\brel\s*=\s*["']?[^"'>]*stylesheet/i.test(tag)) continue;
+      const href = decodeAttr(attrOf(tag, 'href') || '').replace(/[?#].*$/, '');
+      if (!href || /^[a-z][a-z0-9+.-]*:|^\/\//i.test(href)) continue;
+      const f = path.resolve(href.startsWith('/') ? www : path.dirname(path.join(www, page)), '.' + (href.startsWith('/') ? href : '/' + href));
+      if (!f.startsWith(www + path.sep) || !fs.existsSync(f)) continue;
+      parts.push(`/* ---- ${path.relative(www, f)} ---- */\n${readText(f).text.trim()}`);
+    }
+    let css = parts.join('\n\n');
+    const truncated = Buffer.byteLength(css) > max;
+    if (truncated) css = Buffer.from(css).subarray(0, max).toString('utf8') + '\n/* … gekürzt */';
+    fs.writeFileSync(outFile, css + '\n');
+    out({ bytes: Buffer.byteLength(css), blocks: parts.length, truncated });
+  }
   if (cmd === 'extract') {
     // node draft.mjs extract <site-dir> <seite> <selektor>
     const [, sDir, pageRel, sel] = process.argv.slice(2);
@@ -370,18 +420,22 @@ async function main() {
   if (!['validate', 'apply'].includes(cmd) || !siteDir || !draftDir || !Number.isInteger(version) || version < 1) {
     out({ error: 'Aufruf: node draft.mjs validate|apply <site-dir> <draft-dir> <version> [seite selektor]' }, 2);
   }
-  const v = await loadVersion(siteDir, draftDir, version, { requireBefund: cmd === 'validate' });
+  const v = await loadVersion(siteDir, draftDir, version, { requireBefund: cmd === 'validate', requireLibrary: process.env.DRAFT_REQUIRE_LIBRARY === '1' });
   const expect = process.env.DRAFT_EXPECT_NAME || '';
   if (cmd === 'validate' && expect && v.name !== expect) v.errors.push(`Überarbeitung: Name muss "${expect}" bleiben (meta.json, Klasse mx-${expect}, @scope (.mx-${expect}))`);
-  if (cmd === 'validate') out({ name: v.name, title: v.meta.title || '', bausteine: v.meta.bausteine || [], befund: v.befund, platzhalter: v.platzhalter, errors: v.errors, warnings: v.warnings }, v.errors.length ? 3 : 0);
+  if (cmd === 'validate') out({ name: v.name, title: v.meta.title || '', bausteine: v.meta.bausteine || [], befund: v.befund, platzhalter: v.platzhalter, library: v.library, errors: v.errors, warnings: v.warnings }, v.errors.length ? 3 : 0);
 
   if (v.errors.length) out({ error: `Komponente ungültig: ${v.errors.join('; ')}`, errors: v.errors }, 3);
+  // Bibliotheks-Komponente ohne neue Beschreibung: Vorlage und Beschreibung würden nicht mehr zum CSS passen
+  if (!v.library && fs.existsSync(path.join(siteDir, 'components', `mx-${v.name}.json`))) {
+    out({ error: `mx-${v.name} ist eine Bibliotheks-Komponente: Die Version braucht eine component.json (Entwurf nachbessern).` }, 3);
+  }
   const page = String(pageArg || '').replace(/^\/+/, '');
   if (!sitePages(siteDir).includes(page)) out({ error: `Seite nicht im Abzug: /${page}` }, 1);
   const cheerio = await loadCheerio();
   const file = path.join(siteDir, 'www', page);
   const src = readText(file);
-  const r = replaceElement(cheerio, src.text, selector, v.html);
+  const r = replaceElement(cheerio, src.text, selector, instanceHtml(cheerio, v));
   if (r.error) out({ error: r.error }, 1);
   fs.writeFileSync(file, r.text, src.enc);
   const compDir = path.join(siteDir, 'components');
@@ -389,7 +443,12 @@ async function main() {
   const cssFile = path.join(compDir, `mx-${v.name}.css`);
   const header = `/* mx-${v.name}: ${String(v.meta.title || v.name).replace(/\*\//g, '').replace(/\s+/g, ' ').slice(0, 120)} */\n`;
   fs.writeFileSync(cssFile, header + v.css.trim() + '\n');
-  out({ name: v.name, title: v.meta.title || '', page: '/' + page, cssFile: `components/mx-${v.name}.css`, warnings: v.warnings,
+  if (v.library) {
+    // Vorlage und Beschreibung für die Bibliothek; herkunft: Seite, auf die sich relative Pfade der Vorlage beziehen
+    fs.writeFileSync(path.join(compDir, `mx-${v.name}.html`), v.html.trim() + '\n');
+    fs.writeFileSync(path.join(compDir, `mx-${v.name}.json`), JSON.stringify({ ...v.library, herkunft: '/' + page }, null, 2) + '\n');
+  }
+  out({ name: v.name, title: v.meta.title || '', page: '/' + page, cssFile: `components/mx-${v.name}.css`, library: !!v.library, warnings: v.warnings,
     platzhalter: v.platzhalter, offen: v.befund.filter((b) => !b.umgesetzt).map((b) => `${b.id} ${b.titel}`) });
 }
 

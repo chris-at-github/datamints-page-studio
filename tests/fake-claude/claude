@@ -25,4 +25,20 @@ fi
 printf '@scope (.mx-%s) {\n  :scope { padding: 2rem; }\n}\n' "$NAME" >"$V/component.css"
 printf '[{"id":"P1","gruppe":"pflicht","titel":"Ansprache","text":"Sie-Form","umgesetzt":true}]\n' >"$V/befund.json"
 printf '{"name":"%s","title":"Test","bausteine":[{"key":"layout","label":"Layout","source":"neu"}]}\n' "$NAME" >"$V/meta.json"
+# Komponente für die Bibliothek: Vorlage mit Slots und zwei Varianten, component.json
+if grep -q 'component.json' <<<"$PROMPT"; then
+  LN="$(grep -oE 'Der Name (ist|bleibt) "[a-z0-9-]+"|Name "[a-z0-9-]+" beibehalten' <<<"$PROMPT" | head -1 | sed -E 's/[^"]*"([a-z0-9-]+)".*/\1/')"
+  if [[ -n "$LN" ]]; then
+    NAME="$LN"
+    if [[ "${FAKE_CLAUDE_LIB_BAD:-}" == "1" ]]; then
+      printf '<article class="mx-%s"><h3>Titel</h3></article>\n' "$NAME" >"$V/component.html"
+    else
+      printf '<article class="mx-%s" data-mx-variant="standard"><h3 data-mx-slot="titel">Beispiel</h3><p data-mx-slot="text">Text</p><span class="icon" data-mx-slot="icon">★</span><a class="mehr" href="#" data-mx-slot="link">Mehr</a></article>\n' "$NAME" >"$V/component.html"
+    fi
+    printf '@scope (.mx-%s) {\n  :scope { padding: 1rem; }\n  :scope.mx-%s--hervorgehoben { background: #eee; }\n}\n' "$NAME" "$NAME" >"$V/component.css"
+    printf '{"name":"%s","title":"Kachel","bausteine":[]}\n' "$NAME" >"$V/meta.json"
+    printf '[]\n' >"$V/befund.json"
+    printf '{"name":"%s","title":"Kachel","beschreibung":"Kachel für Übersichten.","slots":[{"key":"titel","label":"Überschrift","typ":"text"},{"key":"text","label":"Text","typ":"richtext"},{"key":"icon","label":"Icon","typ":"icon","pflicht":false},{"key":"link","label":"Link","typ":"link"}],"varianten":[{"key":"standard","label":"Standard","klassen":"","slots":["titel","text","link"]},{"key":"hervorgehoben","label":"Hervorgehoben mit Icon","klassen":"mx-%s--hervorgehoben"}]}\n' "$NAME" "$NAME" >"$V/component.json"
+  fi
+fi
 printf '{"type":"result","is_error":false,"result":"Entwurf %s erstellt.","session_id":"fake-session","total_cost_usd":'"$(fake_total 0.01)"',"num_turns":1}\n' "$V"

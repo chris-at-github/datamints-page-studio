@@ -20,10 +20,12 @@
   var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   // Vorschau eines Entwurfs: Seite mit ersetztem Element, nur ansehen (keine Auswahl, keine Änderungserkennung)
   var PREVIEW = CFG.preview && CFG.preview.draft ? { draft: String(CFG.preview.draft), version: Number(CFG.preview.version), name: String(CFG.preview.name || '') } : null;
+  // Komponentenseite (/__komponenten): keine Seite des Abzugs, deshalb keine Auswahl und keine Änderungserkennung
+  var LIBRARY = CFG.library === true;
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var STATE_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -59,6 +61,10 @@
     click: ['path:M14 4.1 12 6', 'path:m5.1 8-2.9-.8', 'path:m6 12-1.9 2', 'path:M7.2 2.2 8 5.1',
       'path:M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z'],
     history: ['path:M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8', 'path:M3 3v5h5', 'path:M12 7v5l4 2'],
+    component: ['path:M15.536 11.293a1 1 0 0 0 0 1.414l2.376 2.377a1 1 0 0 0 1.414 0l2.377-2.377a1 1 0 0 0 0-1.414l-2.377-2.377a1 1 0 0 0-1.414 0z',
+      'path:M2.297 11.293a1 1 0 0 0 0 1.414l2.377 2.377a1 1 0 0 0 1.414 0l2.377-2.377a1 1 0 0 0 0-1.414L6.088 8.916a1 1 0 0 0-1.414 0z',
+      'path:M8.916 17.912a1 1 0 0 0 0 1.415l2.377 2.376a1 1 0 0 0 1.414 0l2.377-2.376a1 1 0 0 0 0-1.415l-2.377-2.376a1 1 0 0 0-1.414 0z',
+      'path:M8.916 4.674a1 1 0 0 0 0 1.414l2.377 2.376a1 1 0 0 0 1.414 0l2.377-2.376a1 1 0 0 0 0-1.414l-2.377-2.377a1 1 0 0 0-1.414 0z'],
     grid: ['rect:3,3,7,7', 'rect:14,3,7,7', 'rect:14,14,7,7', 'rect:3,14,7,7'],
     x: ['path:M18 6 6 18', 'path:m6 6 12 12'],
     refresh: ['path:M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8', 'path:M21 3v5h-5',
@@ -450,6 +456,7 @@
     '.brieftext{width:100%;min-height:120px;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}' +
     '.brieffiles{list-style:none;margin:4px 0 8px;padding:0}.brieffiles li{margin:2px 0}' +
     '.linkish{background:none;border:0;padding:0;color:#2563eb;text-decoration:underline;cursor:pointer;font:inherit}' +
+    '.comp-row .textin{flex:1;min-width:0;font-size:12px;padding:4px 6px}' +
     '.claude-row{gap:4px;flex-wrap:nowrap;align-items:center}.claude-row .hint{white-space:nowrap}.claude-row button{font-size:12px;padding:4px 6px;white-space:nowrap}' +
     '.design .sb-body .dsec{border-top:1px solid #9ca3af;padding-top:14px}' +
     '.design .sb-body > div:empty + section.dsec,.design .sb-body > div > .dsec:first-child{border-top:0;padding-top:0}' +
@@ -492,6 +499,7 @@
     '@media (max-width:980px){.ui.sb-drafts .bar{right:16px;bottom:auto;top:16px;left:16px;right:auto}}' +
     '.drafts .sb-body .dsec{border-top:1px solid #9ca3af;padding-top:14px;margin-top:14px;margin-bottom:0}' +
     '.drafts .dhead{margin-bottom:4px}' +
+    'ul.liblist{list-style:none;margin:6px 0;padding:0}ul.liblist li{padding:5px 0;border-bottom:1px solid #f1f2f4}ul.liblist code{font-size:11px;color:#5b21b6}' +
     '.drafts .dstate{display:inline-block;font-size:11px;font-weight:600;border-radius:4px;padding:1px 6px;background:#f3f4f6;color:#4b5563;margin-top:4px}' +
     'ul.pglist{list-style:none;margin:8px 0 6px;padding:0;max-height:50vh;overflow:auto}' +
     'ul.pglist li{display:flex;align-items:center;gap:6px;border-bottom:1px solid #f1f2f4}' +
@@ -664,6 +672,14 @@
   var pImport = iconButton('files', 'HTML importieren …', { class: 'ghost', title: 'In claude.ai gestaltetes HTML (Artefakt) als neuen Entwurf für dieses Element übernehmen. Der Prompt ist optional.' });
   var pImportFile = el('input', { type: 'file', accept: '.html,.htm,text/html', hidden: '' });
   var pClaudeRow = el('div', { class: 'row claude-row' }, [el('span', { class: 'hint', text: 'Extern gestalten:' }), pBrief, pImport, pImportFile]);
+  // Neue Projekte: Element als Komponente für die Bibliothek anlegen (Name, Hinweise zu Varianten im Prompt optional)
+  var pComp = iconButton('component', 'Als Komponente …', { class: 'ghost', title: 'Element ohne Neugestaltung als wiederverwendbare Komponente mit Varianten und austauschbaren Inhalten anlegen. Der Prompt ist optional (z. B. gewünschte Varianten).' });
+  var pCompName = el('input', { type: 'text', class: 'textin', placeholder: 'name, z. B. produktkachel', 'aria-label': 'Name der Komponente (a-z, 0-9, Bindestrich)', spellcheck: 'false', maxlength: '40' });
+  var pCompGo = el('button', { type: 'button', class: 'primary', text: 'Anlegen' });
+  // Namensfeld statt Knopf (style.display: die Knopf-Styles überschreiben das hidden-Attribut)
+  function showCompName(on) { pComp.style.display = on ? 'none' : ''; pCompName.style.display = pCompGo.style.display = on ? '' : 'none'; }
+  showCompName(false);
+  var pCompRow = el('div', { class: 'row claude-row comp-row' }, [el('span', { class: 'hint', text: 'Bibliothek:' }), pComp, pCompName, pCompGo]);
   var pTokBtn = iconButton('palette', 'Token einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
@@ -681,6 +697,7 @@
     pThumbs,
     pErr,
     pClaudeRow,
+    pCompRow,
     el('div', { class: 'row end' }, [pCancel, el('span', { class: 'spacer' }), pDraft, pSend, pQueue]),
   ]);
   ui.appendChild(promptPanel);
@@ -854,6 +871,7 @@
     'pages-add': 'Seiten hinzufügen',
     'page-import': 'Seite importieren',
     'page-delete': 'Seite löschen',
+    'component-delete': 'Komponente löschen',
     'areas-sync': 'Bereiche angleichen',
     'local-commit': 'Lokale Änderungen',
     'inspect-apply': 'Inspektor-Änderung',
@@ -928,7 +946,9 @@
     pQueue.style.display = followupJob ? 'none' : '';
     pDraft.style.display = followupJob ? 'none' : '';
     pClaudeRow.style.display = followupJob ? 'none' : '';
+    pCompRow.style.display = followupJob || CFG.kind !== 'neu' ? 'none' : '';
     if (PREVIEW) { btnSelect.disabled = true; btnSelect.title = 'In der Vorschau eines Entwurfs nicht möglich'; }
+    if (LIBRARY) { btnSelect.disabled = true; btnSelect.title = 'Auf der Komponentenseite nicht möglich: Komponenten auf einer Seite auswählen'; }
     pSend.classList.toggle('primary', !!followupJob);
     if (typeof renderQueueButton === 'function' && qRun) renderQueueButton();
     var fj = followupCandidate();
@@ -1044,6 +1064,7 @@
   function startSelecting(mode) {
     selectMode = mode === 'token' || mode === 'area' || mode === 'draftnote' ? mode : 'annotate';
     if (selectMode === 'annotate' && PREVIEW) return; // in der Vorschau keine Annotationen (DOM weicht von der Datei ab)
+    if (LIBRARY && selectMode !== 'token') return;
     if (selectMode === 'draftnote') {
       /* Hinweis zu einem Element der Komponente: Hervorhebung genügt, Panel bleibt offen */
     } else if (selectMode === 'annotate') {
@@ -1400,6 +1421,7 @@
 
   function resetPrompt() {
     pText.value = '';
+    pCompName.value = ''; showCompName(false);
     pUrl.value = '';
     pThorough.checked = true;
     pText.placeholder = 'Was soll an diesem Element geändert werden?';
@@ -1546,6 +1568,25 @@
   pSend.addEventListener('click', function () { submit('direct'); });
   pQueue.addEventListener('click', function () { submit('queue'); });
   pDraft.addEventListener('click', function () { submit('draft'); });
+  pComp.addEventListener('click', function () {
+    showCompName(true);
+    if (!pCompName.value && selected) {
+      // Vorschlag aus id oder erster Klasse des Elements (sonst leer)
+      var cand = (selected.id || (selected.className && typeof selected.className === 'string' ? selected.className.trim().split(/\s+/)[0] : '') || '').toLowerCase()
+        .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/^mx-/, '').replace(/[^a-z0-9]+/g, '-').replace(/^[^a-z]+|-+$/g, '').slice(0, 40);
+      pCompName.value = cand;
+    }
+    pCompName.focus(); pCompName.select();
+  });
+  pCompName.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); pCompGo.click(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); showCompName(false); pComp.focus(); }
+  });
+  pCompGo.addEventListener('click', function () {
+    var n = pCompName.value.trim();
+    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(n) || n.length > 40) { pErr.textContent = 'Name der Komponente: Kleinbuchstaben, Ziffern und Bindestrich, mit einem Buchstaben beginnen.'; pCompName.focus(); return; }
+    submit('component', null, n);
+  });
   pBrief.addEventListener('click', function () { submit('brief'); });
   pImport.addEventListener('click', function () { pImportFile.value = ''; pImportFile.click(); });
   pImportFile.addEventListener('change', function () {
@@ -1683,10 +1724,10 @@
     closePrompt();
   });
 
-  function submit(mode, importHtml) {
+  function submit(mode, importHtml, componentName) {
     if (!selected && !followupJob) return;
     var toQueue = mode === 'queue' && !followupJob;
-    var extMode = !followupJob && (mode === 'brief' || mode === 'import') ? mode : null;
+    var extMode = !followupJob && (mode === 'brief' || mode === 'import' || mode === 'component') ? mode : null;
     var toDraft = (mode === 'draft' || !!extMode) && !followupJob;
     if (toDraft && activeJob() && activeJob().status !== 'review') {
       pErr.textContent = 'Es läuft noch ein Auftrag. Der Entwurf ist erst danach möglich.';
@@ -1698,6 +1739,7 @@
     }
     var prompt = pText.value.trim();
     if (!prompt && extMode === 'import') prompt = 'Übernahme des Entwurfs aus claude.ai';
+    if (!prompt && extMode === 'component') prompt = 'Als Komponente für die Bibliothek anlegen';
     if (!prompt) {
       pErr.textContent = extMode === 'brief' ? 'Bitte den Auftrag für claude.ai eingeben (er steht im Briefing).' : 'Bitte einen Prompt eingeben.';
       pText.focus();
@@ -1731,13 +1773,14 @@
       delete annotation.followup; delete annotation.followup_of;
       if (extMode) annotation.mode = extMode;
       if (extMode === 'import') annotation.importHtml = importHtml || '';
+      if (extMode === 'component') annotation.componentName = componentName;
     }
     var fd = new FormData();
     fd.append('annotation', JSON.stringify(annotation));
     refs.forEach(function (r) {
       if (r.kind === 'file') fd.append('images', r.file, r.file.name || 'bild');
     });
-    pSend.disabled = pQueue.disabled = pDraft.disabled = pBrief.disabled = pImport.disabled = true;
+    pSend.disabled = pQueue.disabled = pDraft.disabled = pBrief.disabled = pImport.disabled = pCompGo.disabled = true;
     pErr.textContent = '';
     api('POST', '/api/sites/' + encodeURIComponent(SLUG) + (toDraft ? '/drafts' : toQueue ? '/queue' : '/annotations'), fd)
       .then(function (data) {
@@ -1747,6 +1790,7 @@
         closePrompt();
         showToast(extMode === 'brief' ? 'Entwurf wird angelegt, Briefing für claude.ai wird erstellt …'
           : extMode === 'import' ? 'Claude übernimmt das HTML aus claude.ai als Komponente … Die Vorschau öffnet sich danach.'
+          : extMode === 'component' ? 'Claude legt die Komponente mx-' + componentName + ' für die Bibliothek an … Die Vorschau öffnet sich danach.'
           : toDraft ? 'Claude entwirft das Element als Komponente … Die Vorschau öffnet sich, sobald der Entwurf fertig ist.' : toQueue ? 'In die Queue aufgenommen (' + queueItems.length + ').' : 'Annotation gesendet.', false);
       })
       .catch(function (err) {
@@ -1754,7 +1798,7 @@
           err.status === 409 ? 'Für diese Website läuft bereits ein Schritt oder wartet auf Prüfung.' : 'Senden fehlgeschlagen: ' + err.message;
       })
       .then(function () {
-        pQueue.disabled = pDraft.disabled = pBrief.disabled = pImport.disabled = false;
+        pQueue.disabled = pDraft.disabled = pBrief.disabled = pImport.disabled = pCompGo.disabled = false;
         renderStatus();
       });
   }
@@ -1764,6 +1808,7 @@
   var pgFilter = el('input', { type: 'text', class: 'textin', placeholder: 'Seiten filtern …', 'aria-label': 'Seiten filtern', spellcheck: 'false' });
   var pgList = el('ul', { class: 'pglist' });
   var pgInfo = el('div', { class: 'hint' });
+  var pgTitle = el('h2', { id: 'modio-pgh', text: CFG.kind === 'neu' ? 'Seiten' : 'Seiten im Abzug' });
   var pgErr = el('div', { class: 'err', role: 'alert' });
   // Neue Projekte: Seite importieren (HTML-Datei aus Claude Chat, unverändert übernommen)
   var pgImpFile = el('input', { type: 'file', accept: '.html,.htm,text/html', hidden: '' });
@@ -1778,7 +1823,7 @@
   var pgImpErr = el('div', { class: 'err', role: 'alert' });
   var pgImport = el('div', { class: 'pgimp', hidden: '' }, [el('div', { class: 'row' }, [pgImpBtn, pgImpFile]), pgImpForm, pgImpErr]);
   var pagesPanel = el('div', { id: 'modio-pages', class: 'panel', role: 'dialog', 'aria-labelledby': 'modio-pgh' }, [
-    el('h2', { id: 'modio-pgh', text: 'Seiten im Abzug' }),
+    pgTitle,
     pgFilter,
     pgList,
     pgErr,
@@ -1806,6 +1851,14 @@
     var q = pgFilter.value.trim().toLowerCase();
     var list = all.filter(function (p) { return !q || (p.title + ' ' + p.path).toLowerCase().indexOf(q) !== -1; });
     var cur = currentPage();
+    var neu = pagesData && pagesData.kind === 'neu';
+    // Neue Projekte: Komponentenseite (Bibliothek) als feste Seite, nicht löschbar
+    if (neu && (!q || 'komponenten bibliothek'.indexOf(q) !== -1)) {
+      pgList.appendChild(el('li', {}, [el('a', { href: BASE + '/__komponenten', class: 'pglink' + (LIBRARY ? ' current' : ''), 'aria-current': LIBRARY ? 'page' : null }, [
+        el('span', { class: 'pgtitle', text: 'Komponenten' }),
+        el('span', { class: 'pgpath', text: 'Bibliothek: alle Komponenten mit ihren Varianten' }),
+      ])]));
+    }
     list.forEach(function (p) {
       var a = el('a', { href: BASE + p.path.split('/').map(encodeURIComponent).join('/'), class: 'pglink' + (p.path === cur ? ' current' : '') }, [
         el('span', { class: 'pgtitle', text: p.title || p.path.split('/').pop() }),
@@ -1814,7 +1867,6 @@
       if (p.path === cur) a.setAttribute('aria-current', 'page');
       var li = el('li', {}, [a]);
       var isEntry = pagesData && p.path === pagesData.entry;
-      if (isEntry) li.appendChild(el('span', { class: 'badge', text: 'Start' }));
       // Löschen: bei Abzügen nicht die Startseite; erst nach Rückfrage
       if (pagesData && (pagesData.kind === 'neu' || !isEntry)) {
         if (pgDelPath === p.path) {
@@ -1839,11 +1891,10 @@
       }
       pgList.appendChild(li);
     });
-    var neu = pagesData && pagesData.kind === 'neu';
     if (!list.length) pgList.appendChild(el('li', { class: 'hint', text: all.length ? 'Keine passende Seite.' : !pagesData ? 'Lade …' : neu ? 'Noch keine Seiten.' : 'Keine Seiten.' }));
-    pgInfo.textContent = neu
-      ? all.length + ' Seite(n). Weitere Seiten: HTML-Datei aus Claude Chat importieren, sie wird unverändert übernommen.'
-      : all.length + ' Seite(n). Weitere Seiten: Startseite › Aktionen › „Seiten hinzufügen“.';
+    pgInfo.textContent = neu ? '' : all.length + ' Seite(n). Weitere Seiten: Startseite › Aktionen › „Seiten hinzufügen“.';
+    pgInfo.style.display = neu ? 'none' : '';
+    pgTitle.textContent = neu ? 'Seiten' : 'Seiten im Abzug';
     pgImport.hidden = !neu;
     pgImpBtn.disabled = isBusy();
   }
@@ -1917,6 +1968,40 @@
       .catch(function (err) { clear(pgList); pgList.appendChild(el('li', { class: 'err', text: 'Fehler: ' + err.message })); });
     setTimeout(function () { pgFilter.focus(); }, 0);
   }
+  // Komponentenseite: Komponenten und Varianten löschen (Verwendungen bleiben als Markup ohne Kennzeichnung)
+  function libraryControls() {
+    if (!LIBRARY) return;
+    function delButton(label, body, question) {
+      // liegt im DOM der Seite (nicht im Overlay): eigene Inline-Styles statt Overlay-Klassen
+      var b = el('button', { type: 'button', title: label, 'aria-label': label, 'data-modio': 'kb-del' }, [icon('trash', 16)]);
+      b.style.cssText = 'cursor:pointer;background:none;border:0;padding:2px 4px;margin-left:4px;color:#9ca3af;vertical-align:middle;line-height:0';
+      b.addEventListener('click', function () {
+        if (isBusy()) { showToast('Es läuft noch ein Schritt. Bitte warten.', true); return; }
+        if (!confirm(question)) return;
+        b.disabled = true;
+        api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/components/delete', body)
+          .then(function (d) { if (d && d.job) trackJob(d.job); showToast(label + ' …', false); })
+          .catch(function (err) { b.disabled = false; showToast('Löschen fehlgeschlagen: ' + err.message, true, true); });
+      });
+      return b;
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('.kb-comp[data-kb-name]'), function (sec) {
+      var name = sec.getAttribute('data-kb-name'), uses = Number(sec.getAttribute('data-kb-uses')) || 0;
+      var h = sec.querySelector('h2');
+      if (h) h.appendChild(delButton('Komponente mx-' + name + ' löschen', { name: name },
+        'Komponente mx-' + name + ' aus der Bibliothek löschen?' + (uses ? '\n\n' + uses + ' Verwendung(en) bleiben als normales Markup (mit Klassen und CSS), aber ohne Kennzeichnung als Komponente.' : '') + '\n\nZurückholen über den Verlauf.'));
+      var vars = sec.querySelectorAll('.kb-var[data-kb-variant]');
+      if (vars.length < 2) return; // die einzige Variante: Komponente löschen
+      Array.prototype.forEach.call(vars, function (v) {
+        var key = v.getAttribute('data-kb-variant'), vu = Number(v.getAttribute('data-kb-uses')) || 0;
+        var lab = v.querySelector('.kb-vlabel');
+        if (lab) lab.appendChild(delButton('Variante ' + key + ' löschen', { name: name, variant: key },
+          'Variante „' + key + '“ von mx-' + name + ' löschen?' + (vu ? '\n\n' + vu + ' Verwendung(en) dieser Variante bleiben als normales Markup (Klassen und CSS bleiben), aber ohne Kennzeichnung als Komponente.' : '') + '\n\nZurückholen über den Verlauf.'));
+      });
+    });
+  }
+  libraryControls();
+
   function closePages() {
     pagesPanel.classList.remove('open');
     btnPages.classList.remove('on');
@@ -2150,6 +2235,9 @@
       if (r.warnings && r.warnings.length) {
         msg += '\n\nHinweise der Prüfung:\n' + r.warnings.slice(0, 5).map(function (w) { return '– ' + truncate(w.text || w.rule, 160); }).join('\n');
       }
+    } else if (job.type === 'component-delete') {
+      msg = (r.variant ? 'Variante ' + r.variant + ' von mx-' + r.name : 'Komponente mx-' + (r.name || '')) + ' gelöscht (' + (r.annotationId || '') + ').'
+        + (r.unmarked ? '\n' + r.unmarked + ' Verwendung(en) bleiben als normales Markup ohne Kennzeichnung.' : '');
     } else if (job.type === 'rollback') {
       msg = 'Zurückgesprungen.';
     } else if (job.type === 'decision') {
@@ -3122,7 +3210,7 @@
 
   // Grundzustand: Datei laden, Unterschiede und CSS kurz nach dem Laden als „Scripts der Website“ merken
   function initChanges() {
-    if (PREVIEW) return; // Vorschau weicht absichtlich von der Datei ab
+    if (PREVIEW || LIBRARY) return; // Vorschau weicht absichtlich von der Datei ab; Komponentenseite ist keine Datei
     fetch(location.pathname + location.search, { cache: 'no-store', credentials: 'same-origin' })
       .then(function (r) { return r.text(); })
       .then(function (text) {
@@ -3355,7 +3443,42 @@
     btnDrafts.title = btnDrafts.modioLabel.textContent = 'Entwürfe' + (open ? ' (' + open + ' offen)' : '');
   }
 
+  // Komponenten-Bibliothek (neue Projekte), für die Übersicht im Entwürfe-Panel
+  var library = null;
+  function loadLibrary() {
+    if (CFG.kind !== 'neu') return Promise.resolve(null);
+    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/components')
+      .then(function (d) { library = (d && d.components) || []; if (draftsPanel.classList.contains('open') && !draftCurrent) renderDrafts(); })
+      .catch(function () { library = null; });
+  }
+  function renderLibrary() {
+    if (CFG.kind !== 'neu') return;
+    var sec = el('div', { class: 'dsec libsec' }, [
+      el('div', { class: 'row' }, [
+        el('strong', { text: 'Komponenten-Bibliothek' }),
+        el('span', { class: 'spacer' }),
+        el('a', { href: BASE + '/__komponenten', target: '_blank', rel: 'noopener', class: 'ghost', text: 'Komponentenseite öffnen ↗' }),
+      ]),
+    ]);
+    if (!library) sec.appendChild(el('p', { class: 'hint', text: 'Lade …' }));
+    else if (!library.length) sec.appendChild(el('p', { class: 'hint', text: 'Noch keine Komponenten. Element auswählen und im Dialog „Als Komponente …“ wählen. Danach kennt Claude sie bei jeder Annotation (z. B. „setze hier 6 Produktkacheln ein“).' }));
+    else {
+      var ul = el('ul', { class: 'liblist' });
+      library.forEach(function (c) {
+        ul.appendChild(el('li', {}, [
+          el('a', { href: BASE + '/__komponenten#mx-' + c.name, target: '_blank', rel: 'noopener', text: c.title }),
+          el('code', { text: ' mx-' + c.name }),
+          el('div', { class: 'hint', text: 'Varianten: ' + c.varianten.map(function (v) { return v.label; }).join(', ') + (c.slots.length ? ' · austauschbar: ' + c.slots.map(function (x) { return x.label; }).join(', ') : '') }),
+        ]));
+      });
+      sec.appendChild(ul);
+      sec.appendChild(el('p', { class: 'hint', text: 'Einsetzen per Annotation mit Name oder Titel, z. B. „Komponente ' + library[0].title + ' hier einsetzen“.' }));
+    }
+    dBody.appendChild(sec);
+  }
+
   function loadDrafts() {
+    loadLibrary();
     return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/drafts')
       .then(function (d) {
         drafts = (d && d.drafts) || [];
@@ -3501,7 +3624,7 @@
           el('strong', { text: x.id }),
           el('span', { text: draftLabel(x) }),
           el('span', { class: 'spacer' }),
-          x.status === 'applied' ? el('span', { class: 'badge', text: 'übernommen ' + (x.appliedAs || '') }) : el('span', { class: 'dver', text: (x.versions.length ? x.versions.length + ' Version(en)' : x.external ? 'in claude.ai' : '0 Versionen') + (x.revises ? ' · Überarbeitung' : '') }),
+          x.status === 'applied' ? el('span', { class: 'badge', text: 'übernommen ' + (x.appliedAs || '') }) : el('span', { class: 'dver', text: (x.versions.length ? x.versions.length + ' Version(en)' : x.external ? 'in claude.ai' : '0 Versionen') + (x.component ? ' · Komponente' : x.revises ? ' · Überarbeitung' : '') }),
         ]),
         el('span', { class: 'step-sel', text: [x.page === currentPage() ? 'diese Seite' : x.page, x.selector].join(' · ') }),
         el('span', { class: 'step-date', text: fmtDate((l && l.created) || x.created) }),
@@ -3510,6 +3633,7 @@
       ul.appendChild(el('li', {}, [b]));
     });
     dBody.appendChild(ul);
+    renderLibrary();
   }
 
   function renderDraftDetail(d) {
@@ -3518,7 +3642,7 @@
     var v = versionOf(d, draftVersion) || latest(d);
     if (v) draftVersion = v.v;
     dTitle.textContent = d.id + (v && v.title ? ' · ' + v.title : '');
-    dBody.appendChild(el('div', { class: 'step-sel', text: (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector + (d.revises ? ' · Überarbeitung von mx-' + d.revises : '') }));
+    dBody.appendChild(el('div', { class: 'step-sel', text: (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector + (d.component ? ' · Komponente mx-' + d.component + ' für die Bibliothek' + (d.renames ? ' (umbenannt aus mx-' + d.renames + ')' : '') : d.revises ? ' · Überarbeitung von mx-' + d.revises : '') }));
     dBody.appendChild(el('div', { class: 'step-prompt', text: d.prompt }));
     if (!isOpen) dBody.appendChild(el('span', { class: 'dstate', text: d.status === 'applied' ? 'übernommen als ' + d.appliedAs + ' (v' + d.appliedVersion + ')' : 'verworfen' }));
     if (!v) {

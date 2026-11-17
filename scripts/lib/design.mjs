@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readConfig as readConsistency, areaError } from './consistency.mjs';
 import { exitJson } from './stdout.mjs';
+import { readLibrarySync, libraryContext } from './components.mjs';
 
 export const CATEGORIES = ['color', 'font', 'size', 'radius', 'space', 'shadow', 'breakpoint', 'container'];
 const KEY_RE = new RegExp(`^(${CATEGORIES.join('|')})\\.[a-z0-9]+(?:-[a-z0-9]+)*$`);
@@ -197,8 +198,10 @@ function context(site, currentId, count) {
     ...(skipped.length ? [`(Zu groß für den Kontext, bei Bedarf mit Read lesen: ${skipped.map((f) => 'design/' + f).join(', ')})`] : []),
     '</hintergrund>',
   ].join('\n') : '';
+  // Komponenten-Bibliothek (neue Projekte): Katalog mit Varianten und Slots, Vorlagen liest Claude bei Bedarf
+  const komponenten = libraryContext(readLibrarySync(site));
   const verlauf = ['<bisherige-schritte>', steps.length ? steps.join('\n') : '(keine)', '</bisherige-schritte>'].join('\n');
-  return { context: [vorgaben, hintergrund, verlauf].filter(Boolean).join('\n'), vorgabenBytes: Buffer.byteLength(vorgaben), docs: docs.length, docsBytes, steps: steps.length, tokens: tl.length };
+  return { context: [vorgaben, komponenten, hintergrund, verlauf].filter(Boolean).join('\n'), vorgabenBytes: Buffer.byteLength(vorgaben), docs: docs.length, docsBytes, steps: steps.length, tokens: tl.length, komponenten: komponenten ? komponenten.split('\n').filter((l) => l.startsWith('mx-')).length : 0 };
 }
 
 // ---------- Scan des Abzugs ----------

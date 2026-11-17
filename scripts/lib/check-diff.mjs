@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseTokens, buildCss, validateNotes, NOTES_MAX_LINES } from './design.mjs';
+import { listLibrary, instanceIssues } from './components.mjs';
+import { loadCheerio } from './consistency.mjs';
 
 const [siteDir, namesFile] = process.argv.slice(2);
 const REMEMBER = process.env.CHECK_REMEMBER === 'true';
@@ -34,7 +36,7 @@ try {
 const site = JSON.parse(fs.readFileSync(path.join(siteDir, 'site.json'), 'utf8'));
 if (site.host) known.add(site.host.toLowerCase());
 
-const allowedPath = (f) => (ALLOW_URLS && f === 'urls.txt') || f.startsWith('www/') || f === 'overrides.css' || f.startsWith('annotations/') || f.startsWith('design/') || /^components\/mx-[a-z0-9-]+\.css$/.test(f);
+const allowedPath = (f) => (ALLOW_URLS && f === 'urls.txt') || f.startsWith('www/') || f === 'overrides.css' || f.startsWith('annotations/') || f.startsWith('design/') || /^components\/mx-[a-z0-9-]+\.(css|html|json)$/.test(f);
 
 const rules = [
   { rule: 'script-tag', re: /<\s*script\b/i },
@@ -51,7 +53,7 @@ const rules = [
 // Geänderte Pfade (auch Binärdateien und Löschungen)
 for (const f of fs.readFileSync(namesFile, 'utf8').split('\0').filter(Boolean)) {
   files.add(f);
-  if (!allowedPath(f)) hits.push({ rule: 'path-outside', file: f, line: 0, text: 'Änderung außerhalb von www/, overrides.css, components/, design/ und annotations/' });
+  if (!allowedPath(f)) hits.push({ rule: 'path-outside', file: f, line: 0, text: 'Änderung außerhalb von www/, overrides.css, components/mx-*.css|.html|.json, design/ und annotations/' });
 }
 
 // Hunks sammeln: entfernte und hinzugefügte Zeilen je Abschnitt. Gemeldet wird nur, was eine Änderung neu
@@ -189,6 +191,32 @@ if (!newTokens.errors.length) {
       warnings.push({ rule: 'token-literal', file: f, line: ln, text: `Token verwenden: var(--modio-${c.key.replace('.', '-')}) statt ${c.value}` });
     }
     ln++;
+  }
+}
+
+// Komponenten-Bibliothek: eingesetzte Komponenten, deren Aufbau außerhalb der Slots von der Vorlage abweicht (nur Hinweis).
+// Gemeldet wird nur, was der Schritt neu verursacht (Abweichungen, die es in HEAD schon gab, nicht erneut).
+{
+  const htmlFiles = [...files].filter((f) => /^www\/.*\.html?$/i.test(f) && fs.existsSync(path.join(siteDir, f)));
+  const library = htmlFiles.length ? await listLibrary(siteDir, { withTemplate: true }).catch(() => []) : [];
+  if (library.length) {
+    const cheerio = await loadCheerio();
+    const key = (i) => `${i.name}|${i.variant}|${i.reason}`;
+    let n = 0;
+    for (const f of htmlFiles) {
+      const now = instanceIssues(cheerio, fs.readFileSync(path.join(siteDir, f), 'utf8'), library);
+      if (!now.length) continue;
+      let before = [];
+      try { before = instanceIssues(cheerio, execFileSync('git', ['-C', siteDir, 'show', `HEAD:${f}`], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }), library); } catch { /* neue Datei */ }
+      const count = new Map();
+      for (const i of before) count.set(key(i), (count.get(key(i)) || 0) + 1);
+      for (const i of now) {
+        const k = key(i);
+        if (count.get(k)) { count.set(k, count.get(k) - 1); continue; }
+        if (n++ >= 10) break;
+        warnings.push({ rule: 'component-structure', file: f, line: 0, text: `mx-${i.name}${i.variant ? ` (Variante ${i.variant})` : ''}: ${i.reason}. Eingesetzte Komponenten nur in den austauschbaren Inhalten ändern.` });
+      }
+    }
   }
 }
 

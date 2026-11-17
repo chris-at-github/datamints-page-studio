@@ -8,6 +8,9 @@
 #   mode "brief" (nur neu): Entwurf ohne Claude-Lauf anlegen und Briefing für claude.ai erzeugen (draft-brief.sh)
 #   importFile "jobs/assets/….html" (neu oder Version): Ergebnis aus claude.ai bereinigen und von Claude ohne
 #     Neugestaltung ins Komponentenformat übernehmen (Tokens, Raster; Inhaltsumfang wie im Import, Pfade aus source.html)
+#   mode "component" (nur neu, nur neue Projekte), componentName: Element ohne Neugestaltung als Komponente für die
+#     Bibliothek anlegen (Vorlage mit Slots, Varianten, component.json; CSS aus seiten-css.css). Entwürfe mit
+#     draft.json .component (auch Überarbeitungen von Bibliotheks-Komponenten) verlangen in jeder Version component.json.
 # Ausgabe: {status:"ok", draft, version, name, title, summary, page, warnings}
 source "$(dirname "$0")/lib/common.sh"
 # shellcheck source=lib/draft-layout.sh
@@ -25,7 +28,15 @@ IMPORT_FILE="$(jq -r '.importFile // ""' <<<"$P")"
 MODE="$(jq -r '.mode // ""' <<<"$P")"
 [[ -n "$IMPORT_FILE" ]] && MODE=import
 [[ -n "$MODE" ]] || MODE=create
-case "$MODE" in create|brief|import) ;; *) die "Ungültiger Modus: $MODE" ;; esac
+case "$MODE" in create|brief|import|component) ;; *) die "Ungültiger Modus: $MODE" ;; esac
+COMP_NAME=""
+if [[ "$MODE" == component ]]; then
+  [[ -z "$DID" ]] || die "Komponente anlegen nur für neue Entwürfe"
+  [[ "$(site_kind "$SITE")" == neu ]] || die "Komponenten-Bibliothek gibt es nur bei neuen Projekten"
+  COMP_NAME="$(jq -r '.componentName // ""' <<<"$P")"
+  [[ "$COMP_NAME" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ && ${#COMP_NAME} -le 40 ]] || die "Ungültiger Komponentenname: $COMP_NAME (a-z, 0-9, Bindestrich)"
+  [[ -n "$PROMPT_USER" ]] || PROMPT_USER="Als Komponente für die Bibliothek anlegen"
+fi
 [[ "$MODE" == brief && -n "$DID" ]] && die "Briefing für bestehende Entwürfe: draft-brief.sh"
 if [[ "$MODE" == import ]]; then
   [[ "$IMPORT_FILE" == jobs/assets/*.html && "$IMPORT_FILE" != *".."* && -f "$MODIO_ROOT/$IMPORT_FILE" ]] || die "Import-Datei nicht gefunden: $IMPORT_FILE"
@@ -39,8 +50,8 @@ CLAUDE_SETTINGS="$(abspath "${CLAUDE_SETTINGS_FILE:-./tools/worker/claude-settin
 claude_auth_setup "$CLAUDE_SETTINGS"
 EFFORT="$(claude_effort "${DRAFT_EFFORT:-}")"
 BUDGET="${DRAFT_MAX_BUDGET_USD-4.00}"
-if [[ "$MODE" == import ]]; then
-  # Übernahme ist Umsetzung, keine Gestaltung: günstiger
+if [[ "$MODE" == import || "$MODE" == component ]]; then
+  # Übernahme bzw. Herauslösen ist Umsetzung, keine Gestaltung: günstiger
   EFFORT="$(claude_effort "${DRAFT_IMPORT_EFFORT:-medium}")"
   BUDGET="${DRAFT_IMPORT_MAX_BUDGET_USD-2.00}"
 fi
@@ -107,12 +118,40 @@ if [[ -z "$DID" ]]; then
   else
     REVISES=""
   fi
+  if [[ "$MODE" == component ]]; then
+    # Bereits übernommene Komponente: sie wird zur Bibliotheks-Komponente, der Name bleibt
+    # Anderer Name: umbenennen (nur Komponenten ohne Bibliotheks-Eintrag; deren Instanzen auf anderen Seiten hängen am Namen)
+    if [[ -n "$REVISES" && -n "$COMP_NAME" && "$REVISES" != "$COMP_NAME" ]]; then
+      if [[ -f "$SITE/components/mx-$REVISES.json" ]]; then
+        MATERIAL_WARN+=("Name: Das Element ist schon die Bibliotheks-Komponente mx-$REVISES, der Name bleibt \"$REVISES\".")
+        COMP_NAME="$REVISES"
+      elif [[ -f "$SITE/components/mx-$COMP_NAME.css" ]]; then
+        rm -rf "$DDIR"; die "Die Komponente mx-$COMP_NAME gibt es schon. Bitte einen anderen Namen wählen."
+      else
+        RENAMES="$REVISES"
+        MATERIAL_WARN+=("Name: Die Komponente mx-$REVISES wird in mx-$COMP_NAME umbenannt.")
+      fi
+    fi
+    if [[ -n "$REVISES" ]]; then
+      [[ -n "$COMP_NAME" ]] || COMP_NAME="$REVISES"
+    elif [[ -f "$SITE/components/mx-$COMP_NAME.css" ]]; then
+      rm -rf "$DDIR"; die "Die Komponente mx-$COMP_NAME gibt es schon. Bitte einen anderen Namen wählen."
+    else
+      # CSS der Seite als Material (Claude löst daraus das CSS der Komponente heraus)
+      node "$LIB_DIR/draft.mjs" page-css "$SITE" "$PAGE" "$DDIR/seiten-css.css" >/dev/null 2>&1 || : >"$DDIR/seiten-css.css"
+    fi
+  fi
+  # Bibliotheks-Komponente überarbeiten: bisherige Beschreibung als Material, component.json bleibt Pflicht
+  [[ -n "$REVISES" && -f "$SITE/components/mx-$REVISES.json" ]] && cp "$SITE/components/mx-$REVISES.json" "$DDIR/bestand-komponente.json"
   jq -n --arg id "$DID" --arg page "$PAGE" --arg sel "$SELECTOR" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)" --argjson p "$P" '
     {id:$id, page:$page, selector:$sel, prompt:$prompt, created:$created, status:"open", sessionId:null,
      viewport:($p.viewport // null), rect:($p.rect // null), text:(($p.text // "")[0:4000]),
      appliedAs:null, appliedVersion:null, references:[], versions:[]}' >"$DDIR/draft.json"
   tmp="$(mktemp)"; jq --argjson m "$MATERIAL" '.material = $m' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
   if [[ -n "$REVISES" ]]; then tmp="$(mktemp)"; jq --arg r "$REVISES" '.revises = $r' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
+  if [[ -n "${RENAMES:-}" ]]; then tmp="$(mktemp)"; jq --arg r "$RENAMES" '.renames = $r' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
+  LIB_NAME="$COMP_NAME"; [[ -z "$LIB_NAME" && -f "$DDIR/bestand-komponente.json" ]] && LIB_NAME="$REVISES"
+  if [[ -n "$LIB_NAME" ]]; then tmp="$(mktemp)"; jq --arg n "$LIB_NAME" '.component = {name:$n}' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
   # Referenzbilder
   while IFS= read -r REF; do
     [[ -n "$REF" ]] || continue
@@ -139,6 +178,7 @@ else
   # Import beginnt leer; sonst ist die neue Version zunächst eine Kopie der vorigen
   if [[ "$MODE" != import ]]; then
     cp "$DDIR/v$BASE/component.html" "$DDIR/v$BASE/component.css" "$DDIR/v$BASE/meta.json" "$DDIR/v$BASE/befund.json" "$DDIR/v$VERSION/" 2>/dev/null || true
+    cp "$DDIR/v$BASE/component.json" "$DDIR/v$VERSION/" 2>/dev/null || true
   fi
   PAGE="$(jq -r .page "$DDIR/draft.json")"; SELECTOR="$(jq -r .selector "$DDIR/draft.json")"
   # Ältere Entwürfe: Material stammt aus dem Browser und ist gekürzt -> einmalig ungekürzt aus der Seitendatei holen
@@ -210,6 +250,7 @@ fail() {
 CTX="$(node "$LIB_DIR/design.mjs" context "$SITE" A-000 0)" || fail "Kontext konnte nicht erzeugt werden"
 VORGABEN="$(jq -r .context <<<"$CTX" | sed '/^<bisherige-schritte>/,$d')"
 REVISES="$(jq -r '.revises // ""' "$DDIR/draft.json")"
+RENAMES="$(jq -r '.renames // ""' "$DDIR/draft.json")"
 COMPONENTS="$( (ls "$SITE/components" 2>/dev/null || true) | sed -nE 's/^mx-(.*)\.css$/\1/p' | { grep -vxF "${REVISES:-//}" || true; } | paste -sd, - | sed 's/,/, /g')"
 NAME_HINT=""
 if (( VERSION > 1 )); then NAME_HINT="$(jq -r '.name // ""' "$DDIR/v$((VERSION - 1))/meta.json" 2>/dev/null || true)"; fi
@@ -221,9 +262,16 @@ done < <(jq -r '.references[]?' "$DDIR/draft.json")
 VIEWPORT="$(jq -r 'if .viewport then "\(.viewport.width)×\(.viewport.height) px" else "unbekannt" end' "$DDIR/draft.json")"
 WIDTH="$(jq -r 'if .rect.width then "\(.rect.width|floor) px" else "unbekannt" end' "$DDIR/draft.json")"
 
+LIB_NAME="$(jq -r '.component.name // ""' "$DDIR/draft.json")"
+REQUIRE_LIBRARY=0; [[ -n "$LIB_NAME" ]] && REQUIRE_LIBRARY=1
+LIB_NOTE=""
+if [[ -n "$LIB_NAME" ]]; then
+  LIB_NOTE=$'\n'"Komponente für die Bibliothek (siehe CLAUDE.md „Komponente für die Bibliothek“): Der Versionsordner braucht zusätzlich component.json mit Beschreibung, Varianten und Slots; component.html ist die Vorlage (data-mx-variant auf der Wurzel, data-mx-slot an jeder austauschbaren Stelle).$([[ -f "$DDIR/bestand-komponente.json" ]] && echo " Bisherige Beschreibung: bestand-komponente.json (Varianten- und Slot-Namen beibehalten, sofern der Auftrag nichts anderes verlangt)." || true)"
+fi
 REVISE_NOTE=""
 if [[ -n "$REVISES" ]]; then
   REVISE_NOTE=$'\n'"Dies ist eine Überarbeitung der bestehenden Komponente mx-$REVISES: Name \"$REVISES\" beibehalten. Bisheriges Markup: source.html, bisheriges CSS: bestand-komponente.css (Material, Ausgangspunkt der Überarbeitung)."
+  [[ -n "$RENAMES" ]] && REVISE_NOTE=$'\n'"Dies ist die bestehende Komponente mx-$RENAMES; sie wird in \"$LIB_NAME\" umbenannt (Klasse mx-$LIB_NAME, @scope (.mx-$LIB_NAME), Modifier mx-$LIB_NAME--…; mx-$RENAMES kommt nicht mehr vor). Bisheriges Markup: source.html, bisheriges CSS: bestand-komponente.css (Material, Ausgangspunkt)."
 fi
 if [[ "$MODE" == import ]]; then
   KEEP_NAME=""
@@ -240,6 +288,17 @@ Anpassen musst du nur, was die Regeln in CLAUDE.md verlangen:
 6. Bausteine: Nur Teile des Imports, die einem Baustein aus bausteine.json entsprechen (z. B. Buttons), kommen in meta.json (\"source\": \"neu\", klassen.neu und klassen.bestand) und tragen data-mx-baustein, wie in CLAUDE.md beschrieben. Alle anderen Teile bleiben ohne Baustein-Angaben.
 befund.json enthält nur Punkte zur Übernahme: was du angepasst hast und warum (Token statt Wert, Schrift ersetzt, Inhalte ergänzt, Raster), jeweils \"umgesetzt\": true; Punkte, die eine Entscheidung brauchen, mit \"umgesetzt\": false. Leere Liste, wenn nichts anzupassen war.
 Die Zusammenfassung nennt kurz: Anpassungen an Format, Tokens und Inhalten sowie jede sichtbare Abweichung vom Import mit Grund."
+elif [[ "$MODE" == component ]]; then
+  KEEP_CSS="Das CSS der Seite liegt in seiten-css.css (Material): Übernimm daraus alle Regeln, die das Element und seine Inhalte gestalten, und schreibe sie auf @scope (.mx-$LIB_NAME) um (auch geerbte Werte wie Schrift und Farbe, die das Element von der Seite bekommt, auf :scope)."
+  [[ -n "$REVISES" ]] && KEEP_CSS="Das Element ist bereits die Komponente mx-$REVISES: Ihr CSS steht in bestand-komponente.css; übernimm es und ergänze nur Varianten-Klassen."
+  [[ -n "$RENAMES" ]] && KEEP_CSS="Das Element ist bereits die Komponente mx-$RENAMES: Ihr CSS steht in bestand-komponente.css; übernimm es, benenne Scope und Klassen von mx-$RENAMES in mx-$LIB_NAME um und ergänze nur Varianten-Klassen."
+  TASK="Lege das gewählte Element als Komponente \"$LIB_NAME\" für die Bibliothek an (Entwurf $DID, Version 1). Der Name ist \"$LIB_NAME\" (Klasse mx-$LIB_NAME). Schreibe nach v1/: component.html, component.css, meta.json, component.json und befund.json.
+Du gestaltest NICHT neu: Die Komponente sieht genauso aus wie das Element in source.html, mit denselben Inhalten.
+1. Markup: source.html als Vorlage übernehmen, Wurzel mit Klasse mx-$LIB_NAME (bisherige Klassen dürfen bleiben, wenn das CSS sie braucht). Kennzeichne jede austauschbare Stelle mit data-mx-slot=\"<key>\" (Überschrift, Text, Bild, Icon, Link/Button-Text, Listen); Slots sind Inhalte, kein Aufbau.
+2. CSS: $KEEP_CSS Werte, die einem Token entsprechen, schreibst du als var(--modio-…). Nicht breiter als das Element.
+3. Varianten: Die Standardvariante ist das Element, wie es ist. Weitere Varianten nur, wenn der Auftrag sie nennt oder die Seite gleichartige Elemente in anderer Ausprägung zeigt (z. B. zweiter Button-Stil, mit/ohne Icon); jede als Modifier-Klasse mx-$LIB_NAME--… mit eigenem CSS. Keine Variante für eine Anpassung an einen Einsatzort (z. B. Button in einer Produktkarte): Gestaltung, die nur der Einsatzort braucht, gehört nicht in die Komponente; nenne sie in der Zusammenfassung (sie wird dort über eine Kontextklasse gestaltet).
+4. befund.json enthält nur Punkte zur Übernahme (was angepasst wurde, z. B. Werte als Token, CSS zusammengefasst), jeweils \"umgesetzt\": true; Entscheidungen mit \"umgesetzt\": false. Leere Liste, wenn nichts anzupassen war.
+Die Zusammenfassung nennt Slots, Varianten und jede sichtbare Abweichung vom Element mit Grund."
 elif (( VERSION == 1 )); then
   TASK="Entwirf das gewählte Element als Komponente (Entwurf $DID, Version 1). Schreibe component.html, component.css und meta.json nach v1/ und zum Schluss den Befund nach v1/befund.json (höchstens 12 Punkte)."
 else
@@ -251,7 +310,7 @@ PROMPT="$(
 Verbindliche Vorgaben dieser Website (vom Skript zusammengestellt):
 $VORGABEN
 
-$TASK$REVISE_NOTE
+$TASK$REVISE_NOTE$LIB_NOTE
 Es gelten ausschließlich die Regeln in CLAUDE.md dieses Ordners (Entwürfe), nicht die Regeln des Website-Abzugs.
 
 Seite: www$PAGE
@@ -339,7 +398,7 @@ SUMMARY="$(jq -r '.result // ""' <<<"$R")"
 
 # ----- Prüfen, bei Fehlern eine Korrekturrunde -----
 set +e
-CHECK="$(DRAFT_EXPECT_NAME="$REVISES" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?
+CHECK="$(DRAFT_REQUIRE_LIBRARY="$REQUIRE_LIBRARY" DRAFT_EXPECT_NAME="${LIB_NAME:-$REVISES}" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?
 set -e
 if (( crc == 3 )) && [[ -n "$SESSION" ]]; then
   ERRS="$(jq -r '.errors | map("- " + .) | join("\n")' <<<"$CHECK")"
@@ -353,7 +412,7 @@ $ERRS"
   if (( rc == 0 )) && [[ "$(jq -r '.is_error // false' <<<"$R")" != "true" ]]; then
     COST="$(jq -rn --argjson a "$COST" --argjson b "$(claude_call_cost "$R" "$SESSION" "$SESSION_COST")" '$a + $b | . * 1e6 | round / 1e6')"
     SESSION_COST="$(jq -r '.total_cost_usd // 0' <<<"$R")"
-    set +e; CHECK="$(DRAFT_EXPECT_NAME="$REVISES" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?; set -e
+    set +e; CHECK="$(DRAFT_REQUIRE_LIBRARY="$REQUIRE_LIBRARY" DRAFT_EXPECT_NAME="${LIB_NAME:-$REVISES}" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?; set -e
   fi
 fi
 (( crc == 0 )) || fail "Entwurf ungültig: $(jq -r '(.errors // [.error]) | join("; ")' <<<"$CHECK" 2>/dev/null | head -c 500)"
@@ -373,7 +432,7 @@ jq --argjson v "$VERSION" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)"
   .sessionId = (if $session == "" then .sessionId else $session end)
   | .sessionCostUsd = (if $session == "" then .sessionCostUsd else $scost end)
   | .versions += [{v:$v, prompt:$prompt, created:$created, summary:$summary, name:$name, title:$title, model:$model, effort:$effort, costUsd:$cost, warnings:$warn, befund:$nbef, offen:$nopen, platzhalter:$nph}
-      + (if $mode == "import" then {source:"import"} else {} end)]' \
+      + (if $mode == "import" then {source:"import"} elif $mode == "component" then {source:"component"} else {} end)]' \
   "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
 chmod 644 "$DDIR/draft.json"
 log "$DID v$VERSION: Komponente mx-$NAME fertig ($NBEF Befundpunkte, $NOPEN offen, $NPH Platzhalter, $(printf '%.2f' "$COST") USD)"

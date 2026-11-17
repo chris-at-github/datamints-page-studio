@@ -130,6 +130,12 @@ async function handle(job, logFile) {
       await fsp.writeFile(f, urls.join('\n') + '\n');
       return runScript('pages-add.sh', [slug, f], logFile);
     }
+    case 'component-delete': {
+      const name = String(job.params?.name || ''), variant = job.params?.variant ? String(job.params.variant) : '';
+      const re = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+      if (!re.test(name) || (variant && !re.test(variant))) throw new Error('Ungültige Komponente');
+      return runScript('component-delete.sh', variant ? [slug, name, variant] : [slug, name], logFile);
+    }
     case 'page-delete': {
       const page = String(job.params?.page || '');
       if (!page.startsWith('/') || page.includes('..')) throw new Error('Ungültige Seite');
@@ -228,7 +234,7 @@ async function processJob(id) {
   job.exitCode = r.code;
   let status;
   if (r.code === 0) status = 'done';
-  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply', 'draft-apply', 'page-import', 'page-delete'].includes(job.type)) status = 'review';
+  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply', 'draft-apply', 'page-import', 'page-delete', 'component-delete'].includes(job.type)) status = 'review';
   else {
     status = 'failed';
     job.error = r.result?.error || `Skript endete mit Exit-Code ${r.code} (siehe ${job.log})`;

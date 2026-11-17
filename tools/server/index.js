@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 import busboy from 'busboy';
 import { renderStartPage } from './startpage.js';
 import { loadCheerio } from '../../scripts/lib/consistency.mjs';
-import { loadVersion, replaceElement, layerLegacyCss, readText, validateBefund } from '../../scripts/lib/draft.mjs';
+import { loadVersion, replaceElement, layerLegacyCss, readText, validateBefund, instanceHtml } from '../../scripts/lib/draft.mjs';
+import { listLibrary, libraryPage } from '../../scripts/lib/components.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
@@ -154,9 +155,9 @@ async function createJob(type, slug, params, id = newJobId()) {
 // opts.preview: { draft, version, name } – Vorschau eines Entwurfs (dessen CSS statt der gleichnamigen Komponente)
 // opts.empty: Platzhalter eines neuen Projekts ohne Seiten (Overlay öffnet „Seiten“)
 function injectHtml(buf, slug, opts = {}) {
-  const { layered = false, preview = null, empty = false } = opts;
+  const { layered = false, preview = null, empty = false, kind = null, library = false } = opts;
   const cfg = JSON.stringify({ slug, token: TOKEN, base: `/s/${slug}`, imageMaxCount: IMAGE_MAX_COUNT, imageMaxMb: IMAGE_MAX_MB,
-    preview: preview ? { draft: preview.draft, version: preview.version, name: preview.name } : null, ...(empty ? { empty: true } : {}) })
+    preview: preview ? { draft: preview.draft, version: preview.version, name: preview.name } : null, ...(empty ? { empty: true } : {}), ...(kind ? { kind } : {}), ...(library ? { library: true } : {}) })
     .replace(/</g, '\\u003c');
   const b = `/s/${slug}`;
   let head;
@@ -218,7 +219,7 @@ async function readDraft(slug, id) {
   const brief = await readJson(path.join(dir, 'brief', 'brief.json'), null);
   return { id: d.id, page: d.page, selector: d.selector, prompt: d.prompt, created: d.created, status: draftStatus(slug, d),
     external: d.external === true, brief: brief ? { created: brief.created } : null,
-    appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, revises: d.revises || null, versions };
+    appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, revises: d.revises || null, renames: d.renames || null, component: d.component?.name || null, versions };
 }
 
 async function listDrafts(slug) {
@@ -239,7 +240,8 @@ async function draftPreview(slug, file, rel, draftId, versionArg) {
   const v = await loadVersion(dir, path.join(dir, 'drafts', draftId), version);
   if (v.errors.length) return { error: `Entwurf ungültig: ${v.errors.join('; ')}` };
   const src = readText(file);
-  const r = replaceElement(await loadCheerio(), src.text, d.selector, v.html);
+  const cheerio = await loadCheerio();
+  const r = replaceElement(cheerio, src.text, d.selector, instanceHtml(cheerio, v));
   if (r.error) return { error: r.error };
   return { buf: Buffer.from(r.text, src.enc), preview: { draft: draftId, version, name: v.name } };
 }
@@ -255,7 +257,7 @@ async function serveSite(req, res, slug, rest, search) {
       entry = (await listSitePages(slug)).entry;
       // Neues Projekt noch ohne Seiten: Platzhalter mit Overlay (nicht im Abzug), dort „Seiten › Seite importieren …“
       if (!entry) {
-        const buf = injectHtml(Buffer.from(emptyProjectHtml(site.title || slug), 'utf8'), slug, { empty: true });
+        const buf = injectHtml(Buffer.from(emptyProjectHtml(site.title || slug), 'utf8'), slug, { empty: true, kind: 'neu' });
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': SITE_CSP, 'Content-Length': buf.length });
         return res.end(req.method === 'HEAD' ? undefined : buf);
       }
@@ -278,6 +280,13 @@ async function serveSite(req, res, slug, rest, search) {
     const parts = [];
     for (const f of await componentFiles(slug)) if (f !== exclude) parts.push(await fsp.readFile(path.join(dir, 'components', f), 'utf8').catch(() => ''));
     return send(res, 200, parts.join('\n'), { 'Content-Type': 'text/css; charset=utf-8' });
+  }
+  if (rest === '/__komponenten' || rest === '/__komponenten/') {
+    // Komponenten-Bibliothek: alle Komponenten mit ihren Varianten (nicht Teil des Abzugs)
+    const site = await readJson(path.join(dir, 'site.json'), {});
+    const buf = injectHtml(Buffer.from(await libraryPage(dir, { slug, title: site.title || slug }), 'utf8'), slug, { layered: true, kind: site.kind === 'neu' ? 'neu' : 'abzug', library: true });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': SITE_CSP, 'Content-Length': buf.length });
+    return res.end(req.method === 'HEAD' ? undefined : buf);
   }
   if (rest === '/__draft.css') {
     const id = sp.get('d') || '';
@@ -334,7 +343,8 @@ async function serveSite(req, res, slug, rest, search) {
         if (p.error) return sendError(res, 409, `Vorschau nicht möglich: ${p.error}`);
         buf = p.buf; preview = p.preview;
       }
-      buf = injectHtml(buf, slug, { layered: !!preview || (await componentFiles(slug)).length > 0, preview });
+      const kind = (await readJson(path.join(dir, 'site.json'), {})).kind === 'neu' ? 'neu' : 'abzug';
+      buf = injectHtml(buf, slug, { layered: !!preview || (await componentFiles(slug)).length > 0, preview, kind });
     }
     res.writeHead(200, { ...headers, 'Content-Length': buf.length });
     return res.end(req.method === 'HEAD' ? undefined : buf);
@@ -697,7 +707,7 @@ async function handleApi(req, res, url) {
     const v = await loadVersion(dir, path.join(dir, 'drafts', id), Number(vs)).catch(() => null);
     if (!v || !v.html) return sendError(res, 404, 'Version nicht gefunden');
     if (v.errors.length) return sendError(res, 409, `Version ungültig: ${v.errors.join('; ')}`);
-    return send(res, 200, { version: Number(vs), name: v.name, html: v.html });
+    return send(res, 200, { version: Number(vs), name: v.name, html: instanceHtml(await loadCheerio(), v) });
   }
   // Briefing für claude.ai: Text und Dateien (nur die in brief.json genannten)
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/drafts\/(D-\d{3,})\/brief(?:\/([A-Za-z0-9._-]{1,100}))?$/)) && req.method === 'GET') {
@@ -796,6 +806,20 @@ async function handleApi(req, res, url) {
     return send(res, 202, { job: await createJob('page-import', slug, { name, page, file, replace: exists }, jobId) });
   }
 
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/components\/delete$/)) && req.method === 'POST') {
+    // Komponente oder Variante aus der Bibliothek löschen (Verwendungen bleiben als Markup ohne Kennzeichnung)
+    const slug = m[1];
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
+    if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    const body = await readBody(req);
+    const name = String(body.name || ''), variant = body.variant ? String(body.variant) : '';
+    const comp = (await listLibrary(siteDir(slug))).find((c) => c.name === name);
+    if (!comp) return sendError(res, 404, 'Komponente nicht in der Bibliothek');
+    if (variant && !comp.varianten.some((v) => v.key === variant)) return sendError(res, 404, 'Variante nicht gefunden');
+    if (variant && comp.varianten.length === 1) return sendError(res, 400, 'Das ist die einzige Variante: stattdessen die Komponente löschen');
+    if (await busyCheck(res, slug, 'Das Löschen')) return;
+    return send(res, 202, { job: await createJob('component-delete', slug, variant ? { name, variant } : { name }) });
+  }
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/pages\/delete$/)) && req.method === 'POST') {
     // Seite löschen (Abzüge und neue Projekte) als Schritt; die Startseite eines Abzugs bleibt
     const slug = m[1];
@@ -810,7 +834,7 @@ async function handleApi(req, res, url) {
     return send(res, 202, { job: await createJob('page-delete', slug, { page }) });
   }
 
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts|package|export)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts|components|package|export)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -825,6 +849,10 @@ async function handleApi(req, res, url) {
     if (action === 'queue' && req.method === 'GET') return send(res, 200, { items: await readQueue(slug) });
     if (action === 'drafts' && req.method === 'GET') return send(res, 200, { drafts: await listDrafts(slug), components: (await componentFiles(slug)).map((f) => f.slice(0, -4)) });
     if (action === 'pages' && req.method === 'GET') return send(res, 200, await listSitePages(slug));
+    if (action === 'components' && req.method === 'GET') {
+      const list = await listLibrary(siteDir(slug));
+      return send(res, 200, { components: list, url: `/s/${slug}/__komponenten` });
+    }
     if (action === 'status' && req.method === 'GET') {
       // Nur lesend: ungespeicherte Änderungen im Abzug (für „Änderungen übernehmen“ im Overlay)
       const out = await new Promise((resolve) => execFile('git', ['-C', siteDir(slug), 'status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude)annotations/'],
@@ -869,9 +897,16 @@ async function handleApi(req, res, url) {
       if (await draftBusyCheck(res, slug)) return req.resume();
       const id = newJobId();
       const { annotation, files } = await parseAnnotationUpload(req, id);
-      const mode = annotation && (annotation.mode === 'brief' || annotation.mode === 'import') ? annotation.mode : null;
+      const mode = annotation && ['brief', 'import', 'component'].includes(annotation.mode) ? annotation.mode : null;
       if (mode === 'import' && annotation && (typeof annotation.prompt !== 'string' || !annotation.prompt.trim())) annotation.prompt = 'Übernahme des Entwurfs aus claude.ai';
-      const err = validateAnnotation(annotation, files.length) || validateBausteine(annotation) || (mode === 'import' ? validateImportHtml(annotation.importHtml) : null);
+      if (mode === 'component' && annotation && (typeof annotation.prompt !== 'string' || !annotation.prompt.trim())) annotation.prompt = 'Als Komponente für die Bibliothek anlegen';
+      let err = validateAnnotation(annotation, files.length) || validateBausteine(annotation) || (mode === 'import' ? validateImportHtml(annotation.importHtml) : null);
+      if (!err && mode === 'component') {
+        // Komponenten-Bibliothek: nur neue Projekte, Name wie eine Klasse mx-<name>
+        const name = String(annotation.componentName || '');
+        if ((await readJson(path.join(siteDir(slug), 'site.json'), {})).kind !== 'neu') err = 'Komponenten-Bibliothek gibt es nur bei neuen Projekten';
+        else if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(name) || name.length > 40) err = 'Ungültiger Komponentenname (a-z, 0-9, Bindestrich, mit Buchstaben beginnen)';
+      }
       if (err) {
         await Promise.all(files.map((f) => fsp.rm(path.join(ROOT, f), { force: true })));
         return sendError(res, 400, err);
@@ -881,6 +916,7 @@ async function handleApi(req, res, url) {
         rect: annotation.rect ? { width: Math.round(Number(annotation.rect.width)) || null, height: Math.round(Number(annotation.rect.height)) || null } : null,
         bausteine: annotation.bausteine || [] };
       if (mode === 'brief') params.mode = 'brief';
+      if (mode === 'component') { params.mode = 'component'; params.componentName = String(annotation.componentName); }
       if (mode === 'import') {
         params.importFile = `jobs/assets/${id}-import.html`;
         await fsp.writeFile(path.join(JOBS_DIR, 'assets', path.basename(params.importFile)), annotation.importHtml);

@@ -9,6 +9,7 @@ import { loadCheerio, sitePages } from './consistency.mjs';
 import { readText, extractElement } from './draft.mjs';
 import { cssVarName } from './design.mjs';
 import { exitJson } from './stdout.mjs';
+import { listLibrary, renderVariant } from './components.mjs';
 
 const out = exitJson;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -34,12 +35,16 @@ const rewrite = (text) => text.replace(/--modio-[a-z0-9-]+/g, (v) => {
 
 const cheerio = await loadCheerio();
 const pages = sitePages(siteDir);
+// Bibliotheks-Komponenten: Vorlage statt Fundstelle auf einer Seite, dazu component.json mit Varianten und Slots
+const library = await listLibrary(siteDir, { withTemplate: true });
 const warnings = [];
 const components = [];
 fs.mkdirSync(path.join(target, 'komponenten'), { recursive: true });
 for (const name of names) {
   let html = null; let page = null;
-  for (const p of pages) {
+  const lib = library.find((c) => c.name === name);
+  if (lib) { html = lib.template.trim(); page = lib.herkunft; }
+  for (const p of lib ? [] : pages) {
     const text = readText(path.join(siteDir, 'www', p)).text;
     if (!text.includes(`mx-${name}`)) continue;
     const r = extractElement(cheerio, text, `.mx-${name}`);
@@ -52,7 +57,12 @@ for (const name of names) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'component.css'), rewrite(cssRaw));
   if (html) fs.writeFileSync(path.join(dir, 'component.html'), rewrite(html).trim() + '\n');
-  components.push({ name, title, page, html: html ? rewrite(html).trim() : null });
+  if (lib) {
+    const { template, ...spec } = lib;
+    fs.writeFileSync(path.join(dir, 'component.json'), JSON.stringify(spec, null, 2) + '\n');
+  }
+  const variants = lib ? lib.varianten.map((v) => ({ label: v.label, key: v.key, html: rewrite(renderVariant(cheerio, lib.template, lib, v.key)).trim() })) : null;
+  components.push({ name, title: lib ? lib.title : title, page, html: html ? rewrite(html).trim() : null, variants });
 }
 
 // Tokens: Datei des Projekts (neue Projekte) oder die erzeugten --modio-Variablen
@@ -94,7 +104,9 @@ ${links}
 <style>.export-hinweis{font:13px/1.4 system-ui,sans-serif;color:#667085;margin:32px auto 8px;max-width:1200px;padding:0 24px}</style>
 </head>
 <body>
-${components.filter((c) => c.html).map((c) => `<p class="export-hinweis">mx-${esc(c.name)} · ${esc(c.title)}</p>\n${c.html}`).join('\n\n')}
+${components.filter((c) => c.html).map((c) => (c.variants
+  ? c.variants.map((v) => `<p class="export-hinweis">mx-${esc(c.name)} · ${esc(c.title)} · Variante ${esc(v.label)} (${esc(v.key)})</p>\n${v.html}`).join('\n\n')
+  : `<p class="export-hinweis">mx-${esc(c.name)} · ${esc(c.title)}</p>\n${c.html}`)).join('\n\n')}
 </body>
 </html>
 `);
@@ -106,11 +118,12 @@ Erzeugt von Modio am ${new Date().toLocaleString('de-DE')}.
 1. ${map ? 'tokens.css (die Variablen des Projekts aus design/tokens-quelle.css)' : 'tokens.css (Design-Tokens als --modio-Variablen)'} einbinden${files.includes('modio-zusatz.css') ? ', dazu modio-zusatz.css' : ''}.
 2. komponenten.css einbinden (oder je Komponente component.css). Jede Komponente ist mit @scope (.mx-<name>) gekapselt.
 3. Das Markup aus component.html an der gewünschten Stelle einsetzen. Elemente mit data-mx-platzhalter sind im echten Projekt anzubinden.
+4. Komponenten aus der Bibliothek haben zusätzlich component.json: Varianten (Klassen auf dem Wurzelelement, data-mx-variant) und austauschbare Inhalte (Elemente mit data-mx-slot, z. B. als Parameter eines Templates).
 
 vorschau.html zeigt alle Komponenten mit diesen Dateien.
 
 ## Komponenten
-${components.map((c) => `- mx-${c.name}: ${c.title}${c.page ? ` (Seite ${c.page})` : ''}`).join('\n')}
+${components.map((c) => `- mx-${c.name}: ${c.title}${c.variants ? ` (Varianten: ${c.variants.map((v) => v.label).join(', ')})` : c.page ? ` (Seite ${c.page})` : ''}`).join('\n')}
 ${warnings.length ? `\n## Hinweise\n${warnings.map((w) => `- ${w}`).join('\n')}\n` : ''}`);
 
-out({ status: 'ok', dir: target, components: components.map(({ name, title, page }) => ({ name, title, page })), files: [...files, 'vorschau.html', 'README.md'], warnings });
+out({ status: 'ok', dir: target, components: components.map(({ name, title, page, variants }) => ({ name, title, page, ...(variants ? { variants: variants.map((v) => v.key) } : {}) })), files: [...files, 'vorschau.html', 'README.md'], warnings });

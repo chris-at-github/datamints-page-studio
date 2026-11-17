@@ -74,4 +74,37 @@ d = await r.json();
 check('Löschen legt Job page-delete an', r.status === 202 && d.job?.type === 'page-delete' && d.job.params.page === '/seiten/startseite.html', JSON.stringify(d));
 if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: true });
 
+// Komponenten-Bibliothek
+r = await fetch(`${BASE}/api/sites/${NEU}/components`, { headers: auth });
+d = await r.json();
+check('Bibliothek: Liste mit Varianten und Slots', r.status === 200 && d.components?.[0]?.name === 'held' && d.components[0].varianten.length === 2 && d.url === `/s/${NEU}/__komponenten`, JSON.stringify(d));
+r = await fetch(`${BASE}/s/${NEU}/__komponenten`);
+text = await r.text();
+check('Bibliothek: Komponentenseite mit allen Varianten', r.status === 200 && text.includes('id="mx-held"') && text.includes('Hervorgehoben mit Icon') && text.includes('mx-held--hervorgehoben') && text.includes(`<base href="/s/${NEU}/seiten/">`) && text.includes('__components.css') && text.includes('"library":true') && text.includes('/__modio/overlay.js') && text.includes('@layer legacy{'), r.status);
+r = await fetch(`${BASE}/s/${NEU}/seiten/startseite.html`);
+text = await r.text();
+check('Overlay kennt die Projektart', text.includes('"kind":"neu"'));
+const draftPost = (slug, annotation) => { const fd = new FormData(); fd.append('annotation', JSON.stringify(annotation)); return fetch(`${BASE}/api/sites/${slug}/drafts`, { method: 'POST', headers: { 'X-Modio-Token': TOKEN }, body: fd }); };
+const compAnn = { page: '/seiten/startseite.html', selector: '#hero', html: '', text: '', prompt: '', mode: 'component', componentName: 'kachel-zwei', viewport: { width: 1440, height: 900 } };
+r = await draftPost(ABZUG, { ...compAnn, page: abzugEntry });
+check('Als Komponente: bei Abzügen 400', r.status === 400, String(r.status));
+r = await draftPost(NEU, { ...compAnn, componentName: 'Kachel Zwei' });
+check('Als Komponente: ungültiger Name 400', r.status === 400, String(r.status));
+r = await draftPost(NEU, compAnn);
+d = await r.json();
+check('Als Komponente: Job draft mit mode component', r.status === 202 && d.job?.type === 'draft' && d.job.params.mode === 'component' && d.job.params.componentName === 'kachel-zwei' && d.job.params.prompt === 'Als Komponente für die Bibliothek anlegen', JSON.stringify(d));
+if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: true });
+const compDel = (body) => fetch(`${BASE}/api/sites/${NEU}/components/delete`, { method: 'POST', headers: auth, body: JSON.stringify(body) });
+r = await compDel({ name: 'gibt-es-nicht' });
+check('Komponente löschen: unbekannt 404', r.status === 404);
+r = await compDel({ name: 'held', variant: 'gibt-es-nicht' });
+check('Variante löschen: unbekannt 404', r.status === 404);
+r = await compDel({ name: 'held', variant: 'hervorgehoben' });
+d = await r.json();
+check('Variante löschen: Job component-delete', r.status === 202 && d.job?.type === 'component-delete' && d.job.params.variant === 'hervorgehoben', JSON.stringify(d));
+if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: true });
+r = await fetch(`${BASE}/s/${NEU}/__komponenten`);
+text = await r.text();
+check('Komponentenseite: Verwendungen je Komponente und Variante', /data-kb-name="held" data-kb-uses="\d+"/.test(text) && text.includes('data-kb-variant="hervorgehoben"') && text.includes('× verwendet'));
+
 process.exit(fail ? 1 : 0);

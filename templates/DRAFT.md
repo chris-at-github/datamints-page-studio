@@ -26,6 +26,18 @@ Schreibe in den Versionsordner, den der Auftrag nennt (z. B. `v1/`), `befund.jso
 
 `<name>`: kurz und sprechend, nur a-z, 0-9 und Bindestrich (z. B. `teaser`, `leistungen-grid`). Er darf keinem Namen aus der Liste vorhandener Komponenten entsprechen. Bei einer neuen Version bleibt der Name gleich. Bei einer Überarbeitung einer bestehenden Komponente (der Auftrag sagt es) behältst du deren Namen; `bestand-komponente.css` ist dann das bisherige CSS.
 
+## Komponente für die Bibliothek
+Nennt der Auftrag eine Komponente für die Bibliothek, ist die Komponente zusätzlich eine wiederverwendbare Vorlage. Andere Seiten setzen sie als Kopie ein und tauschen nur die Inhalte aus.
+- Bei „Als Komponente anlegen“ gestaltest du nicht neu. Das Aussehen bleibt wie im Element. Ausnahme zur Einleitung: Das CSS der Seite liegt dann als Material in `seiten-css.css`.
+- `component.html` ist die Vorlage mit Beispielinhalten. Die Wurzel trägt `data-mx-variant="<key der Standardvariante>"` und genau deren Modifier-Klassen. Jede austauschbare Stelle trägt `data-mx-slot="<key>"`. Die Vorlage enthält die Slots aller Varianten.
+- Slots sind Inhalte, kein Aufbau: Überschrift, Text, Bild (`<img>` mit `src` und `alt`), Icon, Link oder Button-Text, Liste (wiederholte Einträge). Ein Slot sitzt auf dem Element, dessen Inhalt bzw. `src`/`href` getauscht wird. Was Aufbau ist (Wrapper, Raster, Dekoration), ist kein Slot.
+- Varianten sind feste, benannte Ausprägungen, z. B. `primary`, `secondary`, `primary-icon`. Jede ist eine Klassenkombination aus Modifiern `mx-<name>--…` auf der Wurzel. Teilen sich Varianten Merkmale, teilen sie sich Modifier (z. B. `mx-button--primary mx-button--icon`). Eine Variante darf Slots weglassen, z. B. „ohne Icon“. Das CSS der Modifier steht im selben `@scope (.mx-<name>)`, z. B. `:scope.mx-<name>--secondary { … }`.
+- Keine Varianten für Anpassungen an einen Einsatzort (z. B. „Button in der Produktkarte füllt die Zeile“). Dafür bekommt die Wurzel der eingesetzten Komponente eine zusätzliche Kontextklasse (z. B. `produktkarte__aktion`), gestaltet im CSS der umgebenden Komponente. Varianten sind nur eigenständige Ausprägungen, die überall einsetzbar sind (z. B. Primary, Secondary, mit Icon).
+- `component.json`:
+  `{"name": "<name>", "title": "<kurze deutsche Bezeichnung>", "beschreibung": "<wofür, wo einsetzen, 1–2 Sätze>", "slots": [{"key": "titel", "label": "Überschrift", "typ": "text"|"richtext"|"bild"|"icon"|"link"|"liste", "pflicht": true}], "varianten": [{"key": "standard", "label": "Standard", "klassen": "", "slots": ["titel"]}]}`
+  Keys: a-z, 0-9 und Bindestrich. Die erste Variante ist der Standard. `klassen` sind die Modifier der Variante (leer für keine). `slots` lässt du weg, wenn die Variante alle Slots hat.
+- Verwendet die Komponente eine andere Komponente aus `<komponenten>`, übernimm deren Markup unverändert (Klasse `mx-<andere>` mit `data-mx-variant`). Deren CSS schreibst du nicht neu. Anpassungen an den Einsatzort machst du mit einer Kontextklasse auf ihrer Wurzel, gestaltet in deiner Komponente (z. B. `:scope .produktkarte__aktion { … }`).
+
 ## Gestaltung
 - Maßstab sind die Gestaltungsleitlinien (unten angehängt), auch für kleine Bildschirme und Barrierefreiheit.
 - Farbwelt, Schrift und Tonalität leitest du aus Tokens, `bausteine.json` und `source.html` ab.

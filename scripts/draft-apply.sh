@@ -33,7 +33,7 @@ mkdir -p "$SITE/annotations"
 jq --arg id "$ID" --arg created "$(now_iso)" --argjson v "$VERSION" '
   (.versions[] | select(.v == $v)) as $ver
   | {id:$id, source:"draft", created:$created,
-     prompt:("Entwurf \(.id) v\($v) übernommen (mx-\($ver.name)\(if .revises then ", Überarbeitung" else "" end)): \(.prompt)"),
+     prompt:("Entwurf \(.id) v\($v) übernommen (mx-\($ver.name)\(if .renames then ", umbenannt aus mx-\(.renames)" elif .revises then ", Überarbeitung" else "" end)): \(.prompt)"),
      page, selector, remember:false, allow_token_change:false,
      draft:{id, version:$v, name:$ver.name, title:$ver.title, prompts:[.versions[] | select(.v <= $v) | .prompt]},
      result:{summary:("Element durch die Komponente mx-\($ver.name) ersetzt (components/mx-\($ver.name).css).\n\n" + ($ver.summary // ""))}}' \
@@ -51,6 +51,16 @@ set -e
 if (( rc != 0 )); then
   restore
   die "$(jq -r '.error // "Übernahme fehlgeschlagen"' <<<"$OUT" 2>/dev/null || echo "Übernahme fehlgeschlagen")"
+fi
+# Umbenannte Komponente: das alte CSS fällt weg, sobald keine Seite die alte Klasse mehr verwendet
+RENAMES="$(jq -r '.renames // ""' "$DDIR/draft.json")"
+if [[ -n "$RENAMES" && "$RENAMES" != "$NAME" && -f "$SITE/components/mx-$RENAMES.css" && ! -f "$SITE/components/mx-$RENAMES.json" ]]; then
+  if grep -rqE --include='*.htm' --include='*.html' "mx-$RENAMES(--|[^a-z0-9-]|\$)" "$SITE/www" 2>/dev/null; then
+    log "$DID: mx-$RENAMES wird auf anderen Seiten noch verwendet, das CSS bleibt"
+  else
+    rm -f "$SITE/components/mx-$RENAMES.css"
+    log "$DID: mx-$RENAMES in mx-$NAME umbenannt, altes CSS entfernt"
+  fi
 fi
 # Leinwand: es bleibt immer ein freier Platz für das nächste Design (importierte Seiten bekommen keinen)
 if [[ "$PLATZ_SEITE" == true ]]; then
