@@ -461,7 +461,8 @@
     '.brieffiles{list-style:none;margin:4px 0 8px;padding:0}.brieffiles li{margin:2px 0}' +
     '.linkish{background:none;border:0;padding:0;color:#2563eb;text-decoration:underline;cursor:pointer;font:inherit}' +
     /* Annotationsdialog: Kopf mit X, kompakte Ablage, Footer mit Split-Button */
-    '.phead{display:flex;align-items:center;gap:8px;margin:-4px -6px 8px 0}.phead h2{margin:0;flex:1}' +
+    '.phead{display:flex;align-items:center;gap:8px;margin:-4px -6px 8px 0;cursor:move;user-select:none;touch-action:none}.phead h2{margin:0;flex:1}' +
+    '.phead button{cursor:pointer}' +
     '.prompt .tokrow{margin-top:8px}' +
     '.prompt .drop{display:flex;align-items:center;gap:10px;text-align:left;padding:8px 12px}' +
     '.prompt .drop .ic{color:#4b5563}.prompt .drop .dl2{font-size:11px;color:#6b7280;margin-top:2px}' +
@@ -685,6 +686,7 @@
   var pTitle = el('h2', { id: 'modio-ph', text: 'Annotation' });
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pClose = iconButton('x', 'Schließen', { class: 'ghost', title: 'Schließen (Esc)' }, true);
+  var pHead = el('div', { class: 'phead', title: 'Zum Verschieben ziehen' }, [pTitle, pClose]);
   // Split-Button: „In die Queue“ (Strg+Enter), im Menü „Direkt umsetzen“ (Strg+Umschalt+Enter). Beim Nachbessern nur „Direkt umsetzen“.
   var pQueue = el('button', { type: 'button', class: 'primary', text: 'In die Queue', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)' });
   var pQueueMore = iconButton('chevronDown', 'Weitere Optionen', { class: 'primary', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'modio-qmenu' }, true);
@@ -709,7 +711,7 @@
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens und Komponenten' });
   var pTokPop = el('div', { id: 'modio-tokpop', class: 'tokpop', hidden: '' }, [pTokFilter, pTokList]);
   var promptPanel = el('div', { class: 'panel prompt', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
-    el('div', { class: 'phead' }, [pTitle, pClose]),
+    pHead,
     pMeta,
     el('label', { for: 'modio-prompt', class: 'sr', text: 'Prompt' }),
     pText,
@@ -1222,6 +1224,7 @@
     pTitle.textContent = 'Annotation';
     renderMeta();
     pErr.textContent = '';
+    resetPromptPos();
     promptPanel.classList.add('open');
     placeHighlight(selected, true);
     setTimeout(function () { pText.focus(); }, 0);
@@ -1267,6 +1270,7 @@
     pMeta.appendChild(el('div', { class: 'hint', text: 'Bisheriger Auftrag: ' + truncate(prm.prompt || '', 200) }));
     pErr.textContent = '';
     pText.placeholder = 'Was soll am Ergebnis korrigiert werden?';
+    resetPromptPos();
     promptPanel.classList.add('open');
     var node = null;
     try { if (prm.page === currentPage()) node = document.querySelector(prm.selector); } catch (e) { node = null; }
@@ -1599,6 +1603,33 @@
   pQueueMore.addEventListener('keydown', function (e) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openQMenu(); } });
   pSplit.addEventListener('focusout', function (e) { if (!pSplit.contains(e.relatedTarget)) closeQMenu(false); });
   pClose.addEventListener('click', function () { closePrompt(); });
+
+  // Dialog an der Kopfzeile verschieben; beim Öffnen steht er wieder an der Standardposition (CSS)
+  function resetPromptPos() {
+    promptPanel.style.left = promptPanel.style.top = promptPanel.style.right = promptPanel.style.bottom = '';
+  }
+  pHead.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    e.preventDefault();
+    var r = promptPanel.getBoundingClientRect();
+    var dx = e.clientX - r.left, dy = e.clientY - r.top;
+    pHead.setPointerCapture(e.pointerId);
+    function move(ev) {
+      var x = Math.min(Math.max(ev.clientX - dx, 0), window.innerWidth - r.width);
+      var y = Math.min(Math.max(ev.clientY - dy, 0), window.innerHeight - 40);
+      promptPanel.style.left = Math.max(0, x) + 'px';
+      promptPanel.style.top = y + 'px';
+      promptPanel.style.right = promptPanel.style.bottom = 'auto';
+    }
+    function up() {
+      pHead.removeEventListener('pointermove', move);
+      pHead.removeEventListener('pointerup', up);
+      pHead.removeEventListener('pointercancel', up);
+    }
+    pHead.addEventListener('pointermove', move);
+    pHead.addEventListener('pointerup', up);
+    pHead.addEventListener('pointercancel', up);
+  });
   pDraft.addEventListener('click', function () { submit('draft'); });
   pComp.addEventListener('click', function () {
     showCompName(true);

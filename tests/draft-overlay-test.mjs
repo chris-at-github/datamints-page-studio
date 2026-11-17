@@ -167,6 +167,23 @@ try {
   await ov('.phead button').click();
   await page.waitForTimeout(200);
   check('X schließt den Dialog', !(await ov('.panel.prompt').isVisible()));
+  // Verschieben an der Kopfzeile, beim nächsten Öffnen wieder an der Standardposition
+  await selectHero();
+  const box0 = await ov('.panel.prompt').boundingBox();
+  const h = await ov('.phead h2').boundingBox();
+  await page.mouse.move(h.x + 10, h.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(h.x - 290, h.y - 195, { steps: 5 });
+  await page.mouse.up();
+  const box1 = await ov('.panel.prompt').boundingBox();
+  check('Dialog lässt sich an der Kopfzeile verschieben', Math.abs(box1.x - (box0.x - 300)) < 2 && Math.abs(box1.y - (box0.y - 200)) < 2, JSON.stringify([box0, box1]));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  await ov('.bar button[aria-pressed]').first().click();
+  await page.locator('section.hero').click({ position: { x: 5, y: 5 } });
+  await page.waitForTimeout(300);
+  const box2 = await ov('.panel.prompt').boundingBox();
+  check('Nach erneutem Öffnen an der Standardposition', Math.abs(box2.x - box0.x) < 2 && Math.abs(box2.y - box0.y) < 2, JSON.stringify([box0, box2]));
 
   // Entwurfs-Panel: Briefing (von tests/run.sh erzeugt) kopieren/herunterladen und Import als neue Version
   await page.unroute('**/api/sites/*/drafts');
