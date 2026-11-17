@@ -21,9 +21,9 @@
   // Vorschau eines Entwurfs: Seite mit ersetztem Element, nur ansehen (keine Auswahl, keine Änderungserkennung)
   var PREVIEW = CFG.preview && CFG.preview.draft ? { draft: String(CFG.preview.draft), version: Number(CFG.preview.version), name: String(CFG.preview.name || '') } : null;
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, 'page-import': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var STATE_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -498,6 +498,9 @@
     'a.pglink{flex:1;min-width:0;display:block;padding:6px 8px;border-radius:6px;color:#1d2330;text-decoration:none}' +
     'a.pglink:hover,a.pglink:focus-visible{background:#eef2ff}' +
     'a.pglink.current{background:#dbeafe}' +
+    '.pgdel{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 8px;width:100%;background:#fef2f2;border-radius:6px}' +
+    '.pgdel .pgdel-q{flex:1;min-width:0;overflow-wrap:anywhere}' +
+    'button.danger{background:#dc2626;border-color:#dc2626;color:#fff}' +
     '.pgimp{margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb}' +
     '.pgimp .row{display:flex;gap:6px;align-items:center}' +
     '.pgimp .textin{flex:1;min-width:0}' +
@@ -850,6 +853,7 @@
     'tokens-propose': 'Token-Vorschläge',
     'pages-add': 'Seiten hinzufügen',
     'page-import': 'Seite importieren',
+    'page-delete': 'Seite löschen',
     'areas-sync': 'Bereiche angleichen',
     'local-commit': 'Lokale Änderungen',
     'inspect-apply': 'Inspektor-Änderung',
@@ -1760,6 +1764,7 @@
   var pgFilter = el('input', { type: 'text', class: 'textin', placeholder: 'Seiten filtern …', 'aria-label': 'Seiten filtern', spellcheck: 'false' });
   var pgList = el('ul', { class: 'pglist' });
   var pgInfo = el('div', { class: 'hint' });
+  var pgErr = el('div', { class: 'err', role: 'alert' });
   // Neue Projekte: Seite importieren (HTML-Datei aus Claude Chat, unverändert übernommen)
   var pgImpFile = el('input', { type: 'file', accept: '.html,.htm,text/html', hidden: '' });
   var pgImpBtn = iconButton('files', 'Seite importieren …', { class: 'primary', title: 'HTML-Datei (z. B. aus Claude Chat) unverändert als Seite übernehmen' });
@@ -1776,11 +1781,25 @@
     el('h2', { id: 'modio-pgh', text: 'Seiten im Abzug' }),
     pgFilter,
     pgList,
+    pgErr,
     pgInfo,
     pgImport,
   ]);
   ui.appendChild(pagesPanel);
   var pagesData = null;
+  var pgDelPath = null;
+  function deletePage(p, btn) {
+    btn.disabled = true;
+    pgErr.textContent = '';
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/pages/delete', { page: p.path })
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        showToast('Seite ' + p.path + ' wird gelöscht …', false);
+        pgDelPath = null;
+        closePages();
+      })
+      .catch(function (err) { pgErr.textContent = err.status === 409 ? err.message : 'Löschen fehlgeschlagen: ' + err.message; btn.disabled = false; });
+  }
   function renderPages() {
     clear(pgList);
     var all = (pagesData && pagesData.pages) || [];
@@ -1794,7 +1813,30 @@
       ]);
       if (p.path === cur) a.setAttribute('aria-current', 'page');
       var li = el('li', {}, [a]);
-      if (pagesData && p.path === pagesData.entry) li.appendChild(el('span', { class: 'badge', text: 'Start' }));
+      var isEntry = pagesData && p.path === pagesData.entry;
+      if (isEntry) li.appendChild(el('span', { class: 'badge', text: 'Start' }));
+      // Löschen: bei Abzügen nicht die Startseite; erst nach Rückfrage
+      if (pagesData && (pagesData.kind === 'neu' || !isEntry)) {
+        if (pgDelPath === p.path) {
+          var yes = el('button', { type: 'button', class: 'danger', text: 'Löschen' });
+          var no = el('button', { type: 'button', text: 'Abbrechen' });
+          yes.disabled = isBusy();
+          yes.addEventListener('click', function () { deletePage(p, yes); });
+          no.addEventListener('click', function () { pgDelPath = null; pgErr.textContent = ''; renderPages(); });
+          clear(li);
+          li.appendChild(el('div', { class: 'pgdel' }, [
+            el('span', { class: 'pgdel-q', text: '„' + (p.title || p.path.split('/').pop()) + '“ (' + p.path + ') löschen? '
+              + (pagesData.kind === 'neu' ? '' : 'Die Adresse wird auch aus der URL-Liste entfernt. ') + 'Zurückholen über den Verlauf.' }),
+            yes, no,
+          ]));
+          setTimeout(function () { no.focus(); }, 0);
+        } else {
+          var del = iconButton('trash', 'Seite löschen', { class: 'ghost' }, true);
+          del.disabled = isBusy();
+          del.addEventListener('click', function () { pgDelPath = p.path; pgErr.textContent = ''; renderPages(); });
+          li.appendChild(del);
+        }
+      }
       pgList.appendChild(li);
     });
     var neu = pagesData && pagesData.kind === 'neu';
@@ -1868,6 +1910,7 @@
     btnPages.classList.add('on');
     btnPages.setAttribute('aria-expanded', 'true');
     pgFilter.value = '';
+    pgDelPath = null; pgErr.textContent = '';
     resetPageImport();
     renderPages();
     api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/pages').then(function (d) { pagesData = d; renderPages(); })
@@ -2086,6 +2129,18 @@
       try { sessionStorage.setItem(FLASH_KEY, msg); } catch (e) { /* ignorieren */ }
       reloading = true;
       setTimeout(function () { location.href = ipage ? BASE + ipage.split('/').map(encodeURIComponent).join('/') : BASE + '/'; }, 600);
+      return;
+    }
+    if (job.type === 'page-delete' || (job.type === 'decision' && job.params && job.params.action === 'accept' && jobs[job.params.jobId] && jobs[job.params.jobId].type === 'page-delete')) {
+      var dj = job.type === 'page-delete' ? job : jobs[job.params.jobId];
+      var dpage = (dj.params && dj.params.page) || '';
+      msg = 'Seite ' + dpage + ' gelöscht (' + (r.annotationId || (dj.result && dj.result.annotationId) || '') + ').';
+      if (r.removedUrls && r.removedUrls.length) msg += '\nAus der URL-Liste entfernt: ' + r.removedUrls.join(', ');
+      if (r.warnings && r.warnings.length) msg += '\n\nHinweise:\n' + r.warnings.slice(0, 5).map(function (w) { return '– ' + truncate(w.text || w.rule, 200); }).join('\n');
+      try { sessionStorage.setItem(FLASH_KEY, msg); } catch (e) { /* ignorieren */ }
+      reloading = true;
+      // Gelöschte Seite gerade offen: zur Startseite
+      setTimeout(function () { if (currentPage() === dpage) location.href = BASE + '/'; else location.reload(); }, 600);
       return;
     }
     if (job.type === 'annotate' || job.type === 'local-commit' || job.type === 'inspect-apply' || job.type === 'draft-apply') {

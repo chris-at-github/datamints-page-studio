@@ -130,6 +130,11 @@ async function handle(job, logFile) {
       await fsp.writeFile(f, urls.join('\n') + '\n');
       return runScript('pages-add.sh', [slug, f], logFile);
     }
+    case 'page-delete': {
+      const page = String(job.params?.page || '');
+      if (!page.startsWith('/') || page.includes('..')) throw new Error('Ungültige Seite');
+      return runScript('page-delete.sh', [slug, page], logFile);
+    }
     case 'page-import': {
       const file = String(job.params?.file || '');
       if (!/^jobs\/assets\/job-\d{14}-[0-9a-f]{6}-page\.html$/.test(file)) return { code: 1, result: { status: 'error', error: 'Ungültige Datei' } };
@@ -223,7 +228,7 @@ async function processJob(id) {
   job.exitCode = r.code;
   let status;
   if (r.code === 0) status = 'done';
-  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply', 'draft-apply', 'page-import'].includes(job.type)) status = 'review';
+  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply', 'draft-apply', 'page-import', 'page-delete'].includes(job.type)) status = 'review';
   else {
     status = 'failed';
     job.error = r.result?.error || `Skript endete mit Exit-Code ${r.code} (siehe ${job.log})`;

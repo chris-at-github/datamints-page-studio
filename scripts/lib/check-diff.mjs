@@ -1,7 +1,8 @@
 // Analysiert einen Unified-Diff (stdin) auf riskante Änderungen.
 // Aufruf: git diff -U0 | node check-diff.mjs <site-dir> <names-file>
 // Umgebung: CHECK_REMEMBER=true (notes.md darf geändert werden), CHECK_ALLOW_TOKEN_CHANGE=true (gesperrte Tokens dürfen geändert werden),
-//           CHECK_LINKS_AS_WARNINGS=true (fremde Domains in <a href> nur als Hinweis, je Domain zusammengefasst)
+//           CHECK_LINKS_AS_WARNINGS=true (fremde Domains in <a href> nur als Hinweis, je Domain zusammengefasst),
+//           CHECK_ALLOW_URLS=true (urls.txt darf geändert werden: Seite löschen)
 // Ausgabe: { files, hits (Stufe block), warnings (Stufe warn) }
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,6 +14,7 @@ const REMEMBER = process.env.CHECK_REMEMBER === 'true';
 const ALLOW_TOKEN_CHANGE = process.env.CHECK_ALLOW_TOKEN_CHANGE === 'true';
 // Import einer Seite in ein neues Projekt: Links (<a href>) auf fremde Domains nur als Hinweis
 const LINKS_AS_WARNINGS = process.env.CHECK_LINKS_AS_WARNINGS === 'true';
+const ALLOW_URLS = process.env.CHECK_ALLOW_URLS === 'true';
 const diff = fs.readFileSync(0, 'utf8');
 const hits = [];
 const warnings = [];
@@ -32,7 +34,7 @@ try {
 const site = JSON.parse(fs.readFileSync(path.join(siteDir, 'site.json'), 'utf8'));
 if (site.host) known.add(site.host.toLowerCase());
 
-const allowedPath = (f) => f.startsWith('www/') || f === 'overrides.css' || f.startsWith('annotations/') || f.startsWith('design/') || /^components\/mx-[a-z0-9-]+\.css$/.test(f);
+const allowedPath = (f) => (ALLOW_URLS && f === 'urls.txt') || f.startsWith('www/') || f === 'overrides.css' || f.startsWith('annotations/') || f.startsWith('design/') || /^components\/mx-[a-z0-9-]+\.css$/.test(f);
 
 const rules = [
   { rule: 'script-tag', re: /<\s*script\b/i },

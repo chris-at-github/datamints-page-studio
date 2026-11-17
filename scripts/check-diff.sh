@@ -10,19 +10,21 @@ require_site "${1:-}"
 ID="${2:-}"
 if [[ -n "$ID" ]]; then valid_annotation_id "$ID" || usage "check-diff.sh <slug> [annotation-id]"; fi
 
-REMEMBER=false; ALLOW_TOKEN_CHANGE=false; LINKS_AS_WARNINGS=false
+REMEMBER=false; ALLOW_TOKEN_CHANGE=false; LINKS_AS_WARNINGS=false; ALLOW_URLS=false
 if [[ -n "$ID" && -f "$SITE/annotations/$ID.json" ]]; then
   REMEMBER="$(jq -r 'if .remember == true then "true" else "false" end' "$SITE/annotations/$ID.json")"
   ALLOW_TOKEN_CHANGE="$(jq -r 'if .allow_token_change == true then "true" else "false" end' "$SITE/annotations/$ID.json")"
   # Seitenimport in ein neues Projekt (page-import.sh): Links auf fremde Domains nur als Hinweis
   [[ "$(jq -r '.source // ""' "$SITE/annotations/$ID.json")" == import && "$(site_kind "$SITE")" == neu ]] && LINKS_AS_WARNINGS=true
+  # Seite löschen (page-delete.sh): entfernt auch ihre URL aus urls.txt
+  [[ "$(jq -r '.source // ""' "$SITE/annotations/$ID.json")" == delete ]] && ALLOW_URLS=true
 fi
 
 # Neue Dateien sichtbar machen, ohne sie zu stagen
 git_site add --intent-to-add --all
 NAMES="$(mktemp)"; trap 'rm -f "$NAMES"' EXIT
 git_site diff --name-only -z >"$NAMES"
-RESULT="$(git_site diff --no-color --no-ext-diff -U0 | CHECK_REMEMBER="$REMEMBER" CHECK_ALLOW_TOKEN_CHANGE="$ALLOW_TOKEN_CHANGE" CHECK_LINKS_AS_WARNINGS="$LINKS_AS_WARNINGS" \
+RESULT="$(git_site diff --no-color --no-ext-diff -U0 | CHECK_REMEMBER="$REMEMBER" CHECK_ALLOW_TOKEN_CHANGE="$ALLOW_TOKEN_CHANGE" CHECK_LINKS_AS_WARNINGS="$LINKS_AS_WARNINGS" CHECK_ALLOW_URLS="$ALLOW_URLS" \
   node "$LIB_DIR/check-diff.mjs" "$SITE" "$NAMES")" || die "Diff-Prüfung fehlgeschlagen"
 COUNT="$(jq '.hits | length' <<<"$RESULT")"
 WARN="$(jq '.warnings | length' <<<"$RESULT")"

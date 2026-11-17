@@ -1,4 +1,4 @@
-// Server-Test für „Seite importieren“ bei neuen Projekten (ohne Worker: Jobs werden nur angelegt).
+// Server-Test für „Seite importieren“ bei neuen Projekten und „Seite löschen“ (ohne Worker: Jobs werden nur angelegt).
 // Aufruf: node tests/page-import-server-test.mjs <base-url> <projekt-mit-seiten> <projekt-ohne-seiten> <abzug-slug> <token>
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,5 +59,19 @@ if (d.job) {
   fs.rmSync(path.join(JOBS, 'assets', `${d.job.id}-page.html`), { force: true });
   fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: true });
 }
+
+// Seite löschen
+const del = (slug, page) => fetch(`${BASE}/api/sites/${slug}/pages/delete`, { method: 'POST', headers: auth, body: JSON.stringify({ page }) });
+r = await del(NEU, '/seiten/gibt-es-nicht.html');
+check('Löschen: unbekannte Seite 404', r.status === 404);
+r = await del(NEU, '/../site.json');
+check('Löschen: ungültiger Pfad 404', r.status === 404);
+const abzugEntry = (await (await fetch(`${BASE}/api/sites/${ABZUG}/pages`, { headers: auth })).json()).entry;
+r = await del(ABZUG, abzugEntry);
+check('Löschen: Startseite eines Abzugs 400', r.status === 400, String(r.status));
+r = await del(NEU, '/seiten/startseite.html');
+d = await r.json();
+check('Löschen legt Job page-delete an', r.status === 202 && d.job?.type === 'page-delete' && d.job.params.page === '/seiten/startseite.html', JSON.stringify(d));
+if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: true });
 
 process.exit(fail ? 1 : 0);

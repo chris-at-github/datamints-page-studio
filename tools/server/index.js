@@ -796,6 +796,20 @@ async function handleApi(req, res, url) {
     return send(res, 202, { job: await createJob('page-import', slug, { name, page, file, replace: exists }, jobId) });
   }
 
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/pages\/delete$/)) && req.method === 'POST') {
+    // Seite löschen (Abzüge und neue Projekte) als Schritt; die Startseite eines Abzugs bleibt
+    const slug = m[1];
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
+    if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    const body = await readBody(req);
+    const page = String(body.page || '');
+    const list = await listSitePages(slug);
+    if (!list.pages.some((x) => x.path === page)) return sendError(res, 404, 'Seite nicht gefunden');
+    if (list.kind !== 'neu' && page === list.entry) return sendError(res, 400, 'Die Startseite des Abzugs lässt sich nicht löschen.');
+    if (await busyCheck(res, slug, 'Das Löschen')) return;
+    return send(res, 202, { job: await createJob('page-delete', slug, { page }) });
+  }
+
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts|package|export)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');

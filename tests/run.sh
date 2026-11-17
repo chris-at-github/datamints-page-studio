@@ -501,6 +501,20 @@ else
   rm -f "$JOBR" "$PROMPTF" logs/claude-job-test-render.json logs/claude-job-test-render.stderr.log
 fi
 
+echo "Seite löschen (page-delete.sh)"
+HD="/$(basename "$(dirname "$P")")"
+set +e; OUT="$(./scripts/page-delete.sh "$SLUG" "$HD/leistungen/index.html" 2>/dev/null)"; rc=$?; set -e
+DID="$(jq -r .annotationId <<<"$OUT")"
+check "page-delete.sh: Seite gelöscht und als Schritt committet" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT")" == committed ]] && [[ ! -e "$S/www$HD/leistungen/index.html" ]] && [[ -z "$(git -C "$S" status --porcelain)" ]] && [[ "$(git -C "$S" log -1 --format=%s)" == "[$DID] Seite $HD/leistungen/index.html gelöscht" ]]'
+check "page-delete.sh: URL aus urls.txt entfernt, Schritt mit source delete" '! grep -qx "http://127.0.0.1:$PORT/leistungen/" "$S/urls.txt" && jq -e ".removedUrls == [\"http://127.0.0.1:$PORT/leistungen/\"]" <<<"$OUT" >/dev/null && jq -e ".source == \"delete\"" "$S/annotations/$DID.json" >/dev/null'
+check "page-delete.sh: Links anderer Seiten als Hinweis" 'jq -e "(.links.files | index(\"$HD/index.html\")) and ([.warnings[] | select(.rule == \"page-links\")] | length == 1)" <<<"$OUT" >/dev/null && grep -q "href=\"leistungen/index.html\"" "$P"'
+./scripts/rollback.sh "$SLUG" "$(git -C "$S" rev-parse HEAD~1)" >/dev/null 2>&1 || true
+check "Rücksprung holt gelöschte Seite und URL zurück" '[[ -f "$S/www$HD/leistungen/index.html" ]] && grep -qx "http://127.0.0.1:$PORT/leistungen/" "$S/urls.txt"'
+set +e; OUT="$(./scripts/page-delete.sh "$SLUG" "$(jq -r .entry "$S/site.json")" 2>/dev/null)"; rc=$?; set -e
+check "page-delete.sh: Startseite eines Abzugs nicht löschbar" '(( rc == 2 )) && grep -q Startseite <<<"$OUT"'
+set +e; OUT="$(./scripts/page-delete.sh "$SLUG" "$HD/gibt-es-nicht.html" 2>/dev/null)"; rc4=$?; OUT2="$(./scripts/page-delete.sh "$SLUG" "/../site.json" 2>/dev/null)"; rc2=$?; set -e
+check "page-delete.sh: fehlende Seite und ungültiger Pfad abgewiesen" '(( rc4 == 4 && rc2 == 2 )) && [[ -z "$(git -C "$S" status --porcelain)" ]]'
+
 echo "Neues Projekt ohne Website (project-new, page-import, project-package, Import, project-export)"
 NS="sites/modio-test-neu"; rm -rf "$NS"
 OUT="$(./scripts/project-new.sh modio-test-neu "Test <Neu>" 2>/dev/null)" || true
@@ -543,6 +557,8 @@ set +e; OUT="$(./scripts/page-import.sh "$SLUG" neu "$PG/start.html" 2>/dev/null
 check "page-import.sh: bei Abzügen abgewiesen" '(( rc == 2 )) && grep -q "Seiten hinzufügen" <<<"$OUT"'
 set +e; OUT="$(./scripts/pages-add.sh modio-test-neu /dev/null 2>/dev/null)"; rc=$?; set -e
 check "Seiten hinzufügen (Crawl) bei neuem Projekt abgewiesen" '(( rc != 0 ))'
+set +e; OUT="$(./scripts/page-delete.sh modio-test-neu /seiten/links.html 2>/dev/null)"; rc=$?; set -e
+check "page-delete.sh: Seite im neuen Projekt gelöscht" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT")" == committed ]] && [[ ! -e "$NS/www/seiten/links.html" ]] && jq -e ".removedUrls == [] and .links.count == 0" <<<"$OUT" >/dev/null && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
 
 cat >"$NS/design/tokens-quelle.css" <<'TQ'
 :root {
