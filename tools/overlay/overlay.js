@@ -89,6 +89,9 @@
     pencilSparkles: ['path:M10 3H8', 'path:m15.007 5.008 3.987 3.986', 'path:M20 15v4',
       'path:M21.174 6.813a2.82 2.82 0 0 0-3.986-3.987L3.842 16.175a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z',
       'path:M22 17h-4', 'path:M4 5v4', 'path:M6 7H2', 'path:M9 2v2'],
+    imagePlus: ['path:M16 5h6', 'path:M19 2v6', 'path:M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5',
+      'path:m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21', 'circle:9,9,2'],
+    chevronDown: ['path:m6 9 6 6 6-6'],
     pencil: ['path:M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'path:m15 5 4 4'],
   };
   var SVGNS = 'http://www.w3.org/2000/svg';
@@ -385,7 +388,6 @@
     '.adv summary{color:#4b5563;cursor:pointer}' +
     '.adv .switch{margin-top:6px}' +
     '.checks{display:flex;flex-direction:column;gap:4px;margin-top:10px}' +
-    '.hintrow{margin-top:2px}' +
     'label.fl{font-size:13px;font-weight:600;margin:4px 0 4px}' +
     'input.textin{width:100%;font:inherit;padding:6px 8px;border:1px solid #cfd5df;border-radius:7px}' +
     'input.textin.mono{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}' +
@@ -393,7 +395,6 @@
     '.hint.bad{color:#b91c1c}' +
     '.ui.sb-design .panel{right:476px}' +
     '@media (max-width:940px){.ui.sb-design .panel{right:16px}}' +
-    '.hintrow .hint{margin:0}' +
     'button.tokbtn{font-size:12px;padding:3px 8px;color:#374151}' +
     '.tokpop{border:1px solid #cfd5df;border-radius:8px;padding:6px;margin-top:4px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.12)}' +
     '.tokpop[hidden]{display:none}' +
@@ -459,8 +460,25 @@
     '.brieftext{width:100%;min-height:120px;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}' +
     '.brieffiles{list-style:none;margin:4px 0 8px;padding:0}.brieffiles li{margin:2px 0}' +
     '.linkish{background:none;border:0;padding:0;color:#2563eb;text-decoration:underline;cursor:pointer;font:inherit}' +
-    '.comp-row .textin{flex:1;min-width:0;font-size:12px;padding:4px 6px}' +
-    '.claude-row{gap:4px;flex-wrap:nowrap;align-items:center}.claude-row .hint{white-space:nowrap}.claude-row button{font-size:12px;padding:4px 6px;white-space:nowrap}' +
+    /* Annotationsdialog: Kopf mit X, kompakte Ablage, Footer mit Split-Button */
+    '.phead{display:flex;align-items:center;gap:8px;margin:-4px -6px 8px 0}.phead h2{margin:0;flex:1}' +
+    '.prompt .tokrow{margin-top:8px}' +
+    '.prompt .drop{display:flex;align-items:center;gap:10px;text-align:left;padding:8px 12px}' +
+    '.prompt .drop .ic{color:#4b5563}.prompt .drop .dl2{font-size:11px;color:#6b7280;margin-top:2px}' +
+    '.pfoot{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb}' +
+    '.prompt .phead button,.prompt .tokrow button,.pfoot button,.pfoot .textin,.qmenu button{height:34px;white-space:nowrap;box-sizing:border-box}' +
+    '.prompt .phead button.icon-only,.pfoot button.icon-only{width:34px}' +
+    '.pfoot .pcomp{display:flex;align-items:center;gap:6px;min-width:0}' +
+    '.pfoot .textin{width:170px;font-size:12px;padding:4px 8px}' +
+    '.split{position:relative;display:inline-flex}' +
+    '.split>button:first-child{border-top-right-radius:0;border-bottom-right-radius:0}' +
+    '.split>button.icon-only{border-top-left-radius:0;border-bottom-left-radius:0;border-left-color:rgba(255,255,255,.45)}' +
+    '.qmenu{position:absolute;right:0;bottom:calc(100% + 4px);min-width:250px;background:#fff;border:1px solid #cfd5df;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.15);padding:4px;z-index:2}' +
+    '.qmenu[hidden]{display:none}' +
+    '.qmenu button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:16px;background:transparent;border-color:transparent;text-align:left}' +
+    '.qmenu button:hover:not([disabled]){background:#eef2ff}' +
+    '.pkeys{display:flex;justify-content:flex-end;align-items:center;gap:4px;margin-top:8px;font-size:11px;color:#6b7280;white-space:nowrap}' +
+    '.prompt kbd{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#374151;background:#f9fafb;border:1px solid #cfd5df;border-bottom-width:2px;border-radius:4px;padding:0 4px}' +
     '.design .sb-body .dsec{border-top:1px solid #9ca3af;padding-top:14px}' +
     '.design .sb-body > div:empty + section.dsec,.design .sb-body > div > .dsec:first-child{border-top:0;padding-top:0}' +
     '.dsec h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin:0 0 6px;display:flex;align-items:center;gap:6px}' +
@@ -655,53 +673,54 @@
   var pText = el('textarea', { id: 'modio-prompt', placeholder: 'Was soll an diesem Element geändert werden?' });
   var pFile = el('input', { type: 'file', accept: IMAGE_TYPES.join(','), multiple: true, class: 'sr', tabindex: '-1' });
   var pDrop = el('div', { class: 'drop', tabindex: '0', role: 'button' }, [
-    'Referenzbilder hierher ziehen, mit Strg+V einfügen oder ',
-    el('u', { text: 'Datei wählen' }),
-    ' (max. ' + IMAGE_MAX_COUNT + ', je ' + IMAGE_MAX_MB + ' MB, PNG/JPEG/GIF/WebP)',
+    icon('imagePlus', 20),
+    el('div', {}, [
+      el('div', {}, ['Referenzbilder ziehen, mit Strg+V einfügen oder ', el('u', { text: 'Datei wählen' })]),
+      el('div', { class: 'dl2', text: 'max. ' + IMAGE_MAX_COUNT + ' · je ' + IMAGE_MAX_MB + ' MB · PNG, JPEG, GIF, WebP' }),
+    ]),
   ]);
-  var pUrl = el('input', { type: 'url', placeholder: 'https://… Bild-URL', 'aria-label': 'Bild-URL' });
-  var pUrlAdd = el('button', { type: 'button', text: 'URL hinzufügen' });
   var pThumbs = el('div', { class: 'thumbs' });
   var pThorough = el('input', { type: 'checkbox' });
   pThorough.checked = true; // Standard: stärkeres Modell
   var pTitle = el('h2', { id: 'modio-ph', text: 'Annotation' });
   var pErr = el('div', { class: 'err', role: 'alert' });
-  var pCancel = el('button', { type: 'button', text: 'Abbrechen' });
-  var pSend = el('button', { type: 'button', text: 'Direkt umsetzen', title: 'Sofort als eigenen Schritt mit Claude umsetzen (Strg+Umschalt+Enter)' });
-  var pQueue = el('button', { type: 'button', class: 'primary', text: 'In die Queue aufnehmen', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)' });
-  var pDraft = iconButton('pencilSparkles', 'Entwurf erstellen', { title: 'Claude gestaltet das Element ohne Altlasten als eigene Komponente neu. Erst „Übernehmen“ ändert die Website. (Strg+Alt+Enter)' });
-  // Gestaltung extern in claude.ai: Briefing erzeugen bzw. dort gestaltetes HTML importieren
-  var pBrief = iconButton('sparkles', 'In claude.ai gestalten', { class: 'ghost', title: 'Entwurf ohne Claude-Lauf anlegen und ein Briefing (Text und Dateien) für claude.ai erzeugen. Das Ergebnis danach im Entwurf importieren.' });
-  var pImport = iconButton('files', 'HTML importieren …', { class: 'ghost', title: 'In claude.ai gestaltetes HTML (Artefakt) als neuen Entwurf für dieses Element übernehmen. Der Prompt ist optional.' });
-  var pImportFile = el('input', { type: 'file', accept: '.html,.htm,text/html', hidden: '' });
-  var pClaudeRow = el('div', { class: 'row claude-row' }, [el('span', { class: 'hint', text: 'Extern gestalten:' }), pBrief, pImport, pImportFile]);
+  var pClose = iconButton('x', 'Schließen', { class: 'ghost', title: 'Schließen (Esc)' }, true);
+  // Split-Button: „In die Queue“ (Strg+Enter), im Menü „Direkt umsetzen“ (Strg+Umschalt+Enter). Beim Nachbessern nur „Direkt umsetzen“.
+  var pQueue = el('button', { type: 'button', class: 'primary', text: 'In die Queue', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)' });
+  var pQueueMore = iconButton('chevronDown', 'Weitere Optionen', { class: 'primary', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'modio-qmenu' }, true);
+  var pSend = el('button', { type: 'button', role: 'menuitem', title: 'Sofort als eigenen Schritt mit Claude umsetzen' }, [
+    el('span', { text: 'Direkt umsetzen' }), el('span', { class: 'hint', text: 'Strg+Umschalt+Enter' }),
+  ]);
+  var pQMenu = el('div', { id: 'modio-qmenu', class: 'qmenu', role: 'menu', hidden: '' }, [pSend]);
+  var pSplit = el('div', { class: 'split' }, [pQueue, pQueueMore, pQMenu]);
+  var pDraft = iconButton('pencilSparkles', 'Entwurf', { title: 'Claude gestaltet das Element ohne Altlasten als eigene Komponente neu. Erst „Übernehmen“ ändert die Website. (Strg+Alt+Enter)' });
   // Neue Projekte: Element als Komponente für die Bibliothek anlegen (Name, Hinweise zu Varianten im Prompt optional)
-  var pComp = iconButton('component', 'Als Komponente …', { class: 'ghost', title: 'Element ohne Neugestaltung als wiederverwendbare Komponente mit Varianten und austauschbaren Inhalten anlegen. Der Prompt ist optional (z. B. gewünschte Varianten).' });
+  var pComp = iconButton('component', 'Komponente speichern', { title: 'Element ohne Neugestaltung als wiederverwendbare Komponente mit Varianten und austauschbaren Inhalten anlegen. Der Prompt ist optional (z. B. gewünschte Varianten).' });
   var pCompName = el('input', { type: 'text', class: 'textin', placeholder: 'name, z. B. produktkachel', 'aria-label': 'Name der Komponente (a-z, 0-9, Bindestrich)', spellcheck: 'false', maxlength: '40' });
   var pCompGo = el('button', { type: 'button', class: 'primary', text: 'Anlegen' });
   // Namensfeld statt Knopf (style.display: die Knopf-Styles überschreiben das hidden-Attribut)
   function showCompName(on) { pComp.style.display = on ? 'none' : ''; pCompName.style.display = pCompGo.style.display = on ? '' : 'none'; }
   showCompName(false);
-  var pCompRow = el('div', { class: 'row claude-row comp-row' }, [el('span', { class: 'hint', text: 'Bibliothek:' }), pComp, pCompName, pCompGo]);
+  var pCompRow = el('div', { class: 'pcomp' }, [pComp, pCompName, pCompGo]);
+  var pKeysQueue = el('span', { text: 'In die Queue' });
+  var pKeys = el('div', { class: 'pkeys' }, [el('kbd', { text: 'Strg' }), '+', el('kbd', { text: 'Enter' }), ' ', pKeysQueue, ' · ', el('kbd', { text: 'Esc' }), ' Schließen']);
   var pTokBtn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token oder Komponente aus der Bibliothek in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token oder Komponente suchen …', 'aria-label': 'Token oder Komponente suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens und Komponenten' });
   var pTokPop = el('div', { id: 'modio-tokpop', class: 'tokpop', hidden: '' }, [pTokFilter, pTokList]);
   var promptPanel = el('div', { class: 'panel prompt', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
-    pTitle,
+    el('div', { class: 'phead' }, [pTitle, pClose]),
     pMeta,
     el('label', { for: 'modio-prompt', class: 'sr', text: 'Prompt' }),
     pText,
-    el('div', { class: 'row hintrow' }, [el('span', { class: 'hint', text: 'Strg+Enter: Queue · Strg+Umschalt+Enter: direkt · Esc schließt' }), el('span', { class: 'spacer' }), pTokBtn]),
+    el('div', { class: 'row tokrow' }, [pTokBtn]),
     pTokPop,
     pDrop,
     pFile,
-    el('div', { class: 'row' }, [pUrl, pUrlAdd]),
     pThumbs,
     pErr,
-    pClaudeRow,
-    pCompRow,
-    el('div', { class: 'row end' }, [pCancel, el('span', { class: 'spacer' }), pDraft, pSend, pQueue]),
+    el('div', { class: 'pfoot' }, [pCompRow, el('span', { class: 'spacer' }), pDraft, pSplit]),
+    pKeys,
   ]);
   ui.appendChild(promptPanel);
 
@@ -947,13 +966,17 @@
     btnSelect.disabled = false; // auch während eines Schritts: Annotationen können in die Queue
     btnSelect.title = busy ? 'Element auswählen (Alt+A) – während der Schritt läuft nur in die Queue' : 'Element auswählen (Alt+A)';
     pSend.disabled = busy;
-    pQueue.style.display = followupJob ? 'none' : '';
+    // Nachbessern: nur „Direkt umsetzen“ (Hauptknopf des Split-Buttons, ohne Menü)
+    pQueue.textContent = followupJob ? 'Direkt umsetzen' : 'In die Queue';
+    pQueue.title = followupJob ? 'Korrektur sofort als eigenen Schritt umsetzen (Strg+Enter)' : 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)';
+    if (followupJob) pQueue.disabled = busy;
+    pQueueMore.style.display = followupJob ? 'none' : '';
+    if (followupJob) closeQMenu(false);
+    pKeysQueue.textContent = followupJob ? 'Direkt umsetzen' : 'In die Queue';
     pDraft.style.display = followupJob ? 'none' : '';
-    pClaudeRow.style.display = followupJob ? 'none' : '';
     pCompRow.style.display = followupJob || CFG.kind !== 'neu' ? 'none' : '';
     if (PREVIEW) { btnSelect.disabled = true; btnSelect.title = 'In der Vorschau eines Entwurfs nicht möglich'; }
     if (LIBRARY) { btnSelect.disabled = true; btnSelect.title = 'Auf der Komponentenseite nicht möglich: Komponenten auf einer Seite auswählen'; }
-    pSend.classList.toggle('primary', !!followupJob);
     if (typeof renderQueueButton === 'function' && qRun) renderQueueButton();
     var fj = followupCandidate();
     btnFollowup.style.display = fj ? '' : 'none';
@@ -1154,6 +1177,7 @@
       }
       if (e.key === 'Escape' && isOwn(e)) {
         if (!pTokPop.hidden) { e.preventDefault(); closeTokPop(true); }
+        else if (!pQMenu.hidden) { e.preventDefault(); closeQMenu(true); }
         else if (selEditing) { /* Esc bricht nur die Bearbeitung des Selektors ab (eigener Handler) */ }
         else if (areaPanel.classList.contains('open')) closeAreaDialog();
         else if (changesPanel.classList.contains('open')) closeChanges();
@@ -1205,6 +1229,7 @@
 
   function closePrompt() {
     closeTokPop(false);
+    closeQMenu(false);
     promptPanel.classList.remove('open');
     selected = null;
     pathLeaf = null;
@@ -1426,7 +1451,6 @@
   function resetPrompt() {
     pText.value = '';
     pCompName.value = ''; showCompName(false);
-    pUrl.value = '';
     pThorough.checked = true;
     pText.placeholder = 'Was soll an diesem Element geändert werden?';
     refs.forEach(function (r) { if (r.kind === 'file' && r.url) URL.revokeObjectURL(r.url); });
@@ -1454,7 +1478,6 @@
       pThumbs.appendChild(th);
     });
     var full = refs.length >= IMAGE_MAX_COUNT;
-    pUrlAdd.disabled = full;
     pDrop.style.opacity = full ? '.5' : '';
   }
 
@@ -1478,8 +1501,9 @@
     renderThumbs();
   }
 
-  function addUrl() {
-    var raw = pUrl.value.trim();
+  // Bild-URL (nur noch per Drag-and-drop aus einem anderen Fenster)
+  function addUrl(raw) {
+    raw = String(raw || '').trim();
     if (!raw) return;
     pErr.textContent = '';
     if (refs.length >= IMAGE_MAX_COUNT) {
@@ -1500,17 +1524,9 @@
       return;
     }
     refs.push({ kind: 'url', url: u.href });
-    pUrl.value = '';
     renderThumbs();
   }
 
-  pUrlAdd.addEventListener('click', addUrl);
-  pUrl.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addUrl();
-    }
-  });
   pDrop.addEventListener('click', function () { if (refs.length < IMAGE_MAX_COUNT) pFile.click(); });
   pDrop.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -1540,10 +1556,7 @@
       return;
     }
     var uri = (dt.getData('text/uri-list') || dt.getData('text/plain') || '').split('\n')[0].trim();
-    if (uri) {
-      pUrl.value = uri;
-      addUrl();
-    }
+    if (uri) addUrl(uri);
   });
   promptPanel.addEventListener('paste', function (e) {
     var cd = e.clipboardData;
@@ -1569,8 +1582,23 @@
       submit(e.shiftKey || followupJob ? 'direct' : 'queue');
     }
   });
-  pSend.addEventListener('click', function () { submit('direct'); });
-  pQueue.addEventListener('click', function () { submit('queue'); });
+  pSend.addEventListener('click', function () { closeQMenu(false); submit('direct'); });
+  pQueue.addEventListener('click', function () { submit(followupJob ? 'direct' : 'queue'); });
+  function openQMenu() {
+    pQMenu.hidden = false;
+    pQueueMore.setAttribute('aria-expanded', 'true');
+    setTimeout(function () { if (!pSend.disabled) pSend.focus(); }, 0);
+  }
+  function closeQMenu(focusBtn) {
+    if (pQMenu.hidden) return;
+    pQMenu.hidden = true;
+    pQueueMore.setAttribute('aria-expanded', 'false');
+    if (focusBtn) pQueueMore.focus();
+  }
+  pQueueMore.addEventListener('click', function () { if (pQMenu.hidden) openQMenu(); else closeQMenu(true); });
+  pQueueMore.addEventListener('keydown', function (e) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openQMenu(); } });
+  pSplit.addEventListener('focusout', function (e) { if (!pSplit.contains(e.relatedTarget)) closeQMenu(false); });
+  pClose.addEventListener('click', function () { closePrompt(); });
   pDraft.addEventListener('click', function () { submit('draft'); });
   pComp.addEventListener('click', function () {
     showCompName(true);
@@ -1589,14 +1617,7 @@
   pCompGo.addEventListener('click', function () {
     var n = pCompName.value.trim();
     if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(n) || n.length > 40) { pErr.textContent = 'Name der Komponente: Kleinbuchstaben, Ziffern und Bindestrich, mit einem Buchstaben beginnen.'; pCompName.focus(); return; }
-    submit('component', null, n);
-  });
-  pBrief.addEventListener('click', function () { submit('brief'); });
-  pImport.addEventListener('click', function () { pImportFile.value = ''; pImportFile.click(); });
-  pImportFile.addEventListener('change', function () {
-    var f = pImportFile.files && pImportFile.files[0];
-    if (!f) return;
-    readHtmlFile(f).then(function (html) { submit('import', html); }).catch(function (e) { pErr.textContent = e.message; });
+    submit('component', n);
   });
   // HTML-Datei aus claude.ai lesen (Größe wie auf dem Server begrenzt)
   function readHtmlFile(f) {
@@ -1761,14 +1782,10 @@
 
 
 
-  pCancel.addEventListener('click', function () {
-    closePrompt();
-  });
-
-  function submit(mode, importHtml, componentName) {
+  function submit(mode, componentName) {
     if (!selected && !followupJob) return;
     var toQueue = mode === 'queue' && !followupJob;
-    var extMode = !followupJob && (mode === 'brief' || mode === 'import' || mode === 'component') ? mode : null;
+    var extMode = !followupJob && mode === 'component' ? mode : null;
     var toDraft = (mode === 'draft' || !!extMode) && !followupJob;
     if (toDraft && activeJob() && activeJob().status !== 'review') {
       pErr.textContent = 'Es läuft noch ein Auftrag. Der Entwurf ist erst danach möglich.';
@@ -1779,16 +1796,11 @@
       return;
     }
     var prompt = pText.value.trim();
-    if (!prompt && extMode === 'import') prompt = 'Übernahme des Entwurfs aus claude.ai';
     if (!prompt && extMode === 'component') prompt = 'Als Komponente für die Bibliothek anlegen';
     if (!prompt) {
-      pErr.textContent = extMode === 'brief' ? 'Bitte den Auftrag für claude.ai eingeben (er steht im Briefing).' : 'Bitte einen Prompt eingeben.';
+      pErr.textContent = 'Bitte einen Prompt eingeben.';
       pText.focus();
       return;
-    }
-    if (pUrl.value.trim()) {
-      addUrl();
-      if (pErr.textContent) return;
     }
     var fp = followupJob ? followupJob.params || {} : null;
     var annotation = {
@@ -1813,7 +1825,6 @@
       try { annotation.bausteine = collectBausteine(); } catch (e) { annotation.bausteine = []; }
       delete annotation.followup; delete annotation.followup_of;
       if (extMode) annotation.mode = extMode;
-      if (extMode === 'import') annotation.importHtml = importHtml || '';
       if (extMode === 'component') annotation.componentName = componentName;
     }
     var fd = new FormData();
@@ -1821,7 +1832,7 @@
     refs.forEach(function (r) {
       if (r.kind === 'file') fd.append('images', r.file, r.file.name || 'bild');
     });
-    pSend.disabled = pQueue.disabled = pDraft.disabled = pBrief.disabled = pImport.disabled = pCompGo.disabled = true;
+    pSend.disabled = pQueue.disabled = pDraft.disabled = pCompGo.disabled = true;
     pErr.textContent = '';
     api('POST', '/api/sites/' + encodeURIComponent(SLUG) + (toDraft ? '/drafts' : toQueue ? '/queue' : '/annotations'), fd)
       .then(function (data) {
@@ -1829,9 +1840,7 @@
         if (data && data.items) { queueItems = data.items; renderQueueButton(); }
         resetPrompt();
         closePrompt();
-        showToast(extMode === 'brief' ? 'Entwurf wird angelegt, Briefing für claude.ai wird erstellt …'
-          : extMode === 'import' ? 'Claude übernimmt das HTML aus claude.ai als Komponente … Die Vorschau öffnet sich danach.'
-          : extMode === 'component' ? 'Claude legt die Komponente mx-' + componentName + ' für die Bibliothek an … Die Vorschau öffnet sich danach.'
+        showToast(extMode === 'component' ? 'Claude legt die Komponente mx-' + componentName + ' für die Bibliothek an … Die Vorschau öffnet sich danach.'
           : toDraft ? 'Claude entwirft das Element als Komponente … Die Vorschau öffnet sich, sobald der Entwurf fertig ist.' : toQueue ? 'In die Queue aufgenommen (' + queueItems.length + ').' : 'Annotation gesendet.', false);
       })
       .catch(function (err) {
@@ -1839,7 +1848,7 @@
           err.status === 409 ? 'Für diese Website läuft bereits ein Schritt oder wartet auf Prüfung.' : 'Senden fehlgeschlagen: ' + err.message;
       })
       .then(function () {
-        pQueue.disabled = pDraft.disabled = pBrief.disabled = pImport.disabled = pCompGo.disabled = false;
+        pQueue.disabled = pDraft.disabled = pCompGo.disabled = false;
         renderStatus();
       });
   }

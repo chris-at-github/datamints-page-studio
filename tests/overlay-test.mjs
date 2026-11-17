@@ -45,14 +45,14 @@ await page.click('header nav a');
 await page.waitForTimeout(300);
 check('Link-Klick im Auswahlmodus navigiert nicht', page.url() === urlBefore);
 check('Prompt-Dialog öffnet sich', await ov('textarea').isVisible());
-await ov('button:has-text("Abbrechen")').click();
+await page.keyboard.press('Escape');
 
 await page.keyboard.press('Alt+a');
 await page.hover('main p');
 await page.keyboard.press('ArrowUp');
 await page.keyboard.press('Enter');
 check('Pfeil nach oben wählt Elternelement', /section|hero/.test(await page.evaluate(() => document.querySelector('#modio-overlay-host').shadowRoot.textContent)));
-await ov('button:has-text("Abbrechen")').click().catch(() => {});
+await page.keyboard.press('Escape');
 await page.keyboard.press('Alt+a');
 await page.hover('h1.hero__title');
 await page.click('h1.hero__title');

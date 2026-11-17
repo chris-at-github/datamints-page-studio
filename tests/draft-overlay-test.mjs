@@ -117,13 +117,13 @@ try {
   await page.locator('section.hero').click({ position: { x: 5, y: 5 } });
   await page.waitForTimeout(300);
   await ov('#modio-prompt').fill('Hero moderner gestalten');
-  await ov('button:has-text("Entwurf erstellen")').click();
+  await ov('.pfoot button:has-text("Entwurf")').click();
   await page.waitForTimeout(600);
   const ann = body && JSON.parse((body.match(/name="annotation"\r\n\r\n([\s\S]*?)\r\n--/) || [])[1] || 'null');
   check('Entwurf erstellen: Annotation mit Prompt und Selektor gesendet', ann?.prompt === 'Hero moderner gestalten' && /hero/.test(ann.selector || ''), body?.slice(0, 200));
   check('Entwurf erstellen: Bausteine und Breite gemessen', Array.isArray(ann?.bausteine) && ann.bausteine.some((b) => b.kind === 'heading' && b.style?.['font-size']) && ann.rect?.width > 0, JSON.stringify(ann?.bausteine)?.slice(0, 200));
 
-  // Gestaltung in claude.ai: aus dem Annotationsdialog Briefing-Entwurf und Import
+  // Annotationsdialog: Aufbau (Kopf mit X, Footer mit Split-Button, Kürzel-Hinweis), Direkt umsetzen über das Menü
   const annOf = () => body && JSON.parse((body.match(/name="annotation"\r\n\r\n([\s\S]*?)\r\n--/) || [])[1] || 'null');
   const selectHero = async () => {
     // neu laden: der simulierte Auftrag gilt sonst als laufend und sperrt weitere Entwürfe
@@ -133,20 +133,40 @@ try {
     await page.locator('section.hero').click({ position: { x: 5, y: 5 } });
     await page.waitForTimeout(300);
   };
-  body = null;
   await selectHero();
-  await ov('#modio-prompt').fill('Hero extern gestalten');
-  await ov('button:has-text("In claude.ai gestalten")').click();
+  const dlg = await page.evaluate(() => {
+    const p = document.querySelector('#modio-overlay-host').shadowRoot.querySelector('.panel.prompt');
+    const vis = [...p.querySelectorAll('.phead button, .tokrow button, .pfoot button')].filter((b) => b.offsetParent);
+    return {
+      text: p.textContent, urlField: !!p.querySelector('input[type="url"]'),
+      heights: [...new Set(vis.map((b) => b.getBoundingClientRect().height))],
+      wraps: vis.filter((b) => getComputedStyle(b).whiteSpace !== 'nowrap').length,
+      foot: [...p.querySelectorAll('.pfoot button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim() || b.title),
+      keys: p.querySelector('.pkeys').textContent, menuHidden: p.querySelector('.qmenu').hidden,
+    };
+  });
+  check('Dialog: ohne Bild-URL, Abbrechen und claude.ai', !dlg.urlField && !/Abbrechen|URL hinzufügen|claude\.ai|HTML importieren/.test(dlg.text), dlg.text.slice(0, 200));
+  check('Dialog: Footer Entwurf und Split-Button In die Queue', dlg.foot.includes('Entwurf') && dlg.foot.includes('In die Queue') && dlg.menuHidden, JSON.stringify(dlg.foot));
+  check('Dialog: Buttons mit gleicher Höhe, ohne Umbruch', dlg.heights.length === 1 && dlg.wraps === 0, JSON.stringify(dlg.heights));
+  check('Dialog: Kürzel-Hinweis unter dem Footer', /Strg\+Enter In die Queue · Esc Schließen/.test(dlg.keys), dlg.keys);
+  let direct = null;
+  await page.route('**/api/sites/*/annotations', async (route) => {
+    direct = route.request().postData();
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ job: { id: 'job-20261113000002-abcdef', type: 'annotate', slug: SLUG, status: 'pending' } }) });
+  });
+  await ov('#modio-prompt').fill('Abstand oben kleiner');
+  await ov('.split button[aria-haspopup="menu"]').click();
+  await page.waitForTimeout(200);
+  const item = ov('.qmenu button[role="menuitem"]');
+  check('Split-Button: Menü mit „Direkt umsetzen“ und Kürzel', await item.isVisible() && /Direkt umsetzen.*Strg\+Umschalt\+Enter/.test(await item.textContent()));
+  await item.click();
   await page.waitForTimeout(600);
-  let a2 = annOf();
-  check('In claude.ai gestalten: Entwurf im Modus brief', a2?.mode === 'brief' && a2.prompt === 'Hero extern gestalten' && !a2.importHtml, JSON.stringify(a2)?.slice(0, 160));
-  body = null;
+  check('Direkt umsetzen aus dem Menü sendet die Annotation', direct && direct.includes('Abstand oben kleiner') && !(await ov('.panel.prompt').isVisible()), String(direct).slice(0, 120));
+  await page.unroute('**/api/sites/*/annotations');
   await selectHero();
-  await ov('#modio-prompt').fill('');
-  await ov('.claude-row input[type="file"]').setInputFiles({ name: 'entwurf.html', mimeType: 'text/html', buffer: Buffer.from('<!doctype html><html><body><section class="entwurf"><h2>Aus claude.ai</h2></section></body></html>') });
-  await page.waitForTimeout(800);
-  a2 = annOf();
-  check('HTML importieren (neuer Entwurf): HTML und Modus gesendet, Prompt optional', a2?.mode === 'import' && a2.importHtml.includes('Aus claude.ai') && a2.prompt.includes('claude.ai'), JSON.stringify(a2)?.slice(0, 160));
+  await ov('.phead button').click();
+  await page.waitForTimeout(200);
+  check('X schließt den Dialog', !(await ov('.panel.prompt').isVisible()));
 
   // Entwurfs-Panel: Briefing (von tests/run.sh erzeugt) kopieren/herunterladen und Import als neue Version
   await page.unroute('**/api/sites/*/drafts');
