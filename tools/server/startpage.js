@@ -169,7 +169,7 @@ export function renderStartPage({ sites, token }) {
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'page-import': 'Seite importieren', 'page-delete': 'Seite löschen', 'component-delete': 'Komponente löschen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
+  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'page-import': 'Seite importieren', 'page-delete': 'Seite löschen', 'component-delete': 'Komponente löschen', 'component-sync': 'Kopien angleichen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');
@@ -330,6 +330,7 @@ export function renderStartPage({ sites, token }) {
       if (j.type === 'page-import' && j.result?.page) details.append(j.result.page + (j.result.replaced ? ' ersetzt' : ' importiert'));
       if (j.type === 'page-delete' && j.params?.page) details.append(j.params.page + ' gelöscht');
       if (j.type === 'component-delete' && j.params?.name) details.append('mx-' + j.params.name + (j.params.variant ? ', Variante ' + j.params.variant : '') + ' gelöscht');
+      if (j.type === 'component-sync' && j.params?.name) details.append('mx-' + j.params.name + (j.result?.synced !== undefined ? ': ' + j.result.synced + ' Kopie(n) angeglichen' : ''));
       if ((j.type === 'project-package' || j.type === 'project-export') && j.status === 'done' && j.result) {
         details.append((j.type === 'project-package' ? 'Paket: ' : (j.result.components || []).length + ' Komponente(n): ') + j.result.dir);
         for (const w of j.result.warnings || []) { const d = document.createElement('div'); d.className = 'muted'; d.textContent = '⚠ ' + w; details.append(d); }

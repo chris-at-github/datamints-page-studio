@@ -55,10 +55,11 @@ fi
 
 # Gleiche Bereiche: was der Schritt auf einer Seite an Header/Footer usw. geändert hat, auf alle Seiten übertragen
 # Ausnahmen: importierte Seiten (page-import.sh) bleiben byte-genau, ihr Header usw. wird nicht übertragen;
-# gelöschte Seiten (page-delete.sh) und gelöschte Komponenten (component-delete.sh) haben nichts zu übertragen
+# gelöschte Seiten (page-delete.sh), gelöschte Komponenten (component-delete.sh) und angeglichene Kopien (component-sync.sh)
+# haben nichts zu übertragen
 SYNCED='{"changed":[],"skipped":[],"unclear":[],"areas":[]}'
 SOURCE=""; [[ -f "$ANN" ]] && SOURCE="$(jq -r '.source // ""' "$ANN")"
-if [[ -f "$SITE/design/consistency.json" && "$SOURCE" != "import" && "$SOURCE" != "delete" && "$SOURCE" != "component-delete" ]]; then
+if [[ -f "$SITE/design/consistency.json" && "$SOURCE" != "import" && "$SOURCE" != "delete" && "$SOURCE" != "component-delete" && "$SOURCE" != "component-sync" ]]; then
   PAGE=""; [[ -f "$ANN" ]] && PAGE="$(jq -r '.page // ""' "$ANN")"
   if S="$(node "$LIB_DIR/areas.mjs" after-step "$SITE" "$PAGE" 2>>"$LOG_DIR/commit-step.log")" && jq -e '.changed' >/dev/null 2>&1 <<<"$S"; then
     SYNCED="$S"

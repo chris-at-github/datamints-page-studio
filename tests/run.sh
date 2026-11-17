@@ -680,10 +680,22 @@ check "uses: Verwendungen je Variante" 'jq -e ".total >= 3 and .variants.standar
 check "deviations: alle Kopien weichen von der neuen Vorlage ab" 'jq -e ".held >= 3" <<<"$(node scripts/lib/components.mjs deviations "$NS")" >/dev/null'
 cp "$P_NS" "$NS/sync-vorher.html"
 R="$(node scripts/lib/components.mjs sync "$NS" held)"
-check "syncLibrary: Kopien neu aufgebaut, Inhalte und Kontextklasse bleiben" '[[ "$(jq -r .synced <<<"$R")" -ge 3 ]] && [[ "$(grep -o "<header class=\"kopf\">" "$P_NS" | wc -l)" -ge 3 ]] && grep -q "Zweite Kachel" "$P_NS" && grep -q "class=\"mx-held kachel__ctx\"" "$P_NS" && ! grep -q "class=\"extra\"" "$P_NS"'
+check "syncLibrary: Kopien neu aufgebaut, Inhalte und Kontextklasse bleiben" '[[ "$(jq -r .synced <<<"$R")" -ge 3 ]] && [[ "$(grep -o "<header class=\"kopf\"><h3 data-mx-slot=\"titel\">" "$P_NS" | wc -l)" -ge 3 ]] && grep -q "Zweite Kachel" "$P_NS" && grep -q "class=\"mx-held kachel__ctx\"" "$P_NS" && ! grep -q "class=\"extra\"" "$P_NS"'
 check "syncLibrary: Rest der Seite byte-genau unverändert" 'node -e "const fs=require(\"fs\");const [a,b]=[fs.readFileSync(process.argv[1],\"utf8\"),fs.readFileSync(process.argv[2],\"utf8\")];const pre=(t)=>t.slice(0,t.lastIndexOf(\"<\",t.indexOf(\"mx-held\")));const post=(t)=>t.slice(t.lastIndexOf(\"</main>\"));process.exit(pre(a)===pre(b)&&post(a)===post(b)?0:1)" "$NS/sync-vorher.html" "$P_NS" && [[ "$(git -C "$NS" diff --stat -- www | tail -1)" == *"1 file changed"* ]]'
 check "syncLibrary: danach keine Abweichung" 'jq -e ".held == 0" <<<"$(node scripts/lib/components.mjs deviations "$NS")" >/dev/null'
 rm -f "$NS/sync-vorher.html"; git -C "$NS" checkout -q -- . && git -C "$NS" reset -q --hard "$SYNC_BEFORE"
+# Angleichen als Schritt (component-sync.sh)
+node -e "$SYNC_KOPF" "$NS/components/mx-held.html"
+OUT="$(./scripts/local-commit.sh modio-test-neu "Vorlage mit Kopf" 2>/dev/null)" || true
+OUT="$(./scripts/component-sync.sh modio-test-neu held 2>/dev/null)" || true
+check "component-sync.sh: Schritt mit angeglichenen Kopien" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && (( $(jq -r .synced <<<"$OUT") >= 3 )) && [[ "$(git -C "$NS" log -1 --format=%s)" == *"Kopien von mx-held angeglichen"* ]] && ! jq -e ".warnings | map(.rule) | index(\"component-structure\")" <<<"$OUT" >/dev/null && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+check "component-sync.sh: Zusammenfassung in der Annotation" 'jq -e ".source == \"component-sync\" and (.result.summary | contains(\"von mx-held nach der Vorlage neu aufgebaut\"))" "$NS/annotations/$(jq -r .annotationId <<<"$OUT").json" >/dev/null'
+OUT="$(./scripts/component-sync.sh modio-test-neu held 2>/dev/null)" || true
+check "component-sync.sh: nichts abweichend -> nochange" '[[ "$(jq -r .status <<<"$OUT")" == nochange ]] && [[ "$(jq -r .synced <<<"$OUT")" == 0 ]]'
+set +e; OUT="$(./scripts/component-sync.sh modio-test-neu gibt-es-nicht 2>/dev/null)"; rc=$?; set -e
+check "component-sync.sh: unbekannte Komponente Exit 4" '(( rc == 4 ))'
+./scripts/rollback.sh modio-test-neu "$SYNC_BEFORE" >/dev/null 2>&1 || true
+check "component-sync.sh: Rücksprung stellt die Kopien wieder her" 'grep -q "class=\"extra\"" "$P_NS" && ! grep -q "<header class=\"kopf\"><h3 data-mx-slot" "$P_NS" "$NS/components/mx-held.html" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
 # Bibliotheks-Komponente neu gestalten: Beschreibung bleibt Pflicht
 jq -n '{id:"job-test-neu-comp4", params:{page:"/seiten/startseite.html", selector:".mx-held", html:"", text:"", prompt:"Ruhiger gestalten", viewport:{width:1440,height:900}}}' >"$JOBN.2"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true

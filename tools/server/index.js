@@ -820,6 +820,18 @@ async function handleApi(req, res, url) {
     if (await busyCheck(res, slug, 'Das Löschen')) return;
     return send(res, 202, { job: await createJob('component-delete', slug, variant ? { name, variant } : { name }) });
   }
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/components\/sync$/)) && req.method === 'POST') {
+    // Kopien einer Komponente nach der Vorlage angleichen (nur neue Projekte)
+    const slug = m[1];
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
+    if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    if ((await readJson(path.join(siteDir(slug), 'site.json'), {})).kind !== 'neu') return sendError(res, 400, 'Komponenten-Bibliothek gibt es nur bei neuen Projekten');
+    const body = await readBody(req);
+    const name = String(body.name || '');
+    if (!(await listLibrary(siteDir(slug))).some((c) => c.name === name)) return sendError(res, 404, 'Komponente nicht in der Bibliothek');
+    if (await busyCheck(res, slug, 'Das Angleichen')) return;
+    return send(res, 202, { job: await createJob('component-sync', slug, { name }) });
+  }
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/pages\/delete$/)) && req.method === 'POST') {
     // Seite löschen (Abzüge und neue Projekte) als Schritt; die Startseite eines Abzugs bleibt
     const slug = m[1];

@@ -106,5 +106,14 @@ if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: tr
 r = await fetch(`${BASE}/s/${NEU}/__komponenten`);
 text = await r.text();
 check('Komponentenseite: Verwendungen je Komponente und Variante', /data-kb-name="held" data-kb-uses="\d+"/.test(text) && text.includes('data-kb-variant="hervorgehoben"') && text.includes('× verwendet'));
+const compSync = (slug, body) => fetch(`${BASE}/api/sites/${slug}/components/sync`, { method: 'POST', headers: auth, body: JSON.stringify(body) });
+r = await compSync(ABZUG, { name: 'held' });
+check('Angleichen: bei Abzügen 400', r.status === 400, String(r.status));
+r = await compSync(NEU, { name: 'gibt-es-nicht' });
+check('Angleichen: unbekannt 404', r.status === 404, String(r.status));
+r = await compSync(NEU, { name: 'held' });
+d = await r.json();
+check('Angleichen: Job component-sync', r.status === 202 && d.job?.type === 'component-sync' && d.job.params.name === 'held', JSON.stringify(d));
+if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: true });
 
 process.exit(fail ? 1 : 0);
