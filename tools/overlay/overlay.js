@@ -404,6 +404,9 @@
     '.tokpop li code{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}' +
     '.tokpop li .v{margin-left:auto;color:#6b7280;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.tokpop .empty{color:#6b7280;font-size:12px;padding:4px 6px}' +
+    '.tokpop li.grp{cursor:default;padding:6px 6px 2px;color:#6b7280;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}' +
+    '.tokpop li.grp:hover{background:none}' +
+    '.tokpop li .var{color:#374151}' +
     '.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}' +
     '.ic{flex:none;display:block}' +
     'button.has-icon,a.btn{display:inline-flex;align-items:center;gap:6px}' +
@@ -680,9 +683,9 @@
   function showCompName(on) { pComp.style.display = on ? 'none' : ''; pCompName.style.display = pCompGo.style.display = on ? '' : 'none'; }
   showCompName(false);
   var pCompRow = el('div', { class: 'row claude-row comp-row' }, [el('span', { class: 'hint', text: 'Bibliothek:' }), pComp, pCompName, pCompGo]);
-  var pTokBtn = iconButton('palette', 'Token einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token in den Prompt einfügen (Strg+Leertaste)' });
-  var pTokFilter = el('input', { type: 'text', placeholder: 'Token suchen …', 'aria-label': 'Token suchen', spellcheck: 'false' });
-  var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens' });
+  var pTokBtn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token oder Komponente aus der Bibliothek in den Prompt einfügen (Strg+Leertaste)' });
+  var pTokFilter = el('input', { type: 'text', placeholder: 'Token oder Komponente suchen …', 'aria-label': 'Token oder Komponente suchen', spellcheck: 'false' });
+  var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens und Komponenten' });
   var pTokPop = el('div', { id: 'modio-tokpop', class: 'tokpop', hidden: '' }, [pTokFilter, pTokList]);
   var promptPanel = el('div', { class: 'panel prompt', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
     pTitle,
@@ -1636,38 +1639,75 @@
   }
 
 
-  // ---- Design-Tokens in den Prompt einfügen
+  // ---- Design-Tokens und Komponenten in den Prompt einfügen
+  // Komponenten: je Variante eine Zeile; eingefügt wird ein eindeutiger Bezug, den Claude über den <komponenten>-Kontext auflöst,
+  // z. B. „mx-produktkachel (Variante kompakt; Slots: titel, bild, preis)“. Anzahl und Inhalte schreibt man frei dazu.
   var tokCache = null;
+  var compCache = null;
   var tokItems = [];
+  var tokLis = [];
   var tokActive = 0;
   var tokCaret = 0;
   function loadTokens() {
-    if (tokCache) return Promise.resolve(tokCache);
-    return api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/design').then(function (d) {
+    var tok = tokCache ? Promise.resolve(tokCache) : api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/design').then(function (d) {
       var t = (d && d.tokens) || {};
-      tokCache = Object.keys(t).sort().map(function (k) { return { key: k, value: String((t[k] || {}).value || ''), locked: (t[k] || {}).locked === true }; });
+      tokCache = Object.keys(t).sort().map(function (k) { return { kind: 'token', key: k, insert: k, value: String((t[k] || {}).value || ''), locked: (t[k] || {}).locked === true }; });
       return tokCache;
     });
+    // Ohne Bibliothek (oder bei einem Fehler) entfällt nur die Gruppe „Komponenten“
+    var comp = compCache ? Promise.resolve(compCache) : api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/components').then(function (d) {
+      compCache = [];
+      ((d && d.components) || []).forEach(function (c) {
+        var all = (c.slots || []).map(function (x) { return x.key; });
+        (c.varianten || []).forEach(function (v) {
+          var slots = Array.isArray(v.slots) ? v.slots : all;
+          compCache.push({
+            kind: 'comp', key: 'mx-' + c.name, variant: v.key, label: v.label || v.key, title: c.title || c.name,
+            insert: 'mx-' + c.name + ' (Variante ' + v.key + (slots.length ? '; Slots: ' + slots.join(', ') : '') + ')',
+          });
+        });
+      });
+      return compCache;
+    }).catch(function () { return []; });
+    return Promise.all([tok, comp]);
+  }
+  function tokMatch(t, q) {
+    if (!q) return true;
+    var hay = t.kind === 'comp' ? [t.key, t.variant, t.label, t.title] : [t.key, t.value];
+    return hay.some(function (h) { return String(h).toLowerCase().indexOf(q) !== -1; });
   }
   function renderTokList() {
     clear(pTokList);
+    tokLis = [];
     var q = pTokFilter.value.trim().toLowerCase();
-    tokItems = (tokCache || []).filter(function (t) { return !q || t.key.indexOf(q) !== -1 || t.value.toLowerCase().indexOf(q) !== -1; });
+    var toks = (tokCache || []).filter(function (t) { return tokMatch(t, q); });
+    var comps = (compCache || []).filter(function (t) { return tokMatch(t, q); });
+    tokItems = toks.concat(comps);
     if (tokActive >= tokItems.length) tokActive = 0;
     if (!tokItems.length) {
-      pTokList.appendChild(el('li', { class: 'empty', text: (tokCache || []).length ? 'Kein passender Token.' : 'Noch keine Tokens. Im Design-Panel anlegen.' }));
+      var any = (tokCache || []).length || (compCache || []).length;
+      pTokList.appendChild(el('li', { class: 'empty', text: any ? 'Nichts Passendes gefunden.' : 'Noch keine Tokens (im Design-Panel anlegen) und keine Komponenten.' }));
       return;
     }
+    var grouped = toks.length && comps.length;
     tokItems.forEach(function (t, i) {
-      var li = el('li', { role: 'option', 'aria-selected': i === tokActive ? 'true' : 'false', title: t.value + (t.locked ? ' (gesperrt)' : '') }, [
-        t.key.indexOf('color.') === 0 ? swatch(t.value) : null,
-        el('code', { text: t.key }),
-        el('span', { class: 'v', text: t.value }),
-      ]);
-      li.addEventListener('mousedown', function (e) { e.preventDefault(); insertToken(t.key); });
+      if (grouped && (i === 0 || i === toks.length)) pTokList.appendChild(el('li', { class: 'grp', role: 'presentation', text: i === 0 ? 'Tokens' : 'Komponenten' }));
+      var li = t.kind === 'comp'
+        ? el('li', { role: 'option', 'aria-selected': i === tokActive ? 'true' : 'false', title: t.insert }, [
+          el('code', { text: t.key }),
+          el('span', { class: 'var', text: t.label }),
+          el('span', { class: 'v', text: t.title }),
+        ])
+        : el('li', { role: 'option', 'aria-selected': i === tokActive ? 'true' : 'false', title: t.value + (t.locked ? ' (gesperrt)' : '') }, [
+          t.key.indexOf('color.') === 0 ? swatch(t.value) : null,
+          el('code', { text: t.key }),
+          el('span', { class: 'v', text: t.value }),
+        ]);
+      li.addEventListener('mousedown', function (e) { e.preventDefault(); insertToken(t.insert); });
       pTokList.appendChild(li);
+      tokLis.push(li);
     });
-    var act = pTokList.children[tokActive];
+    var act = tokLis[tokActive];
     if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest' });
   }
   function openTokPop() {
@@ -1702,7 +1742,7 @@
   pTokFilter.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowDown') { e.preventDefault(); if (tokItems.length) { tokActive = (tokActive + 1) % tokItems.length; renderTokList(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (tokItems.length) { tokActive = (tokActive - 1 + tokItems.length) % tokItems.length; renderTokList(); } }
-    else if (e.key === 'Enter') { e.preventDefault(); if (tokItems[tokActive]) insertToken(tokItems[tokActive].key); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (tokItems[tokActive]) insertToken(tokItems[tokActive].insert); }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTokPop(true); }
   });
   pTokFilter.addEventListener('blur', function () { setTimeout(function () { if (!pTokPop.contains(root.activeElement)) closeTokPop(false); }, 100); });

@@ -169,6 +169,25 @@ try {
   await page.waitForTimeout(800);
   check('Panel: HTML als neue Version importieren (mit Hinweis)', impBody?.html?.includes('Version aus claude.ai') && impBody.prompt === 'Abstände etwas größer', JSON.stringify(impBody)?.slice(0, 160));
 
+  // Token-Popup: Komponenten aus der Bibliothek als Bezug einfügen (eine Zeile je Variante)
+  await page.unroute('**/api/sites/*/drafts/D-001/import');
+  await page.route('**/api/sites/*/components', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ components: [{
+    name: 'produktkachel', title: 'Produktkachel', slots: [{ key: 'titel', typ: 'text' }, { key: 'bild', typ: 'bild' }, { key: 'preis', typ: 'text' }],
+    varianten: [{ key: 'standard', label: 'Standard' }, { key: 'kompakt', label: 'Kompakt', slots: ['titel', 'preis'] }],
+  }] }) }));
+  await selectHero();
+  await ov('#modio-prompt').fill('Darunter 3×');
+  await ov('#modio-prompt').press('Control+ ');
+  await page.waitForTimeout(500);
+  const popText = await ov('#modio-tokpop ul').textContent();
+  check('Popup: Gruppe Komponenten mit einer Zeile je Variante', popText.includes('Komponenten') && (popText.match(/mx-produktkachel/g) || []).length === 2, popText.slice(0, 300));
+  await ov('#modio-tokpop input').fill('kompakt');
+  await page.waitForTimeout(200);
+  await ov('#modio-tokpop input').press('Enter');
+  await page.waitForTimeout(200);
+  check('Popup: Bezug mit Variante und deren Slots eingefügt', (await ov('#modio-prompt').inputValue()) === 'Darunter 3× mx-produktkachel (Variante kompakt; Slots: titel, preis)', await ov('#modio-prompt').inputValue());
+  await page.unroute('**/api/sites/*/components');
+
   check('Keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
 } finally {
   await browser.close();
