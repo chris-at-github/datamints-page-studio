@@ -141,6 +141,18 @@ async function handle(job, logFile) {
       if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(name)) throw new Error('Ungültige Komponente');
       return runScript('component-sync.sh', [slug, name], logFile);
     }
+    case 'component-rename': {
+      const name = String(job.params?.name || ''), newName = String(job.params?.newName || '');
+      const re = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+      if (!re.test(name) || !re.test(newName)) throw new Error('Ungültige Komponente');
+      return runScript('component-rename.sh', [slug, name, newName], logFile);
+    }
+    case 'component-merge': {
+      const { name = '', into = '', variant = '' } = job.params || {};
+      const re = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+      if (![name, into, variant].every((x) => re.test(String(x)))) throw new Error('Ungültige Komponente');
+      return runScript('component-merge.sh', [slug, String(name), String(into), String(variant)], logFile);
+    }
     case 'page-delete': {
       const page = String(job.params?.page || '');
       if (!page.startsWith('/') || page.includes('..')) throw new Error('Ungültige Seite');
@@ -239,7 +251,7 @@ async function processJob(id) {
   job.exitCode = r.code;
   let status;
   if (r.code === 0) status = 'done';
-  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply', 'draft-apply', 'page-import', 'page-delete', 'component-delete', 'component-sync'].includes(job.type)) status = 'review';
+  else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply', 'draft-apply', 'page-import', 'page-delete', 'component-delete', 'component-sync', 'component-rename', 'component-merge'].includes(job.type)) status = 'review';
   else {
     status = 'failed';
     job.error = r.result?.error || `Skript endete mit Exit-Code ${r.code} (siehe ${job.log})`;

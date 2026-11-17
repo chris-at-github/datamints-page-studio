@@ -36,6 +36,7 @@ Nennt der Auftrag eine Komponente für die Bibliothek, ist die Komponente zusät
 - `component.json`:
   `{"name": "<name>", "title": "<kurze deutsche Bezeichnung>", "beschreibung": "<wofür, wo einsetzen, 1–2 Sätze>", "slots": [{"key": "titel", "label": "Überschrift", "typ": "text"|"richtext"|"bild"|"icon"|"link"|"liste", "pflicht": true}], "varianten": [{"key": "standard", "label": "Standard", "klassen": "", "slots": ["titel"]}]}`
   Keys: a-z, 0-9 und Bindestrich. Die erste Variante ist der Standard. `klassen` sind die Modifier der Variante (leer für keine). `slots` lässt du weg, wenn die Variante alle Slots hat.
+  Sind die Varianten Kombinationen zweier Merkmale (z. B. Gestaltung primär/sekundär × Form nur Text/mit Icon/nur Icon), ordne sie zeilenweise (erst alle primären, dann alle sekundären) und gib mit `"vorschau": {"spalten": 3}` an, wie viele Varianten auf der Komponentenseite in einer Zeile stehen.
 - Verwendet die Komponente eine andere Komponente aus `<komponenten>`, übernimm deren Markup unverändert (Klasse `mx-<andere>` mit `data-mx-variant`). Deren CSS schreibst du nicht neu. Anpassungen an den Einsatzort machst du mit einer Kontextklasse auf ihrer Wurzel, gestaltet in deiner Komponente (z. B. `:scope .produktkarte__aktion { … }`).
 
 ## Gestaltung

@@ -15,6 +15,8 @@
 //         node components.mjs render <site-dir> <name> [variante] -> HTML der Variante auf stdout
 //         node components.mjs delete <site-dir> <name> [variante]  -> Komponente bzw. Variante löschen (siehe deleteFromLibrary)
 //         node components.mjs sync <site-dir> <name>           -> abweichende Kopien angleichen (siehe syncLibrary)
+//         node components.mjs rename <site-dir> <name> <neu>   -> Komponente umbenennen (siehe renameLibrary)
+//         node components.mjs merge <site-dir> <quelle> <ziel> <variante> -> zusammenführen (siehe mergeLibrary)
 //         node components.mjs uses <site-dir> <name>           -> { total, refs, variants }
 //         node components.mjs deviations <site-dir>            -> { <name>: abweichende Kopien }
 import fs from 'node:fs';
@@ -119,7 +121,11 @@ export function validateLibrary(cheerio, { name, html, json, css = '' }) {
         if (want.some((k) => !cls.includes(k)) || mods.some((k) => !want.includes(k))) errors.push(`component.html: Klassen der Wurzel passen nicht zur Variante "${vk}" (${want.join(' ') || 'keine Modifier'})`);
       }
       const used = new Set($('[data-mx-slot]').map((_, n) => $(n).attr('data-mx-slot')).get());
-      for (const k of used) if (!slotKeys.has(k)) errors.push(`component.html: data-mx-slot="${k}" ist in component.json nicht beschrieben`);
+      // Slots eingebetteter Komponenten (Element mit data-mx-variant unterhalb der Wurzel) gehören zu diesen; beschreiben
+      // darf die äußere sie (bisher üblich), muss es aber nicht
+      const inNested = (n) => { for (let x = n; x && x !== root; x = x.parent) if (x.attribs?.['data-mx-variant'] !== undefined) return true; return false; };
+      const own = new Set($('[data-mx-slot]').toArray().filter((n) => !inNested(n)).map((n) => n.attribs['data-mx-slot']));
+      for (const k of own) if (!slotKeys.has(k)) errors.push(`component.html: data-mx-slot="${k}" ist in component.json nicht beschrieben`);
       for (const k of slotKeys) if (!used.has(k)) errors.push(`component.html: Slot "${k}" fehlt in der Vorlage (data-mx-slot="${k}"; die Vorlage enthält alle Slots aller Varianten)`);
     }
   }
@@ -141,6 +147,18 @@ export function renderVariant(cheerio, template, spec, variantKey) {
   return $.html(root);
 }
 
+// Darstellung auf der Komponentenseite (beeinflusst die Komponente nicht): { breite?, spalten? } oder null.
+// breite: px, die die Komponente an ihrem Einsatzort hatte (beim Anlegen gemessen); spalten: Varianten je Zeile
+// (z. B. 3 bei Gestaltung × Form: eine Zeile je Gestaltung)
+export function previewOf(json) {
+  const b = Number(json?.vorschau?.breite), n = Number(json?.vorschau?.spalten);
+  const out = {
+    ...(Number.isFinite(b) && b >= 24 && b <= 4000 ? { breite: Math.round(b) } : {}),
+    ...(Number.isInteger(n) && n >= 1 && n <= MAX_VARIANTS ? { spalten: n } : {}),
+  };
+  return Object.keys(out).length ? out : null;
+}
+
 // Bibliothek eines Projekts: alle Komponenten mit gültiger Beschreibung und Vorlage
 export async function listLibrary(siteDir, { withTemplate = false } = {}) {
   const dir = path.join(siteDir, 'components');
@@ -155,7 +173,7 @@ export async function listLibrary(siteDir, { withTemplate = false } = {}) {
     if (!html || !fs.existsSync(path.join(dir, `mx-${name}.css`))) continue;
     const { spec } = validateLibrary(cheerio, { name, html, json });
     if (!spec) continue;
-    out.push({ ...spec, herkunft: typeof json.herkunft === 'string' ? json.herkunft : null, ...(withTemplate ? { template: html } : {}) });
+    out.push({ ...spec, herkunft: typeof json.herkunft === 'string' ? json.herkunft : null, vorschau: previewOf(json), ...(withTemplate ? { template: html } : {}) });
   }
   return out;
 }
@@ -261,9 +279,11 @@ const SLOT_ATTRS = ['src', 'srcset', 'sizes', 'alt', 'width', 'height', 'href', 
 const nestedComp = (node, name, libNames) => classesOf(node).find((k) => k.startsWith('mx-') && k !== `mx-${name}` && !k.startsWith(`mx-${name}--`) && libNames.has(k.slice(3)));
 
 // Slots und eingebettete Komponenten (Schlüssel "@mx-<name>") einer Kopie in Dokumentreihenfolge; nicht in eingebettete hinein
+// Ist die Wurzel selbst ein Slot (z. B. ein Button, dessen Text der Slot ist), zählt sie als dieser Slot.
 function partsOf(root, name, libNames) {
   const map = new Map();
   const add = (k, n) => { if (!map.has(k)) map.set(k, []); map.get(k).push(n); };
+  if (root.attribs?.['data-mx-slot'] !== undefined) { add(root.attribs['data-mx-slot'], root); return map; }
   const walk = (n) => {
     for (const c of n.children || []) {
       if (c.type !== 'tag') continue;
@@ -279,13 +299,15 @@ function partsOf(root, name, libNames) {
 
 // Neues HTML für eine Kopie ({ html, placeholders }) oder { skip: Grund }.
 // placeholders: Pflicht-Slots, die die Kopie nicht hatte (bleiben mit dem Beispielinhalt der Vorlage)
-export function syncInstance(cheerio, $, node, comp, libNames) {
-  const vk = node.attribs['data-mx-variant'];
+// Zusammenführen (from): die Kopie ist eine Instanz der Komponente mx-<from> und wird als Variante <variant> von comp
+// neu aufgebaut; Klassen der alten Vorlage (fromClasses) entfallen.
+export function syncInstance(cheerio, $, node, comp, libNames, { from = comp.name, variant = null, fromClasses = [] } = {}) {
+  const vk = variant || node.attribs['data-mx-variant'];
   if (!comp.varianten.some((v) => v.key === vk)) return { skip: `unbekannte Variante „${vk}“` };
   const f = cheerio.load(renderVariant(cheerio, comp.template, comp, vk), null, false);
   const froot = rootOf(f);
   if (!froot) return { skip: 'Vorlage ohne eindeutiges Wurzelelement' };
-  const oldParts = partsOf(node, comp.name, libNames);
+  const oldParts = partsOf(node, from, libNames);
   const newParts = partsOf(froot, comp.name, libNames);
   for (const [k, srcs] of oldParts) {
     const tgts = newParts.get(k) || [];
@@ -314,9 +336,15 @@ export function syncInstance(cheerio, $, node, comp, libNames) {
   }
   // Wurzel: Kontextklassen und id der Kopie bleiben
   const own = new Set(classesOf(froot));
-  const ctx = classesOf(node).filter((k) => k !== `mx-${comp.name}` && !k.startsWith(`mx-${comp.name}--`) && !own.has(k));
+  const drop = new Set(fromClasses);
+  const ctx = classesOf(node).filter((k) => k !== `mx-${comp.name}` && !k.startsWith(`mx-${comp.name}--`) && k !== `mx-${from}` && !k.startsWith(`mx-${from}--`) && !own.has(k) && !drop.has(k));
   if (ctx.length) f(froot).addClass(ctx.join(' '));
   if (node.attribs.id) froot.attribs.id = node.attribs.id;
+  // Übrige Attribute der Wurzel gehören zur Kopie (z. B. type="submit", data-…, aria-…), die Vorlage zeigt nur Beispiele
+  for (const [a, val] of Object.entries(node.attribs)) {
+    if (a === 'class' || a === 'id' || a.startsWith('data-mx-')) continue;
+    froot.attribs[a] = val;
+  }
   return { html: f.html(froot), placeholders };
 }
 
@@ -464,6 +492,131 @@ export async function deleteFromLibrary(siteDir, name, variantKey) {
   return { name, variant: variantKey || null, unmarked, pages, removedFiles, keptCss, removedSlots };
 }
 
+// ---------- Umbenennen und Zusammenführen ----------
+
+// Klasse mx-<name> (auch als Modifier mx-<name>--…) als ganzes Wort, nicht mx-<name>-weiter
+const nameRe = (name) => new RegExp(`(?<![\\w-])mx-${name}(?=--|[^\\w-]|$)`, 'g');
+
+// Dateien, in denen Klassen von Komponenten stehen: Seiten und Stylesheets unter www, components/*.css|html, overrides.css
+function classFiles(siteDir) {
+  const out = [];
+  const walk = (dir) => {
+    let ents = [];
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const f = path.join(dir, e.name);
+      if (e.isDirectory()) walk(f);
+      else if (/\.(html?|css)$/i.test(e.name)) out.push(f);
+    }
+  };
+  walk(path.join(siteDir, 'www'));
+  walk(path.join(siteDir, 'components'));
+  if (fs.existsSync(path.join(siteDir, 'overrides.css'))) out.push(path.join(siteDir, 'overrides.css'));
+  return out;
+}
+const rel = (siteDir, f) => path.relative(siteDir, f).split(path.sep).join('/');
+
+// Benennt eine Bibliotheks-Komponente um: Dateien, @scope, Klassen und Modifier in allen Seiten, Vorlagen und Stylesheets.
+// Byte-genau: nur die Namen werden ersetzt. Ausgabe: { name, newName, files, replaced }
+export async function renameLibrary(siteDir, name, newName) {
+  const dir = path.join(siteDir, 'components');
+  if (!KEY_RE.test(newName) || newName.length > 60) throw new Error(`Ungültiger Name: ${newName} (a-z, 0-9, Bindestrich)`);
+  if (name === newName) throw new Error('Der neue Name ist der bisherige');
+  const library = await listLibrary(siteDir);
+  const comp = library.find((c) => c.name === name);
+  if (!comp) throw new Error(`Komponente nicht in der Bibliothek: mx-${name}`);
+  if (['css', 'html', 'json'].some((x) => fs.existsSync(path.join(dir, `mx-${newName}.${x}`)))) throw new Error(`mx-${newName} gibt es schon`);
+  const re = nameRe(name);
+  const files = [];
+  let replaced = 0;
+  for (const f of classFiles(siteDir)) {
+    const src = readPage(f);
+    let n = 0;
+    const text = src.text.replace(re, () => { n++; return `mx-${newName}`; });
+    if (!n) continue;
+    fs.writeFileSync(f, text, src.enc);
+    files.push(rel(siteDir, f));
+    replaced += n;
+  }
+  for (const x of ['css', 'html']) fs.renameSync(path.join(dir, `mx-${name}.${x}`), path.join(dir, `mx-${newName}.${x}`));
+  // Beschreibung: Name und Modifier; die Vorschaubreite aus dem Entwurf bleibt erhalten (der Entwurf kennt den alten Namen)
+  const jsonFile = path.join(dir, `mx-${name}.json`);
+  const json = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+  json.name = newName;
+  for (const v of json.varianten || []) if (typeof v.klassen === 'string') v.klassen = v.klassen.replace(re, `mx-${newName}`);
+  const measured = draftWidths(siteDir)[name];
+  const w = { ...(measured ? { breite: measured } : {}), ...(previewOf(json) || {}) };
+  if (Object.keys(w).length) json.vorschau = w;
+  fs.writeFileSync(path.join(dir, `mx-${newName}.json`), JSON.stringify(json, null, 2) + '\n');
+  fs.rmSync(jsonFile);
+  return { name, newName, files, replaced };
+}
+
+// Führt die Komponente <source> in <target> zusammen: Jede Kopie von mx-<source> (auf den Seiten und in den Vorlagen
+// anderer Komponenten) wird als Variante <variant> von mx-<target> neu aufgebaut. Slot-Inhalte nach Schlüssel, Kontextklassen,
+// id und übrige Attribute der Wurzel bleiben. Danach entfallen Beschreibung und Vorlage von mx-<source>; ihr CSS, sobald
+// kein Element die Klasse mehr trägt. Alle Slots von <source> muss es in <target> geben.
+// Ausgabe: { name, into, variant, merged, pages, templates, skipped, placeholders, removedFiles, keptCss, cssRefs }
+export async function mergeLibrary(siteDir, source, target, variant) {
+  const dir = path.join(siteDir, 'components');
+  if (source === target) throw new Error('Quelle und Ziel sind dieselbe Komponente');
+  const cheerio = await loadCheerio();
+  const library = await listLibrary(siteDir, { withTemplate: true });
+  const src = library.find((c) => c.name === source);
+  const tgt = library.find((c) => c.name === target);
+  if (!src) throw new Error(`Komponente nicht in der Bibliothek: mx-${source}`);
+  if (!tgt) throw new Error(`Komponente nicht in der Bibliothek: mx-${target}`);
+  if (!tgt.varianten.some((v) => v.key === variant)) throw new Error(`mx-${target} hat keine Variante „${variant}“`);
+  const missing = src.slots.filter((s) => !tgt.slots.some((t) => t.key === s.key)).map((s) => s.key);
+  if (missing.length) throw new Error(`mx-${target} hat diese Slots von mx-${source} nicht: ${missing.join(', ')}. Erst in mx-${target} ergänzen (Ändern …)`);
+  const libNames = new Set(library.map((c) => c.name));
+  const st = cheerio.load(src.template, null, false);
+  const fromClasses = classesOf(rootOf(st)).filter((k) => k !== `mx-${source}` && !k.startsWith(`mx-${source}--`));
+  const out = { name: source, into: target, variant, merged: 0, pages: [], templates: [], skipped: [], placeholders: [], removedFiles: [], keptCss: false, cssRefs: [] };
+
+  const migrate = (file, where) => {
+    const doc = readPage(file);
+    if (!nameRe(source).test(doc.text)) return 0;
+    const $ = cheerio.load(doc.text, { sourceCodeLocationInfo: true });
+    const edits = [];
+    for (const node of $(`.mx-${source}`).toArray()) {
+      if (node.attribs['data-mx-variant'] === undefined) continue;
+      const loc = node.sourceCodeLocation;
+      if (!loc || loc.endOffset === undefined) { out.skipped.push({ page: where, reason: 'Stelle im Quelltext nicht eindeutig' }); continue; }
+      if (edits.some((e) => loc.startOffset >= e.a && loc.endOffset <= e.b)) continue;
+      const r = syncInstance(cheerio, $, node, tgt, libNames, { from: source, variant, fromClasses });
+      if (r.skip) { out.skipped.push({ page: where, reason: r.skip }); continue; }
+      edits.push({ a: loc.startOffset, b: loc.endOffset, html: r.html });
+      r.placeholders.forEach((s) => out.placeholders.push({ page: where, slot: s }));
+    }
+    if (!edits.length) return 0;
+    let text = doc.text;
+    for (const e of edits.sort((x, y) => y.a - x.a)) text = text.slice(0, e.a) + e.html + text.slice(e.b);
+    fs.writeFileSync(file, text, doc.enc);
+    return edits.length;
+  };
+  for (const p of sitePages(siteDir)) {
+    const n = migrate(path.join(siteDir, 'www', p), '/' + p);
+    if (n) { out.merged += n; out.pages.push('/' + p); }
+  }
+  for (const c of library) {
+    if (c.name === source) continue;
+    const n = migrate(path.join(dir, `mx-${c.name}.html`), `components/mx-${c.name}.html`);
+    if (n) { out.merged += n; out.templates.push(`components/mx-${c.name}.html`); }
+  }
+  for (const x of ['json', 'html']) { fs.rmSync(path.join(dir, `mx-${source}.${x}`), { force: true }); out.removedFiles.push(`components/mx-${source}.${x}`); }
+  // CSS bleibt, solange ein Element die Klasse trägt (z. B. übersprungene Kopien); Verweise in anderen Stylesheets melden
+  const re = nameRe(source);
+  for (const f of classFiles(siteDir)) {
+    if (f === path.join(dir, `mx-${source}.css`)) continue;
+    re.lastIndex = 0;
+    if (!re.test(readPage(f).text)) continue;
+    if (/\.html?$/i.test(f)) out.keptCss = true; else out.cssRefs.push(rel(siteDir, f));
+  }
+  if (!out.keptCss) { fs.rmSync(path.join(dir, `mx-${source}.css`), { force: true }); out.removedFiles.push(`components/mx-${source}.css`); }
+  return out;
+}
+
 // ---------- Kontext für Claude ----------
 
 export function libraryContext(library) {
@@ -492,6 +645,23 @@ function pageStyles(siteDir, page) {
     .filter((t) => (/^<style/i.test(t) || /\brel\s*=\s*["']?[^"'>]*stylesheet/i.test(t)) && !/\sdata-modio/i.test(t)).join('\n');
 }
 
+// Ab dieser Breite (px am Einsatzort) gilt eine Komponente als breit: volle Breite, Varianten untereinander
+const WIDE_FROM = 640;
+
+// Breite beim Anlegen aus den Entwürfen (Komponenten ohne vorschau in der Beschreibung): { <name>: px }, neuester Entwurf gewinnt
+function draftWidths(siteDir) {
+  const out = {};
+  let ids = [];
+  try { ids = fs.readdirSync(path.join(siteDir, 'drafts')).filter((d) => /^D-\d+$/.test(d)).sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))); } catch { return out; }
+  for (const id of ids) {
+    const d = readJson(path.join(siteDir, 'drafts', id, 'draft.json'));
+    const w = Number(d?.rect?.width);
+    if (!d || d.target === 'library' || !d.component?.name || !Number.isFinite(w) || w < 24) continue;
+    out[d.component.name] = Math.round(w);
+  }
+  return out;
+}
+
 // Komponentenseite. Die Stylesheets der Herkunftsseite stehen davor (Schriften, Icon-Fonts usw.); der Server legt sie wie
 // auf jeder Seite in @layer legacy und bindet Tokens, overrides.css und das Komponenten-CSS darüber ein (injectHtml).
 // override = { name, template, spec }: Entwurfsvorschau, die Komponente erscheint mit Vorlage und Beschreibung des Entwurfs.
@@ -511,13 +681,24 @@ export async function libraryPage(siteDir, { slug, title, override = null }) {
   const baseDir = path.posix.dirname(herkunft).split('/').map(encodeURIComponent).join('/');
   const uses = countInstances(cheerio, siteDir, library.map((c) => c.name));
   const usesText = (n) => (n ? `${n}× verwendet` : 'nicht verwendet');
-  const sections = library.map((c) => ({ c, u: uses[c.name] || { total: 0, variants: {} }, n: off[c.name] || 0 })).map(({ c, u, n }) => `<section class="kb-comp" id="mx-${esc(c.name)}" data-kb-name="${esc(c.name)}" data-kb-uses="${u.total}" data-kb-off="${n}">
+  const measured = draftWidths(siteDir);
+  // Schmale Komponenten (Karten, Buttons …) in der Breite ihres Einsatzorts, Varianten nebeneinander; breite und solche
+  // ohne bekannte Breite über die volle Breite, Varianten untereinander. Nur die Darstellung, die Komponente bleibt unverändert.
+  const widthOf = (c) => c.vorschau?.breite || measured[c.name] || null;
+  const sections = library.map((c) => ({ c, u: uses[c.name] || { total: 0, variants: {} }, n: off[c.name] || 0, w: widthOf(c) })).map(({ c, u, n, w }) => {
+    const narrow = w && w < WIDE_FROM;
+    const cols = c.vorschau?.spalten && c.varianten.length > 1 ? Math.min(c.vorschau.spalten, c.varianten.length) : 0;
+    const style = [narrow ? `--kb-w:${w}px` : '', cols ? `--kb-cols:${cols}` : ''].filter(Boolean).join(';');
+    return `<section class="kb-comp${narrow ? ' kb-schmal' : ''}${cols ? ' kb-spalten' : ''}" id="mx-${esc(c.name)}" data-kb-name="${esc(c.name)}" data-kb-uses="${u.total}" data-kb-off="${n}"${w ? ` data-kb-breite="${w}"` : ''}${style ? ` style="${style}"` : ''}>
 <h2>${esc(c.title)} <code>mx-${esc(c.name)}</code></h2>
 ${c.beschreibung ? `<p class="kb-desc">${esc(c.beschreibung)}</p>` : ''}
-<p class="kb-meta">Austauschbar: ${c.slots.length ? c.slots.map((s) => `<code>${esc(s.key)}</code> ${esc(s.label)} (${esc(s.typ)}${s.pflicht ? '' : ', optional'})`).join(' · ') : 'nichts'}${c.herkunft ? ` · aus ${esc(c.herkunft)}` : ''} · ${usesText(u.total)}${n ? ` · <strong>${n} Kopie(n) weichen ab</strong>` : ''}</p>
-${c.varianten.map((v) => `<div class="kb-var" data-kb-variant="${esc(v.key)}" data-kb-uses="${u.variants[v.key] || 0}"><p class="kb-vlabel">${esc(v.label)} <code>${esc(v.key)}</code> <span class="kb-uses">${usesText(u.variants[v.key] || 0)}</span></p>
+<p class="kb-meta">Austauschbar: ${c.slots.length ? c.slots.map((s) => `<code>${esc(s.key)}</code> ${esc(s.label)} (${esc(s.typ)}${s.pflicht ? '' : ', optional'})`).join(' · ') : 'nichts'}${c.herkunft ? ` · aus ${esc(c.herkunft)}` : ''} · ${usesText(u.total)}${n ? ` · <strong>${n} Kopie(n) weichen ab</strong>` : ''}${narrow ? ` · Vorschau ${w} px breit wie am Einsatzort (Ecke unten rechts ziehen)` : ''}</p>
+<div class="kb-vars">
+${c.varianten.map((v) => `<div class="kb-var" data-kb-variant="${esc(v.key)}" data-kb-uses="${u.variants[v.key] || 0}"><p class="kb-vlabel"><span class="kb-vname" title="${esc(v.label)} (${esc(v.key)})">${esc(v.label)} <code>${esc(v.key)}</code></span> <span class="kb-uses">${usesText(u.variants[v.key] || 0)}</span></p>
 <div class="kb-stage">${renderVariant(cheerio, c.template, c, v.key)}</div></div>`).join('\n')}
-</section>`).join('\n');
+</div>
+</section>`;
+  }).join('\n');
   const t = esc(title || slug);
   return `<!doctype html>
 <html lang="de">
@@ -538,15 +719,35 @@ body{margin:0;background:#f6f7f9;color:#1d2330}
 .kb-comp>h2 code,.kb-meta code,.kb-vlabel code{font-size:12px;color:#5b21b6;background:#f3f0ff;padding:1px 5px;border-radius:4px}
 .kb-desc{margin:0 0 6px;font-size:14px}
 .kb-meta{margin:0 0 14px;font-size:13px;color:#667085}
-.kb-var{border-top:1px dashed #e5e7eb;padding-top:12px;margin-top:12px}
-.kb-vlabel{margin:0 0 8px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.kb-vars{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 24px}
+.kb-var{flex:1 1 100%;min-width:0;border-top:1px dashed #e5e7eb;padding-top:12px}
+.kb-schmal .kb-vars{border-top:1px dashed #e5e7eb;padding-top:12px}
+.kb-schmal .kb-var{flex:none;width:min-content;min-width:280px;max-width:100%;border-top:0;padding-top:0}
+.kb-schmal .kb-vname{flex:1 0 100%;width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.kb-schmal .kb-vlabel{row-gap:2px}
+.kb-schmal .kb-uses{margin-right:auto}
+.kb-vlabel{margin:0 0 8px;font-size:13px;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
 .kb-uses{font-weight:400;color:#667085}
-.kb-stage{padding:16px;background:#fff;outline:1px solid #f1f2f4}
+.kb-spalten .kb-vars{display:grid;grid-template-columns:repeat(var(--kb-cols),minmax(0,1fr))}
+.kb-schmal.kb-spalten .kb-vars{grid-template-columns:repeat(var(--kb-cols),max-content)}
+.kb-spalten .kb-var{width:auto}
+.kb-stage{box-sizing:border-box}
+.kb-stage:hover,.kb-stage.kb-drag{outline:1px dashed #98a2b3;outline-offset:3px}
+.kb-schmal .kb-stage{width:calc(var(--kb-w) + 16px);padding-right:16px;min-width:40px;max-width:calc(100vw - 112px);overflow:auto;resize:horizontal}
 </style>
 </head>
 <body>
 <header class="kb-head"><h1>${t} – Komponenten</h1><p>${library.length ? `${library.length} Komponente(n) mit allen Varianten und Beispielinhalten. Mit dem CSS der Herkunftsseite als Grundlage (Schriften, Icons) wie auf den Seiten.` : 'Noch keine Komponenten. Element auswählen und im Dialog „Als Komponente …“ wählen.'}</p></header>
 ${sections}
+<script>
+// Vorschau ziehen: Rahmen bleibt sichtbar, solange gezogen wird (auch wenn der Zeiger die Vorschau verlässt)
+document.addEventListener('pointerdown', (e) => {
+  const st = e.target.closest && e.target.closest('.kb-stage');
+  if (!st) return;
+  st.classList.add('kb-drag');
+  addEventListener('pointerup', () => st.classList.remove('kb-drag'), { once: true });
+});
+</script>
 </body>
 </html>
 `;
@@ -565,9 +766,11 @@ async function main() {
   }
   if (cmd === 'delete' && siteDir && name) exitJson(await deleteFromLibrary(siteDir, name, variant || null));
   if (cmd === 'sync' && siteDir && name) exitJson(await syncLibrary(siteDir, name));
+  if (cmd === 'rename' && siteDir && name && variant) exitJson(await renameLibrary(siteDir, name, variant));
+  if (cmd === 'merge' && siteDir && name && variant && process.argv[6]) exitJson(await mergeLibrary(siteDir, name, variant, process.argv[6]));
   if (cmd === 'uses' && siteDir && name) exitJson(countInstances(await loadCheerio(), siteDir, [name])[name]);
   if (cmd === 'deviations' && siteDir) exitJson(deviations(await loadCheerio(), siteDir, await listLibrary(siteDir, { withTemplate: true })));
-  exitJson({ error: 'Aufruf: node components.mjs list <site-dir> | render <site-dir> <name> [variante] | delete <site-dir> <name> [variante] | sync <site-dir> <name> | uses <site-dir> <name> | deviations <site-dir>' }, 2);
+  exitJson({ error: 'Aufruf: node components.mjs list <site-dir> | render <site-dir> <name> [variante] | delete <site-dir> <name> [variante] | sync <site-dir> <name> | rename <site-dir> <name> <neuer-name> | merge <site-dir> <quelle> <ziel> <variante> | uses <site-dir> <name> | deviations <site-dir>' }, 2);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

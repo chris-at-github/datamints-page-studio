@@ -169,7 +169,7 @@ export function renderStartPage({ sites, token }) {
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'page-import': 'Seite importieren', 'page-delete': 'Seite löschen', 'component-delete': 'Komponente löschen', 'component-sync': 'Kopien angleichen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
+  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'page-import': 'Seite importieren', 'page-delete': 'Seite löschen', 'component-delete': 'Komponente löschen', 'component-sync': 'Kopien angleichen', 'component-rename': 'Komponente umbenennen', 'component-merge': 'Komponenten zusammenführen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');

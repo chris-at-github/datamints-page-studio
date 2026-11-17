@@ -851,6 +851,35 @@ async function handleApi(req, res, url) {
     if (await busyCheck(res, slug, 'Das Angleichen')) return;
     return send(res, 202, { job: await createJob('component-sync', slug, { name }) });
   }
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/components\/(rename|merge)$/)) && req.method === 'POST') {
+    // Komponente umbenennen oder in eine andere zusammenführen (nur neue Projekte)
+    const slug = m[1], action = m[2];
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
+    if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    if ((await readJson(path.join(siteDir(slug), 'site.json'), {})).kind !== 'neu') return sendError(res, 400, 'Komponenten-Bibliothek gibt es nur bei neuen Projekten');
+    const body = await readBody(req);
+    const re = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+    const name = String(body.name || '');
+    const library = await listLibrary(siteDir(slug));
+    if (!library.some((c) => c.name === name)) return sendError(res, 404, 'Komponente nicht in der Bibliothek');
+    if (action === 'rename') {
+      const newName = String(body.newName || '').trim();
+      if (!re.test(newName) || newName.length > 60) return sendError(res, 400, 'Ungültiger Name (a-z, 0-9, Bindestrich)');
+      if (newName === name) return sendError(res, 400, 'Der neue Name ist der bisherige');
+      if (['css', 'html', 'json'].some((x) => fs.existsSync(path.join(siteDir(slug), 'components', `mx-${newName}.${x}`)))) return sendError(res, 409, `mx-${newName} gibt es schon`);
+      if (await busyCheck(res, slug, 'Das Umbenennen')) return;
+      return send(res, 202, { job: await createJob('component-rename', slug, { name, newName }) });
+    }
+    const into = String(body.into || ''), variant = String(body.variant || '');
+    const target = library.find((c) => c.name === into);
+    if (!target || into === name) return sendError(res, 404, 'Ziel-Komponente nicht in der Bibliothek');
+    if (!target.varianten.some((v) => v.key === variant)) return sendError(res, 404, 'Variante nicht gefunden');
+    const src = library.find((c) => c.name === name);
+    const missing = src.slots.filter((s) => !target.slots.some((t) => t.key === s.key)).map((s) => s.key);
+    if (missing.length) return sendError(res, 400, `mx-${into} hat diese Inhalte von mx-${name} nicht: ${missing.join(', ')}. Erst in mx-${into} ergänzen (Ändern …).`);
+    if (await busyCheck(res, slug, 'Das Zusammenführen')) return;
+    return send(res, 202, { job: await createJob('component-merge', slug, { name, into, variant }) });
+  }
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/components\/draft$/)) && req.method === 'POST') {
     // Komponente auf der Komponentenseite ändern oder Variante hinzufügen (Entwurf mit Ziel Bibliothek, nur neue Projekte)
     const slug = m[1];

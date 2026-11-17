@@ -16,6 +16,8 @@ Modio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne Element-
 | `page-delete.sh` | `page-delete.sh <slug> <seite>` |
 | `component-delete.sh` | `component-delete.sh <slug> <name> [variante]` |
 | `component-sync.sh` | `component-sync.sh <slug> <name>` |
+| `component-rename.sh` | `component-rename.sh <slug> <name> <neuer-name>` |
+| `component-merge.sh` | `component-merge.sh <slug> <quelle> <ziel> <variante>` |
 | `project-package.sh` | `project-package.sh <slug>` |
 | `project-export.sh` | `project-export.sh <slug>` |
 | `crawl.sh` | `crawl.sh <slug>` |

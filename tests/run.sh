@@ -696,6 +696,44 @@ set +e; OUT="$(./scripts/component-sync.sh modio-test-neu gibt-es-nicht 2>/dev/n
 check "component-sync.sh: unbekannte Komponente Exit 4" '(( rc == 4 ))'
 ./scripts/rollback.sh modio-test-neu "$SYNC_BEFORE" >/dev/null 2>&1 || true
 check "component-sync.sh: Rücksprung stellt die Kopien wieder her" 'grep -q "class=\"extra\"" "$P_NS" && ! grep -q "<header class=\"kopf\"><h3 data-mx-slot" "$P_NS" "$NS/components/mx-held.html" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+# Komponentenseite: Vorschaubreite (schmale Komponenten nebeneinander in der Breite ihres Einsatzorts)
+LIBPAGE='import("./scripts/lib/components.mjs").then(async (m) => process.stdout.write(await m.libraryPage(process.argv[1], { slug: "t" })))'
+check "Komponentenseite: ohne bekannte Breite volle Breite" '! grep -q "class=\"kb-comp kb-schmal" <<<"$(node -e "$LIBPAGE" "$NS")" && grep -q "class=\"kb-vars\"" <<<"$(node -e "$LIBPAGE" "$NS")"'
+jq '.vorschau = {breite: 280}' "$NS/components/mx-held.json" >"$JOBN.j" && cp "$JOBN.j" "$NS/components/mx-held.json"
+check "Komponentenseite: Breite aus der Beschreibung, Varianten nebeneinander" 'H="$(node -e "$LIBPAGE" "$NS")"; grep -q "class=\"kb-comp kb-schmal\" id=\"mx-held\"" <<<"$H" && grep -q "style=\"--kb-w:280px\"" <<<"$H" && jq -e ".vorschau == {breite: 280}" "$NS/components/mx-held.json" >/dev/null'
+jq '.vorschau = {breite: 1200}' "$NS/components/mx-held.json" >"$JOBN.j" && cp "$JOBN.j" "$NS/components/mx-held.json"
+check "Komponentenseite: breite Komponente über die volle Breite" 'H="$(node -e "$LIBPAGE" "$NS")"; ! grep -q "class=\"kb-comp kb-schmal" <<<"$H" && grep -q "data-kb-breite=\"1200\"" <<<"$H"'
+jq '.vorschau = {breite: 280, spalten: 2}' "$NS/components/mx-held.json" >"$JOBN.j" && cp "$JOBN.j" "$NS/components/mx-held.json"
+check "Komponentenseite: Spalten aus der Beschreibung" 'H="$(node -e "$LIBPAGE" "$NS")"; grep -q "class=\"kb-comp kb-schmal kb-spalten\" id=\"mx-held\"" <<<"$H" && grep -q "style=\"--kb-w:280px;--kb-cols:2\"" <<<"$H"'
+git -C "$NS" checkout -q -- components; rm -f "$JOBN.j"
+# Umbenennen (component-rename.sh)
+CR_BEFORE="$(git -C "$NS" rev-parse HEAD)"
+DEV_HELD="$(node scripts/lib/components.mjs deviations "$NS" | jq .held)"
+OUT="$(./scripts/component-rename.sh modio-test-neu held kachel 2>/dev/null)" || true
+check "component-rename.sh: Dateien, Klassen, Modifier und @scope umbenannt" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && [[ -f "$NS/components/mx-kachel.json" && -f "$NS/components/mx-kachel.html" && -f "$NS/components/mx-kachel.css" && ! -e "$NS/components/mx-held.json" ]] && jq -e ".name == \"kachel\" and (.varianten[1].klassen == \"mx-kachel--hervorgehoben\")" "$NS/components/mx-kachel.json" >/dev/null && grep -q "@scope (.mx-kachel)" "$NS/components/mx-kachel.css" && grep -q "mx-kachel mx-kachel--hervorgehoben" "$P_NS" && ! grep -rqE "mx-held([^a-z0-9-]|--|$)" "$NS/www" "$NS/components" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+check "component-rename.sh: Bibliothek und Abweichungen danach stimmig" 'jq -e ".components | map(.name) == [\"kachel\"]" <<<"$(node scripts/lib/components.mjs list "$NS")" >/dev/null && jq -e ".kachel == $DEV_HELD" <<<"$(node scripts/lib/components.mjs deviations "$NS")" >/dev/null'
+set +e; OUT="$(./scripts/component-rename.sh modio-test-neu kachel Kachel 2>/dev/null)"; rc=$?; set -e
+check "component-rename.sh: ungültiger Name Exit 2" '(( rc == 2 ))'
+./scripts/rollback.sh modio-test-neu "$CR_BEFORE" >/dev/null 2>&1 || true
+check "component-rename.sh: Rücksprung stellt den alten Namen her" '[[ -f "$NS/components/mx-held.json" && ! -e "$NS/components/mx-kachel.json" ]] && grep -q "mx-held mx-held--hervorgehoben" "$P_NS" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+# Zusammenführen (component-merge.sh): mx-knopf wird Variante von mx-held, auch in der Vorlage von mx-box
+CM_BEFORE="$(git -C "$NS" rev-parse HEAD)"
+printf '{"name":"knopf","title":"Knopf","beschreibung":"Knopf.","slots":[{"key":"titel","label":"Text","typ":"text"}],"varianten":[{"key":"standard","label":"Standard","klassen":""}]}\n' >"$NS/components/mx-knopf.json"
+printf '<button class="mx-knopf knopf-alt" type="button" data-mx-variant="standard" data-mx-slot="titel">Los</button>\n' >"$NS/components/mx-knopf.html"
+printf '@scope (.mx-knopf) {\n  :scope { color: red; }\n}\n' >"$NS/components/mx-knopf.css"
+printf '{"name":"box","title":"Box","beschreibung":"Box.","slots":[{"key":"titel","label":"Text","typ":"text"}],"varianten":[{"key":"standard","label":"Standard","klassen":""}]}\n' >"$NS/components/mx-box.json"
+printf '<div class="mx-box" data-mx-variant="standard"><button class="mx-knopf knopf-alt box__aktion" type="button" data-mx-variant="standard" data-mx-slot="titel">Los</button></div>\n' >"$NS/components/mx-box.html"
+printf '@scope (.mx-box) {\n  :scope { padding: 1rem; }\n}\n' >"$NS/components/mx-box.css"
+node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("</main>","<button class=\"mx-knopf knopf-alt seite__ctx\" type=\"submit\" data-x=\"1\" data-mx-variant=\"standard\" data-mx-slot=\"titel\">Absenden</button></main>"))' "$P_NS"
+OUT="$(./scripts/local-commit.sh modio-test-neu "Knopf und Box" 2>/dev/null)" || true
+set +e; OUT="$(./scripts/component-merge.sh modio-test-neu held knopf standard 2>/dev/null)"; rc=$?; set -e
+check "component-merge.sh: fehlende Slots im Ziel Exit 2" '(( rc == 2 )) && grep -q "text, icon, link" <<<"$OUT" && [[ -f "$NS/components/mx-held.json" && -z "$(git -C "$NS" status --porcelain)" ]]'
+OUT="$(./scripts/component-merge.sh modio-test-neu knopf held hervorgehoben 2>/dev/null)" || true
+check "component-merge.sh: Kopien als Variante des Ziels, Inhalt, Kontextklasse und Attribute bleiben" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e ".merged == 2 and .pages == [\"/seiten/startseite.html\"] and .templates == [\"components/mx-box.html\"] and .keptCss == false" <<<"$OUT" >/dev/null && grep -q "<article class=\"mx-held mx-held--hervorgehoben seite__ctx\" data-mx-variant=\"hervorgehoben\" type=\"submit\" data-x=\"1\"><h3 data-mx-slot=\"titel\">Absenden</h3>" "$P_NS" && grep -q "class=\"mx-held mx-held--hervorgehoben box__aktion\"" "$NS/components/mx-box.html" && ! grep -rq "knopf-alt" "$P_NS" "$NS/components/mx-box.html"'
+check "component-merge.sh: Quelle aus der Bibliothek, CSS entfernt, Bibliothek stimmig" '[[ ! -e "$NS/components/mx-knopf.json" && ! -e "$NS/components/mx-knopf.html" && ! -e "$NS/components/mx-knopf.css" ]] && jq -e ".components | map(.name) == [\"box\", \"held\"]" <<<"$(node scripts/lib/components.mjs list "$NS")" >/dev/null && jq -e ".held == $DEV_HELD and .box == 0" <<<"$(node scripts/lib/components.mjs deviations "$NS")" >/dev/null && [[ -z "$(git -C "$NS" status --porcelain)" ]] && [[ "$(git -C "$NS" log -1 --format=%s)" == *"mx-knopf in mx-held (Variante hervorgehoben) zusammengeführt"* ]]'
+check "component-merge.sh: äußere Komponente bleibt gültig, obwohl sie die neuen Slots der eingebetteten nicht beschreibt" 'jq -e ".slots | map(.key) == [\"titel\"]" "$NS/components/mx-box.json" >/dev/null && grep -q "data-mx-slot=\"link\"" "$NS/components/mx-box.html"'
+./scripts/rollback.sh modio-test-neu "$CM_BEFORE" >/dev/null 2>&1 || true
+check "component-merge.sh: Rücksprung" '[[ ! -e "$NS/components/mx-knopf.json" && ! -e "$NS/components/mx-box.json" ]] && ! grep -q "Absenden" "$P_NS" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
 # Komponente auf der Komponentenseite ändern bzw. Variante hinzufügen (Entwurf ohne Kopie auf einer Seite)
 LIBD_BEFORE="$(git -C "$NS" rev-parse HEAD)"
 jq -n '{id:"job-test-neu-lib1", params:{mode:"library", component:"held", variant:"", newVariant:null, prompt:"Ruhiger", viewport:{width:1440,height:900}}}' >"$JOBN.2"

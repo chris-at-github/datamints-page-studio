@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadCheerio, sitePages } from './consistency.mjs';
 import { writeStdout, exitJson } from './stdout.mjs';
-import { validateLibrary, renderVariant } from './components.mjs';
+import { validateLibrary, renderVariant, previewOf } from './components.mjs';
 
 export const NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 export const MAX_HTML = 200 * 1024;
@@ -440,9 +440,13 @@ async function main() {
   const toLibrary = page === '__komponenten';
   if (toLibrary && !v.library) out({ error: 'Ziel Bibliothek: Die Version braucht eine component.json' }, 3);
   let herkunft = '/' + page;
+  // vorschau: Darstellung auf der Komponentenseite (Breite am Einsatzort beim Auswählen); auf der Komponentenseite bleibt sie
+  let vorschau = null;
+  try { vorschau = previewOf(JSON.parse(fs.readFileSync(path.join(siteDir, 'components', `mx-${v.name}.json`), 'utf8'))); } catch { vorschau = null; }
   if (toLibrary) {
     try { herkunft = JSON.parse(fs.readFileSync(path.join(siteDir, 'components', `mx-${v.name}.json`), 'utf8')).herkunft || null; } catch { herkunft = null; }
   } else {
+    try { vorschau = { ...(vorschau || {}), ...(previewOf({ vorschau: { breite: JSON.parse(fs.readFileSync(path.join(draftDir, 'draft.json'), 'utf8')).rect?.width } }) || {}) }; } catch { /* ohne Messung */ }
     if (!sitePages(siteDir).includes(page)) out({ error: `Seite nicht im Abzug: /${page}` }, 1);
     const cheerio = await loadCheerio();
     const file = path.join(siteDir, 'www', page);
@@ -450,6 +454,14 @@ async function main() {
     const r = replaceElement(cheerio, src.text, selector, instanceHtml(cheerio, v));
     if (r.error) out({ error: r.error }, 1);
     fs.writeFileSync(file, r.text, src.enc);
+  }
+  // Spalten der Komponentenseite: aus der component.json der Version (Claude ordnet Varianten aus Kombinationen zeilenweise)
+  if (v.library) {
+    let raw = null;
+    try { raw = JSON.parse(fs.readFileSync(path.join(draftDir, `v${version}`, 'component.json'), 'utf8')); } catch { raw = null; }
+    const sp = previewOf(raw)?.spalten;
+    vorschau = { ...(vorschau || {}), ...(sp ? { spalten: sp } : {}) }; // ohne Angabe bleibt die bisherige
+    if (!Object.keys(vorschau).length) vorschau = null;
   }
   const compDir = path.join(siteDir, 'components');
   fs.mkdirSync(compDir, { recursive: true });
@@ -459,7 +471,7 @@ async function main() {
   if (v.library) {
     // Vorlage und Beschreibung für die Bibliothek; herkunft: Seite, auf die sich relative Pfade der Vorlage beziehen
     fs.writeFileSync(path.join(compDir, `mx-${v.name}.html`), v.html.trim() + '\n');
-    fs.writeFileSync(path.join(compDir, `mx-${v.name}.json`), JSON.stringify({ ...v.library, ...(typeof herkunft === 'string' ? { herkunft } : {}) }, null, 2) + '\n');
+    fs.writeFileSync(path.join(compDir, `mx-${v.name}.json`), JSON.stringify({ ...v.library, ...(typeof herkunft === 'string' ? { herkunft } : {}), ...(vorschau ? { vorschau } : {}) }, null, 2) + '\n');
   }
   out({ name: v.name, title: v.meta.title || '', page: '/' + page, cssFile: `components/mx-${v.name}.css`, library: !!v.library, target: toLibrary ? 'library' : 'page', warnings: v.warnings,
     platzhalter: v.platzhalter, offen: v.befund.filter((b) => !b.umgesetzt).map((b) => `${b.id} ${b.titel}`) });

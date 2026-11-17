@@ -23,9 +23,9 @@
   // Komponentenseite (/__komponenten): keine Seite des Abzugs, deshalb keine Auswahl und keine Änderungserkennung
   var LIBRARY = CFG.library === true;
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, 'component-sync': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, 'component-sync': 1, 'component-rename': 1, 'component-merge': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, 'component-sync': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var STATE_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, 'component-sync': 1, 'component-rename': 1, 'component-merge': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -897,6 +897,8 @@
     'page-delete': 'Seite löschen',
     'component-delete': 'Komponente löschen',
     'component-sync': 'Kopien angleichen',
+    'component-rename': 'Komponente umbenennen',
+    'component-merge': 'Komponenten zusammenführen',
     'areas-sync': 'Bereiche angleichen',
     'local-commit': 'Lokale Änderungen',
     'inspect-apply': 'Inspektor-Änderung',
@@ -2106,6 +2108,77 @@
       (opts.after || sec.querySelector('.kb-meta') || sec.firstChild).after(f);
       (key || ta).focus();
     }
+    // Umbenennen bzw. Zusammenführen: kleines Formular unter der Überschrift, regelbasiert (kein Entwurf)
+    function smallForm(sec, children, goLabel, onGo) {
+      var old = sec.querySelector('[data-modio="kb-form"]'); if (old) old.remove();
+      var f = el('div', { 'data-modio': 'kb-form' });
+      f.style.cssText = 'margin:8px 0 12px;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;font:13px system-ui,sans-serif;display:grid;gap:6px';
+      var err = el('div', { role: 'alert' }); err.style.color = '#b42318';
+      var go = textBtn(goLabel), cancel = textBtn('Abbrechen');
+      go.style.marginLeft = '0';
+      children.forEach(function (c) {
+        if (c.tagName === 'INPUT' || c.tagName === 'SELECT') c.style.cssText = 'font:13px system-ui,sans-serif;padding:5px 7px;border:1px solid #d0d5dd;border-radius:6px';
+        f.appendChild(c);
+      });
+      f.appendChild(el('div', {}, [go, cancel])); f.appendChild(err);
+      cancel.addEventListener('click', function () { f.remove(); });
+      go.addEventListener('click', function () {
+        if (isBusy()) { err.textContent = 'Es läuft noch ein Schritt. Bitte warten.'; return; }
+        var msg = onGo(); if (msg) { err.textContent = msg; return; }
+      });
+      f.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); go.click(); } });
+      (sec.querySelector('.kb-meta') || sec.firstChild).after(f);
+      return { form: f, err: err, go: go };
+    }
+    function runAction(ui, path, body, toast) {
+      ui.go.disabled = true; ui.err.textContent = '';
+      api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/components/' + path, body)
+        .then(function (d) { if (d && d.job) trackJob(d.job); ui.form.remove(); showToast(toast, false); })
+        .catch(function (e) { ui.go.disabled = false; ui.err.textContent = e.status === 409 && !e.message ? 'Es läuft noch ein Auftrag.' : e.message; });
+    }
+    function openRename(sec, name) {
+      var inp = el('input', { type: 'text', value: name, maxlength: '60', spellcheck: 'false', 'aria-label': 'Neuer Name' });
+      var hint = el('div', { text: 'Neuer Name ohne mx-. Klassen, Modifier und @scope werden auf allen Seiten und in allen Vorlagen umbenannt.' });
+      hint.style.color = '#667085';
+      var ui = smallForm(sec, [inp, hint], 'Umbenennen', function () {
+        var n = inp.value.trim().replace(/^mx-/, '');
+        if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(n)) return 'Kleinbuchstaben, Ziffern und Bindestrich, mit einem Buchstaben beginnen.';
+        if (n === name) return 'Das ist der bisherige Name.';
+        runAction(ui, 'rename', { name: name, newName: n }, 'mx-' + name + ' wird in mx-' + n + ' umbenannt …');
+      });
+      inp.focus(); inp.select();
+    }
+    function openMerge(sec, name) {
+      var sel = el('select', { 'aria-label': 'Ziel: Komponente und Variante' });
+      var hint = el('div', { text: 'Alle Kopien von mx-' + name + ' (auf den Seiten und in anderen Komponenten) werden zur gewählten Variante des Ziels; Texte, Bilder, Links und Kontextklassen bleiben. Danach ist mx-' + name + ' nicht mehr in der Bibliothek.' });
+      hint.style.color = '#667085';
+      sel.appendChild(el('option', { value: '', text: 'Lädt …' }));
+      var ui = smallForm(sec, [sel, hint], 'Zusammenführen', function () {
+        if (!sel.value) return 'Bitte Ziel und Variante wählen.';
+        var o = sel.options[sel.selectedIndex];
+        if (o.getAttribute('data-missing')) return 'mx-' + o.getAttribute('data-into') + ' fehlen Inhalte von mx-' + name + ': ' + o.getAttribute('data-missing') + '. Erst dort ergänzen (Ändern …).';
+        if (!confirm('mx-' + name + ' in mx-' + o.getAttribute('data-into') + ' (Variante ' + o.getAttribute('data-variant') + ') zusammenführen?\n\nZurückholen über den Verlauf.')) return;
+        runAction(ui, 'merge', { name: name, into: o.getAttribute('data-into'), variant: o.getAttribute('data-variant') }, 'mx-' + name + ' wird zusammengeführt …');
+      });
+      api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/components').then(function (d) {
+        clear(sel);
+        var list = (d && d.components) || [], src = list.filter(function (c) { return c.name === name; })[0];
+        var others = list.filter(function (c) { return c.name !== name; });
+        if (!others.length) { sel.appendChild(el('option', { value: '', text: 'Keine andere Komponente in der Bibliothek' })); return; }
+        sel.appendChild(el('option', { value: '', text: 'Ziel wählen …' }));
+        others.forEach(function (c) {
+          var missing = ((src && src.slots) || []).filter(function (s) { return !(c.slots || []).some(function (t) { return t.key === s.key; }); }).map(function (s) { return s.key; });
+          var g = el('optgroup', { label: c.title + ' (mx-' + c.name + ')' + (missing.length ? ' – fehlt: ' + missing.join(', ') : '') });
+          (c.varianten || []).forEach(function (v) {
+            var o = el('option', { value: c.name + ':' + v.key, text: v.label + ' (' + v.key + ')', 'data-into': c.name, 'data-variant': v.key });
+            if (missing.length) o.setAttribute('data-missing', missing.join(', '));
+            g.appendChild(o);
+          });
+          sel.appendChild(g);
+        });
+      }).catch(function (e) { clear(sel); ui.err.textContent = e.message; });
+      sel.focus();
+    }
     Array.prototype.forEach.call(document.querySelectorAll('.kb-comp[data-kb-name]'), function (sec) {
       var name = sec.getAttribute('data-kb-name'), uses = Number(sec.getAttribute('data-kb-uses')) || 0;
       var off = Number(sec.getAttribute('data-kb-off')) || 0;
@@ -2116,7 +2189,11 @@
       bEdit.addEventListener('click', function () { openForm(sec, { name: name }); });
       var bVar = textBtn('Variante hinzufügen …', 'Neue Variante mit Claude entwerfen (Entwurf mit Vorschau)');
       bVar.addEventListener('click', function () { openForm(sec, { name: name, newVariant: true }); });
-      if (h) { h.appendChild(bEdit); h.appendChild(bVar); }
+      var bRen = textBtn('Umbenennen …', 'Komponente umbenennen (Klassen auf allen Seiten und in allen Vorlagen)');
+      bRen.addEventListener('click', function () { openRename(sec, name); });
+      var bMerge = textBtn('Zusammenführen …', 'Diese Komponente als Variante einer anderen weiterführen (z. B. Buttons)');
+      bMerge.addEventListener('click', function () { openMerge(sec, name); });
+      if (h) { h.appendChild(bEdit); h.appendChild(bVar); h.appendChild(bRen); h.appendChild(bMerge); }
       if (off) {
         var bSync = textBtn(off + ' Kopie(n) angleichen', 'Abweichende Kopien auf den Seiten nach der Vorlage neu aufbauen; Inhalte und Kontextklassen bleiben');
         bSync.style.borderColor = '#7c3aed'; bSync.style.color = '#5b21b6';
@@ -2136,7 +2213,7 @@
         var lab = v.querySelector('.kb-vlabel');
         if (!lab) return;
         var bv = textBtn('Ändern …', 'Nur die Variante ' + key + ' ändern (Entwurf mit Vorschau)');
-        bv.addEventListener('click', function () { openForm(sec, { name: name, variant: key, after: lab }); });
+        bv.addEventListener('click', function () { openForm(sec, { name: name, variant: key, after: sec.classList.contains('kb-schmal') ? sec.querySelector('.kb-vars') : lab }); }); // Varianten nebeneinander: Formular unter der Reihe
         lab.appendChild(bv);
         if (vars.length < 2) return; // die einzige Variante: Komponente löschen
         lab.appendChild(delButton('Variante ' + key + ' löschen', { name: name, variant: key },
@@ -2387,6 +2464,14 @@
       msg = r.status === 'nochange' ? 'Keine Kopie weicht ab.' : (r.synced || 0) + ' Kopie(n) von mx-' + (r.name || (job.params && job.params.name) || '') + ' angeglichen (' + (r.annotationId || '') + ').';
       if (r.placeholders && r.placeholders.length) msg += '\nMit Beispielinhalt (neue Pflicht-Inhalte): ' + r.placeholders.slice(0, 5).map(function (x) { return x.page + ' ' + x.slot; }).join(', ');
       if (r.skipped && r.skipped.length) msg += '\nNicht angeglichen: ' + r.skipped.slice(0, 5).map(function (x) { return x.page + ' (' + x.reason + ')'; }).join(', ');
+    } else if (job.type === 'component-rename') {
+      msg = 'mx-' + (r.name || '') + ' heißt jetzt mx-' + (r.newName || '') + ' (' + (r.annotationId || '') + ').';
+    } else if (job.type === 'component-merge') {
+      msg = (r.merged || 0) + ' Kopie(n) von mx-' + (r.name || '') + ' sind jetzt mx-' + (r.into || '') + ', Variante ' + (r.variant || '') + ' (' + (r.annotationId || '') + ').';
+      if (r.keptCss) msg += '\nDas CSS von mx-' + r.name + ' bleibt, weil Elemente ohne Kennzeichnung die Klasse noch tragen.';
+      if (r.cssRefs && r.cssRefs.length) msg += '\nStylesheets nennen mx-' + r.name + ' noch: ' + r.cssRefs.join(', ');
+      if (r.placeholders && r.placeholders.length) msg += '\nMit Beispielinhalt: ' + r.placeholders.slice(0, 5).map(function (x) { return x.page + ' ' + x.slot; }).join(', ');
+      if (r.skipped && r.skipped.length) msg += '\nNicht umgestellt: ' + r.skipped.slice(0, 5).map(function (x) { return x.page + ' (' + x.reason + ')'; }).join(', ');
     } else if (job.type === 'rollback') {
       msg = 'Zurückgesprungen.';
     } else if (job.type === 'decision') {
