@@ -23,9 +23,9 @@
   // Komponentenseite (/__komponenten): keine Seite des Abzugs, deshalb keine Auswahl und keine Änderungserkennung
   var LIBRARY = CFG.library === true;
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, 'component-sync': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var STATE_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, 'component-sync': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -872,6 +872,7 @@
     'page-import': 'Seite importieren',
     'page-delete': 'Seite löschen',
     'component-delete': 'Komponente löschen',
+    'component-sync': 'Kopien angleichen',
     'areas-sync': 'Bereiche angleichen',
     'local-commit': 'Lokale Änderungen',
     'inspect-apply': 'Inspektor-Änderung',
@@ -933,7 +934,7 @@
     } else if (PREVIEW && typeof pvLive !== 'undefined') {
       statusEl.classList.add('preview');
       statusEl.appendChild(document.createTextNode(pvLive.shown ? 'Vorschau ' + PREVIEW.draft + ' · v' + pvLive.shown : 'Vorschau ' + PREVIEW.draft + ' · aktuelle Seite'));
-      statusEl.title = 'Entwurfs-Vorschau (Klick öffnet das Panel). Taste V wechselt zwischen Entwurf und aktueller Seite.';
+      statusEl.title = LIBRARY ? 'Entwurfs-Vorschau der Komponentenseite (Klick öffnet das Panel)' : 'Entwurfs-Vorschau (Klick öffnet das Panel). Taste V wechselt zwischen Entwurf und aktueller Seite.';
       statusEl.style.cursor = 'pointer';
       statusEl.onclick = function () { openDrafts(PREVIEW.draft, pvLive.shown || null, true); };
     } else {
@@ -1968,9 +1969,10 @@
       .catch(function (err) { clear(pgList); pgList.appendChild(el('li', { class: 'err', text: 'Fehler: ' + err.message })); });
     setTimeout(function () { pgFilter.focus(); }, 0);
   }
-  // Komponentenseite: Komponenten und Varianten löschen (Verwendungen bleiben als Markup ohne Kennzeichnung)
+  // Komponentenseite: Komponenten ändern, Varianten hinzufügen, Kopien angleichen, Komponenten und Varianten löschen
+  // (Verwendungen bleiben beim Löschen als Markup ohne Kennzeichnung). In der Vorschau eines Entwurfs steuert das Entwürfe-Panel.
   function libraryControls() {
-    if (!LIBRARY) return;
+    if (!LIBRARY || PREVIEW) return;
     function delButton(label, body, question) {
       // liegt im DOM der Seite (nicht im Overlay): eigene Inline-Styles statt Overlay-Klassen
       var b = el('button', { type: 'button', title: label, 'aria-label': label, 'data-modio': 'kb-del' }, [icon('trash', 16)]);
@@ -1985,17 +1987,79 @@
       });
       return b;
     }
+    var BTN = 'cursor:pointer;background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:3px 8px;margin-left:6px;font:12px system-ui,sans-serif;color:#344054;vertical-align:middle';
+    function textBtn(label, title) { var b = el('button', { type: 'button', title: title || label, 'data-modio': 'kb-btn', text: label }); b.style.cssText = BTN; return b; }
+    // Formular unter der Überschrift bzw. der Variante: Auftrag (und für neue Varianten Name und Bezeichnung)
+    function openForm(sec, opts) {
+      var old = sec.querySelector('[data-modio="kb-form"]'); if (old) old.remove();
+      var f = el('div', { 'data-modio': 'kb-form' });
+      f.style.cssText = 'margin:8px 0 12px;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;font:13px system-ui,sans-serif;display:grid;gap:6px';
+      var key = null, lab = null;
+      if (opts.newVariant) {
+        key = el('input', { type: 'text', placeholder: 'name, z. B. kompakt', maxlength: '40', spellcheck: 'false', 'aria-label': 'Name der Variante' });
+        lab = el('input', { type: 'text', placeholder: 'Bezeichnung, z. B. Kompakt', maxlength: '60', 'aria-label': 'Bezeichnung der Variante' });
+        f.appendChild(key); f.appendChild(lab);
+      }
+      var ta = el('textarea', { rows: '3', placeholder: opts.newVariant ? 'Worin unterscheidet sich die Variante?' : opts.variant ? 'Was soll sich an der Variante ' + opts.variant + ' ändern?' : 'Was soll sich ändern?', 'aria-label': 'Auftrag' });
+      var err = el('div', { role: 'alert' }); err.style.color = '#b42318';
+      var go = textBtn('Entwurf erstellen'), cancel = textBtn('Abbrechen');
+      go.style.marginLeft = '0';
+      f.appendChild(ta); f.appendChild(el('div', {}, [go, cancel])); f.appendChild(err);
+      [key, lab, ta].forEach(function (i) { if (i) i.style.cssText = 'font:13px system-ui,sans-serif;padding:5px 7px;border:1px solid #d0d5dd;border-radius:6px'; });
+      cancel.addEventListener('click', function () { f.remove(); });
+      ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go.click(); } });
+      go.addEventListener('click', function () {
+        var body = { name: opts.name, prompt: ta.value.trim() };
+        if (opts.variant) body.variant = opts.variant;
+        if (opts.newVariant) {
+          var k = key.value.trim();
+          if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(k)) { err.textContent = 'Name: Kleinbuchstaben, Ziffern und Bindestrich, mit einem Buchstaben beginnen.'; key.focus(); return; }
+          body.newVariant = { key: k, label: lab.value.trim() || k };
+          if (!body.prompt) body.prompt = 'Neue Variante ' + k;
+        }
+        if (!body.prompt) { err.textContent = 'Bitte beschreiben, was sich ändern soll.'; ta.focus(); return; }
+        go.disabled = true; err.textContent = '';
+        api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/components/draft', body)
+          .then(function (d) { if (d && d.job) trackJob(d.job); f.remove(); showToast('Claude entwirft die Änderung an mx-' + opts.name + ' … Die Vorschau öffnet sich danach.', false); })
+          .catch(function (e) { go.disabled = false; err.textContent = e.status === 409 ? 'Es läuft noch ein Auftrag.' : e.message; });
+      });
+      (opts.after || sec.querySelector('.kb-meta') || sec.firstChild).after(f);
+      (key || ta).focus();
+    }
     Array.prototype.forEach.call(document.querySelectorAll('.kb-comp[data-kb-name]'), function (sec) {
       var name = sec.getAttribute('data-kb-name'), uses = Number(sec.getAttribute('data-kb-uses')) || 0;
+      var off = Number(sec.getAttribute('data-kb-off')) || 0;
       var h = sec.querySelector('h2');
       if (h) h.appendChild(delButton('Komponente mx-' + name + ' löschen', { name: name },
         'Komponente mx-' + name + ' aus der Bibliothek löschen?' + (uses ? '\n\n' + uses + ' Verwendung(en) bleiben als normales Markup (mit Klassen und CSS), aber ohne Kennzeichnung als Komponente.' : '') + '\n\nZurückholen über den Verlauf.'));
+      var bEdit = textBtn('Ändern …', 'Komponente mit Claude ändern (Entwurf mit Vorschau)');
+      bEdit.addEventListener('click', function () { openForm(sec, { name: name }); });
+      var bVar = textBtn('Variante hinzufügen …', 'Neue Variante mit Claude entwerfen (Entwurf mit Vorschau)');
+      bVar.addEventListener('click', function () { openForm(sec, { name: name, newVariant: true }); });
+      if (h) { h.appendChild(bEdit); h.appendChild(bVar); }
+      if (off) {
+        var bSync = textBtn(off + ' Kopie(n) angleichen', 'Abweichende Kopien auf den Seiten nach der Vorlage neu aufbauen; Inhalte und Kontextklassen bleiben');
+        bSync.style.borderColor = '#7c3aed'; bSync.style.color = '#5b21b6';
+        bSync.addEventListener('click', function () {
+          if (isBusy()) { showToast('Es läuft noch ein Schritt. Bitte warten.', true); return; }
+          if (!confirm(off + ' Kopie(n) von mx-' + name + ' nach der Vorlage neu aufbauen?\n\nTexte, Bilder, Links und Kontextklassen bleiben. Nicht eindeutig zuzuordnende Kopien bleiben unverändert.\n\nZurückholen über den Verlauf.')) return;
+          bSync.disabled = true;
+          api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/components/sync', { name: name })
+            .then(function (d) { if (d && d.job) trackJob(d.job); showToast('Kopien werden angeglichen …', false); })
+            .catch(function (e) { bSync.disabled = false; showToast('Angleichen fehlgeschlagen: ' + e.message, true, true); });
+        });
+        if (h) h.appendChild(bSync);
+      }
       var vars = sec.querySelectorAll('.kb-var[data-kb-variant]');
-      if (vars.length < 2) return; // die einzige Variante: Komponente löschen
       Array.prototype.forEach.call(vars, function (v) {
         var key = v.getAttribute('data-kb-variant'), vu = Number(v.getAttribute('data-kb-uses')) || 0;
         var lab = v.querySelector('.kb-vlabel');
-        if (lab) lab.appendChild(delButton('Variante ' + key + ' löschen', { name: name, variant: key },
+        if (!lab) return;
+        var bv = textBtn('Ändern …', 'Nur die Variante ' + key + ' ändern (Entwurf mit Vorschau)');
+        bv.addEventListener('click', function () { openForm(sec, { name: name, variant: key, after: lab }); });
+        lab.appendChild(bv);
+        if (vars.length < 2) return; // die einzige Variante: Komponente löschen
+        lab.appendChild(delButton('Variante ' + key + ' löschen', { name: name, variant: key },
           'Variante „' + key + '“ von mx-' + name + ' löschen?' + (vu ? '\n\n' + vu + ' Verwendung(en) dieser Variante bleiben als normales Markup (Klassen und CSS bleiben), aber ohne Kennzeichnung als Komponente.' : '') + '\n\nZurückholen über den Verlauf.'));
       });
     });
@@ -2235,9 +2299,14 @@
       if (r.warnings && r.warnings.length) {
         msg += '\n\nHinweise der Prüfung:\n' + r.warnings.slice(0, 5).map(function (w) { return '– ' + truncate(w.text || w.rule, 160); }).join('\n');
       }
+      if (job.type === 'draft-apply' && r.deviating) msg += '\n\n' + r.deviating + ' Kopie(n) weichen jetzt von der Vorlage ab. Auf der Komponentenseite „angleichen“.';
     } else if (job.type === 'component-delete') {
       msg = (r.variant ? 'Variante ' + r.variant + ' von mx-' + r.name : 'Komponente mx-' + (r.name || '')) + ' gelöscht (' + (r.annotationId || '') + ').'
         + (r.unmarked ? '\n' + r.unmarked + ' Verwendung(en) bleiben als normales Markup ohne Kennzeichnung.' : '');
+    } else if (job.type === 'component-sync') {
+      msg = r.status === 'nochange' ? 'Keine Kopie weicht ab.' : (r.synced || 0) + ' Kopie(n) von mx-' + (r.name || (job.params && job.params.name) || '') + ' angeglichen (' + (r.annotationId || '') + ').';
+      if (r.placeholders && r.placeholders.length) msg += '\nMit Beispielinhalt (neue Pflicht-Inhalte): ' + r.placeholders.slice(0, 5).map(function (x) { return x.page + ' ' + x.slot; }).join(', ');
+      if (r.skipped && r.skipped.length) msg += '\nNicht angeglichen: ' + r.skipped.slice(0, 5).map(function (x) { return x.page + ' (' + x.reason + ')'; }).join(', ');
     } else if (job.type === 'rollback') {
       msg = 'Zurückgesprungen.';
     } else if (job.type === 'decision') {
@@ -3379,7 +3448,8 @@
   function leavePreview() { location.href = location.pathname + cleanSearch(); }
   // Live-Vorschau: aktuell gezeigter Stand (0 = Aktuell) und das ersetzte Element in der Seite
   var pvLive = { node: null, shown: PREVIEW ? PREVIEW.version : null, lastV: PREVIEW ? PREVIEW.version : null, cache: {} };
-  if (PREVIEW && PREVIEW.name) pvLive.node = document.querySelector('.mx-' + PREVIEW.name);
+  // Komponentenseite: die Komponente steht dort mehrfach (je Variante), deshalb kein Live-Umschalten; Versionen laden die Vorschau neu
+  if (PREVIEW && PREVIEW.name && !LIBRARY) pvLive.node = document.querySelector('.mx-' + PREVIEW.name);
 
   var btnDrafts = iconButton('pencilSparkles', 'Entwürfe', { 'aria-expanded': 'false', 'aria-controls': 'modio-drafts' }, true);
   btnDrafts.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
@@ -3415,11 +3485,16 @@
   function latest(d) { return d.versions.length ? d.versions[d.versions.length - 1] : null; }
   function versionOf(d, v) { return d.versions.filter(function (x) { return x.v === v; })[0] || null; }
   function draftById(id) { return drafts.filter(function (x) { return x.id === id; })[0] || null; }
+  // Wo der Entwurf wirkt: Seite und Selektor oder (Ziel Bibliothek) die Komponentenseite
+  function draftWhere(d) {
+    if (d.target === 'library') return 'Komponentenseite · mx-' + d.component + (d.newVariant ? ' · neue Variante ' + d.newVariant.key : d.variant ? ' · Variante ' + d.variant : '');
+    return (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector;
+  }
   function draftLabel(d) { var l = latest(d); return (l && l.title) || truncate(d.prompt, 60); }
   function draftsApi(path, body) { return api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/drafts' + path, body || {}); }
   // Element der Komponente in der Vorschau finden; Name notfalls aus den Entwurfsdaten (älterer Server ohne preview.name)
   function ensureLiveNode() {
-    if (!PREVIEW || (pvLive.node && pvLive.node.isConnected)) return pvLive.node;
+    if (!PREVIEW || LIBRARY || (pvLive.node && pvLive.node.isConnected)) return pvLive.node;
     if (!PREVIEW.name) {
       var d = draftById(PREVIEW.draft), v = d && versionOf(d, PREVIEW.version);
       if (v && v.name) PREVIEW.name = v.name;
@@ -3430,6 +3505,7 @@
   function liveFor(d) { return !!(PREVIEW && d && PREVIEW.draft === d.id && ensureLiveNode() && pvLive.node.isConnected); }
   // Knopf zur Live-Vorschau für Hinweise, wenn das Panel außerhalb der Vorschau geöffnet ist
   function liveButton(d, v) {
+    if (LIBRARY && d.target === 'library') return null; // Komponentenseite: kein Live-Umschalten
     var b = iconButton('click', PREVIEW && PREVIEW.draft === d.id ? 'Version v' + v.v + ' zeigen' : 'Live-Vorschau v' + v.v + ' öffnen');
     b.addEventListener('click', function () { showLive(d, v.v); });
     return b;
@@ -3626,7 +3702,7 @@
           el('span', { class: 'spacer' }),
           x.status === 'applied' ? el('span', { class: 'badge', text: 'übernommen ' + (x.appliedAs || '') }) : el('span', { class: 'dver', text: (x.versions.length ? x.versions.length + ' Version(en)' : x.external ? 'in claude.ai' : '0 Versionen') + (x.component ? ' · Komponente' : x.revises ? ' · Überarbeitung' : '') }),
         ]),
-        el('span', { class: 'step-sel', text: [x.page === currentPage() ? 'diese Seite' : x.page, x.selector].join(' · ') }),
+        el('span', { class: 'step-sel', text: draftWhere(x) }),
         el('span', { class: 'step-date', text: fmtDate((l && l.created) || x.created) }),
       ]);
       b.addEventListener('click', function () { draftCurrent = x.id; draftVersion = null; draftToggles = {}; draftBefund = {}; dScroll.scrollTop = 0; renderDrafts(); });
@@ -3642,7 +3718,7 @@
     var v = versionOf(d, draftVersion) || latest(d);
     if (v) draftVersion = v.v;
     dTitle.textContent = d.id + (v && v.title ? ' · ' + v.title : '');
-    dBody.appendChild(el('div', { class: 'step-sel', text: (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector + (d.component ? ' · Komponente mx-' + d.component + ' für die Bibliothek' + (d.renames ? ' (umbenannt aus mx-' + d.renames + ')' : '') : d.revises ? ' · Überarbeitung von mx-' + d.revises : '') }));
+    dBody.appendChild(el('div', { class: 'step-sel', text: d.target === 'library' ? draftWhere(d) : draftWhere(d) + (d.component ? ' · Komponente mx-' + d.component + ' für die Bibliothek' + (d.renames ? ' (umbenannt aus mx-' + d.renames + ')' : '') : d.revises ? ' · Überarbeitung von mx-' + d.revises : '') }));
     dBody.appendChild(el('div', { class: 'step-prompt', text: d.prompt }));
     if (!isOpen) dBody.appendChild(el('span', { class: 'dstate', text: d.status === 'applied' ? 'übernommen als ' + d.appliedAs + ' (v' + d.appliedVersion + ')' : 'verworfen' }));
     if (!v) {
@@ -3676,6 +3752,7 @@
       var b = el('button', { type: 'button', text: 'v' + x.v + (x.source === 'import' ? ' ↓' : ''), 'data-fk': 'vt-' + x.v, title: (x.source === 'import' ? 'Import aus claude.ai: ' : '') + x.prompt, 'aria-pressed': String(pressed) });
       b.addEventListener('click', function () {
         if (live) { showLive(d, x.v); return; }
+        if (LIBRARY && PREVIEW && PREVIEW.draft === d.id) { if (x.v !== PREVIEW.version) location.href = previewUrl(d, x.v); return; } // Komponentenseite: neu laden
         if (draftVersion !== x.v) { draftVersion = x.v; draftToggles = {}; draftBefund = {}; }
         renderDrafts();
       });
@@ -3791,6 +3868,8 @@
     var notes = draftNotes[d.id] = draftNotes[d.id] || [];
     var nsec = el('section', { class: 'dsec' }, [el('h3', { text: 'Hinweise zu Elementen' + (notes.length ? ' (' + notes.length + ')' : '') })]);
     var canPick = live && pvLive.shown;
+    if (d.target === 'library') nsec = null; // Komponentenseite: die Komponente steht mehrfach da, Wünsche ins Textfeld
+    if (nsec) {
     var bPick = iconButton('click', 'Element im Entwurf wählen', { 'data-fk': 'note-pick', disabled: canPick ? null : '' });
     bPick.title = canPick ? 'Ein Element der Komponente anklicken und beschreiben, was sich ändern soll (Esc bricht ab)' : 'In der Vorschau einer Version möglich';
     bPick.addEventListener('click', function () { startSelecting('draftnote'); showToast('Element in der Komponente anklicken (↑ = Elternelement, Esc bricht ab).', false); });
@@ -3813,6 +3892,7 @@
     });
     if (notes.length) nsec.appendChild(nlist);
     dBody.appendChild(nsec);
+    }
 
     if (isOpen) renderClaudeSection(d, v, false);
 
@@ -3827,7 +3907,7 @@
     }
     updateNewLabel();
     ta.addEventListener('input', function () { draftText[d.id] = ta.value; });
-    var bApply = iconButton('check', 'v' + v.v + ' übernehmen', { class: 'primary', title: 'Ersetzt das Element in der Seite durch diese Version (Schritt mit Prüfung und Verlauf)' });
+    var bApply = iconButton('check', 'v' + v.v + ' übernehmen', { class: 'primary', title: d.target === 'library' ? 'Ersetzt Vorlage, CSS und Beschreibung der Komponente durch diese Version (Schritt mit Prüfung und Verlauf)' : 'Ersetzt das Element in der Seite durch diese Version (Schritt mit Prüfung und Verlauf)' });
     var bDiscard = iconButton('trash', 'Verwerfen', { class: 'ghost danger' });
     var err = el('div', { class: 'err', role: 'alert' });
     dBody.appendChild(el('section', { class: 'dsec' }, [el('h3', { text: 'Nachbessern' }), ta, err, el('div', { class: 'row end' }, [bNew])]));
@@ -3868,7 +3948,10 @@
         .catch(function (e) { err.textContent = e.status === 409 ? 'Es läuft noch ein Auftrag.' : 'Fehlgeschlagen: ' + e.message; bNew.disabled = false; });
     });
     bApply.addEventListener('click', function () {
-      if (!confirm('Version ' + v.v + ' von ' + d.id + ' übernehmen? Das Element auf ' + d.page + ' wird durch die Komponente ersetzt (als Schritt im Verlauf, Rücksprung möglich).' + (Object.keys(draftToggles).length ? '\n\nHinweis: Umgeschaltete Bausteine werden nicht übernommen. Dafür erst „Neue Version“.' : ''))) return;
+      var question = d.target === 'library'
+        ? 'Version ' + v.v + ' von ' + d.id + ' übernehmen? Vorlage, CSS und Beschreibung von mx-' + d.component + ' werden ersetzt; das CSS wirkt sofort auf allen Seiten. Kopien mit geändertem Aufbau gleichst du danach auf der Komponentenseite an.\n\nSchritt im Verlauf, Rücksprung möglich.'
+        : 'Version ' + v.v + ' von ' + d.id + ' übernehmen? Das Element auf ' + d.page + ' wird durch die Komponente ersetzt (als Schritt im Verlauf, Rücksprung möglich).';
+      if (!confirm(question + (Object.keys(draftToggles).length ? '\n\nHinweis: Umgeschaltete Bausteine werden nicht übernommen. Dafür erst „Neue Version“.' : ''))) return;
       bApply.disabled = true;
       draftsApi('/' + d.id + '/apply', { version: v.v })
         .then(function (data) { if (data && data.job) trackJob(data.job); showToast(d.id + ' v' + v.v + ' wird übernommen …', false); })
@@ -4019,7 +4102,7 @@
   dBack.addEventListener('click', function () { draftCurrent = null; dScroll.scrollTop = 0; renderDrafts(); });
   document.addEventListener('keydown', function (e) {
     // V: in der Vorschau zwischen Entwurf und aktueller Seite wechseln (live)
-    if (!PREVIEW || selecting || e.ctrlKey || e.metaKey || e.altKey || (e.key !== 'v' && e.key !== 'V')) return;
+    if (!PREVIEW || LIBRARY || selecting || e.ctrlKey || e.metaKey || e.altKey || (e.key !== 'v' && e.key !== 'V')) return;
     var t = e.composedPath ? e.composedPath()[0] : e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     var d = draftById(PREVIEW.draft);
