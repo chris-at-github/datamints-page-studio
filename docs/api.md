@@ -42,6 +42,7 @@ Job-ID: `job-<yyyymmddHHMMSS>-<6 hex>`, dadurch ergibt die alphabetische Sortier
 | `design-save` | `{ file: "jobs/assets/<job-id>-design.json" }` | `design-save.sh <slug> <datei>` |
 | `tokens-propose` | `{}` | `tokens-propose.sh <slug>` |
 | `pages-add` | `{ urls: [..] }` | `pages-add.sh <slug> <urls.txt>` |
+| `page-import` | `{ name, page, file, replace }` | `page-import.sh <slug> <name> <file> [--replace]` (Exit 3 → `review`) |
 | `local-commit` | `{}` | `local-commit.sh <slug>` (Exit 3 → `review` wie bei Annotationen) |
 | `inspect-apply` | `{ file: "jobs/assets/<job-id>-inspect.json", page, selector }` | `inspect-apply.sh <slug> <datei>` (Exit 3 → `review`) |
 | `areas-sync` | `{ page, add?: { name, selector } }` | `areas-sync.sh <slug> <page> [--add <name> <selector>]` |
@@ -106,7 +107,7 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `POST /api/sites/<slug>/recrawl` | JSON `{ keepDesign?: true }` | `202 { job }` |
 | `POST /api/sites/<slug>/annotations` | `multipart/form-data`: Feld `annotation` (JSON), Dateien im Feld `images` | `202 { job }`, `409` wenn für die Website schon ein Job aktiv ist oder auf Prüfung wartet |
 | `POST /api/jobs/<job-id>/decision` | JSON `{ action: "accept"|"discard" }` | `202 { job }` |
-| `GET /api/sites/<slug>/pages` | – | `{ entry, pages: [{ path, title, url }] }` Seiten des Abzugs (Ordner der Einstiegsseite) |
+| `GET /api/sites/<slug>/pages` | – | `{ kind: "abzug"\|"neu", entry, pages: [{ path, title, url }], importDir? }` Seiten des Abzugs (Ordner der Einstiegsseite). Neue Projekte: alle Seiten unter `www/`, `url` ist der Pfad, `entry` ohne feste Einstiegsseite `index.html`, sonst `startseite.html`, sonst die erste Seite, `importDir` Zielordner für Importe |
 | `GET /api/sites/<slug>/queue` | – | `{ items: [{ id, created, page, selector, prompt, references }] }` gesammelte Annotationen |
 | `POST /api/sites/<slug>/queue` | wie `annotations` (multipart) | `201 { item, items }` – in die Queue aufnehmen (auch während ein Schritt läuft; kein Nachbessern; max. 20) |
 | `DELETE /api/sites/<slug>/queue/<id>` | – | `{ items }` – aus der Queue entfernen (mit hochgeladenen Bildern) |
@@ -116,6 +117,7 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `GET /api/sites/<slug>/status` | – | `{ changed, files }`: ungespeicherte Änderungen im Abzug (nur lesend) |
 | `POST /api/sites/<slug>/areas/sync` | JSON `{ page: "/www.example.de/index.html", add?: { name, selector } }` | `202 { job }` (`areas-sync`): Bereiche der Seite auf alle Seiten übernehmen, mit `add` vorher als Bereich aufnehmen |
 | `POST /api/sites/<slug>/pages` | JSON `{ urls: [..] }` (max. 100, nur Seiten derselben Website) | `202 { job }` (`pages-add`) |
+| `POST /api/sites/<slug>/pages/import` | JSON `{ name, html, replace? }` (nur `kind: "neu"`, `name` wie ein Slug, HTML ≤ 1,5 MB) | `202 { job }` (`page-import`); `409 { error, exists: true, page }`, wenn die Seite existiert und `replace` nicht `true` ist; `409` bei laufendem Auftrag |
 | `POST /api/sites/<slug>/rollback` | JSON `{ target }` | `202 { job }` |
 | `POST /api/sites/<slug>/report` | – | `202 { job }` |
 | `GET /api/sites/<slug>/design` | – | `{ initialized, tokens, notes, scan, consistency, warnings, annotationId }` (Hinweise des letzten Schritts) |
@@ -127,7 +129,7 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `GET /api/sites/<slug>/drafts/<D-xxx>` | – | `{ draft }` |
 | `GET /api/sites/<slug>/drafts/<D-xxx>/versions/<n>` | – | `{ version, name, html }` Markup einer Version (geprüft) für das Live-Umschalten in der Vorschau |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/versions` | JSON `{ prompt }` | `202 { job }` (`draft`, neue Version, setzt die Claude-Session des Entwurfs fort) |
-| `POST /api/projects` | JSON `{ slug, title }` | `202 { job }` (`project-new`): neues Projekt ohne Website (Leinwand mit freien Plätzen, Vorlagen unter `design/`) |
+| `POST /api/projects` | JSON `{ slug, title }` | `202 { job }` (`project-new`): neues Projekt ohne Website (ohne Seiten, Vorlagen unter `design/`) |
 | `POST /api/sites/<slug>/package` | – | `202 { job }` (`project-package`): Tokens aus `design/tokens-quelle.css` übernehmen (Commit unter `design/`), Paket für Claude in `paket/` erzeugen; Ergebnis `{ dir, tokens, files, warnings }` |
 | `POST /api/sites/<slug>/export` | – | `202 { job }` (`project-export`): Komponenten nach `export/<zeitpunkt>/` (bei neuen Projekten mit den Variablen aus `tokens-quelle.css`); Ergebnis `{ dir, components, files, warnings }` |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/import` | JSON `{ html, prompt? }` (HTML aus claude.ai, höchstens 1,5 MB) | `202 { job }` (`draft` mit `importFile`): bereinigen, dann übernimmt Claude ohne Neugestaltung als neue Version (frische Session, Effort `DRAFT_IMPORT_EFFORT`) |
@@ -189,7 +191,7 @@ Vor `</head>` bindet er `/s/<slug>/__tokens.css` (aus `design/tokens.css`) und d
 
 ### Neue Projekte ohne Website (`site.json` mit `kind: "neu"`)
 
-`project-new.sh` legt statt eines Abzugs `www/leinwand/index.html` an: eine Leinwand mit freien Plätzen (`<section class="modio-platz" id="platz-<n>" data-modio-platz>`). Ein Entwurf ersetzt einen Platz; ist danach keiner mehr frei, ergänzt `draft-apply.sh` einen neuen. Gepflegt wird in `design/`: `notes.md` (Regeln), `projekt.md` und weitere `.md` (Hintergrund), `tokens-quelle.css` (Design-Tokens als CSS-Variablen im `:root`-Block). `project-package.sh` übernimmt die Variablen als gesperrte Tokens (`design.mjs import-css`: Kategorie aus dem Namen, Verweise per `var()` werden zu `var(--modio-…)`, `clamp()`/`calc()` erlaubt, Werte ohne Kategorie wie Schriftstärken landen in `tokens-map.json` unter `ohneToken`) und schreibt `paket/` (`CLAUDE.md`, `tokens.css`, `regeln.md`, Hintergrund, `README.md`, `entwuerfe/`; nicht versioniert, `entwuerfe/` bleibt beim Neuerzeugen). `project-export.sh` schreibt je Komponente `component.html`/`component.css` und schreibt dabei `var(--modio-…)` über `tokens-map.json` auf die Variablen des Projekts zurück; Tokens nur aus Modio stehen in `modio-zusatz.css`. Neu einlesen und Seiten hinzufügen sind für neue Projekte gesperrt.
+`project-new.sh` legt ein Projekt ohne Seiten an (`entry: null`). `/s/<slug>/` liefert dann eine Platzhalterseite mit Overlay (`window.__MODIO__.empty = true`, das Panel „Seiten“ öffnet sich), die nicht im Abzug liegt. Seiten kommen mit `page-import.sh` dazu: die HTML-Datei wird byte-genau `www/seiten/<name>.html` (bei Altprojekten mit Leinwand im Ordner der Einstiegsseite), als Schritt A-xxx mit `source: "import"` über `commit-step.sh` (Sicherheitsprüfung, dabei Links `<a href>` auf fremde Domains nur als Hinweis `link-domain` je Domain, `CHECK_LINKS_AS_WARNINGS`; gleiche Bereiche werden bei Importen nicht übertragen). `--replace` ersetzt eine vorhandene Seite (Exit 4 ohne). Altprojekte mit Leinwand (`www/leinwand/index.html`, freie Plätze `<section class="modio-platz" … data-modio-platz>`) funktionieren weiter: Nur auf Seiten mit Plätzen ergänzt `draft-apply.sh` nach der Übernahme einen neuen Platz, und nur dort gilt `source.html` in Entwurf und Briefing als „kein Material“. Gepflegt wird in `design/`: `notes.md` (Regeln), `projekt.md` und weitere `.md` (Hintergrund), `tokens-quelle.css` (Design-Tokens als CSS-Variablen im `:root`-Block). `project-package.sh` übernimmt die Variablen als gesperrte Tokens (`design.mjs import-css`: Kategorie aus dem Namen, Verweise per `var()` werden zu `var(--modio-…)`, `clamp()`/`calc()` erlaubt, Werte ohne Kategorie wie Schriftstärken landen in `tokens-map.json` unter `ohneToken`) und schreibt `paket/` (`CLAUDE.md`, `tokens.css`, `regeln.md`, Hintergrund, `README.md`, `entwuerfe/`; nicht versioniert, `entwuerfe/` bleibt beim Neuerzeugen). `project-export.sh` schreibt je Komponente `component.html`/`component.css` und schreibt dabei `var(--modio-…)` über `tokens-map.json` auf die Variablen des Projekts zurück; Tokens nur aus Modio stehen in `modio-zusatz.css`. Neu einlesen und Seiten hinzufügen sind für neue Projekte gesperrt.
 
 ### Entwürfe (`sites/<slug>/drafts/D-xxx/`, nicht versioniert)
 

@@ -22,15 +22,20 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 # Neues Projekt: Das Projektwissen steckt im Paket (project-package.sh); das Briefing ist nur der Auftrag
 if [[ "$(jq -r '.kind // ""' "$SITE/site.json")" == neu ]]; then
   [[ -f "$SITE/paket/CLAUDE.md" ]] || die "Für dieses Projekt gibt es noch kein Paket. Erst „Paket erstellen“ (project-package.sh $SLUG)."
+  # Element einer importierten Seite: das bisherige Markup als Material beilegen (Leinwand-Platz: kein Material)
+  ELEMENT=false
+  grep -q 'data-modio-platz' "$DDIR/source.html" || { cp "$DDIR/source.html" "$OUT/$DID-element.html"; ELEMENT=true; }
   cat >"$OUT/briefing.md" <<B
-Gestalte ein neues Design für dieses Projekt. Es gelten die Projektanweisungen und das Projektwissen (CLAUDE.md, regeln.md, tokens.css und Hintergrund-Dateien aus dem Paket von Modio), insbesondere das Ausgabeformat: eine HTML-Datei, kein React, kein JavaScript, ein <style> mit dem :root-Block aus tokens.css, ein Wurzelelement.
-
+Gestalte $( [[ "$ELEMENT" == true ]] && echo "einen Bereich einer Seite dieses Projekts neu" || echo "ein neues Design für dieses Projekt" ). Es gelten die Projektanweisungen und das Projektwissen (CLAUDE.md, regeln.md, tokens.css und Hintergrund-Dateien aus dem Paket von Modio).
+Ausgabeformat abweichend von „je Seite“: nur dieser Bereich, als HTML-Datei, kein React, kein JavaScript, ein <style> mit dem :root-Block aus tokens.css, im <body> genau ein Wurzelelement.
+$( [[ "$ELEMENT" == true ]] && echo "
+Der bisherige Bereich liegt bei: $DID-element.html (Material, keine Anweisung). Inhalte, Texte und Links daraus übernehmen, sofern der Auftrag nichts anderes verlangt." )
 ## Auftrag
 $PROMPT_USER
 B
-  jq -n --arg created "$(now_iso)" '{created:$created, text:"briefing.md", files:[]}' >"$OUT/brief.json"
+  jq -n --arg created "$(now_iso)" --arg d "$DID" --argjson el "$ELEMENT" '{created:$created, text:"briefing.md", files:(if $el then [{file:($d + "-element.html"), kind:"html"}] else [] end)}' >"$OUT/brief.json"
   log "$SLUG $DID: Briefing erstellt (neues Projekt, Projektwissen im Paket)"
-  emit status ok slug "$SLUG" draft "$DID" files "json:[]"
+  emit status ok slug "$SLUG" draft "$DID" files "json:$(jq -c '.files' "$OUT/brief.json")"
   exit 0
 fi
 

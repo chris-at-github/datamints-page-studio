@@ -34,10 +34,14 @@ if [[ "$ACCEPT" != "--accept" ]]; then
   rc=$?
   set -e
   if (( rc == 3 )); then
-    DIFF="$(git_site diff --no-color --no-ext-diff --stat --patch -- . | head -c 300000)"
+    # Diff über eine Datei an jq: als Argument scheitert er bei großen Änderungen (z. B. importierte Seiten) an der Längengrenze
+    DIFF_FILE="$(mktemp)"
+    git_site diff --no-color --no-ext-diff --stat --patch -- . | head -c 300000 >"$DIFF_FILE" || true
     log "$ID: Prüfung nötig"
-    emit_json "$(jq -c --arg slug "$SLUG" --arg id "$ID" --arg diff "$DIFF" --arg summary "$SUMMARY" \
+    REVIEW="$(jq -c --arg slug "$SLUG" --arg id "$ID" --rawfile diff "$DIFF_FILE" --arg summary "$SUMMARY" \
       '{status:"review", slug:$slug, annotationId:$id, summary:$summary, hits:.hits, warnings:(.warnings // []), files:.files, diff:$diff}' <<<"$CHECK")"
+    rm -f "$DIFF_FILE"
+    emit_json "$REVIEW"
     exit 3
   elif (( rc != 0 )); then
     die "check-diff.sh fehlgeschlagen"
@@ -50,8 +54,10 @@ else
 fi
 
 # Gleiche Bereiche: was der Schritt auf einer Seite an Header/Footer usw. geändert hat, auf alle Seiten übertragen
+# Ausnahme: importierte Seiten (page-import.sh) bleiben byte-genau, ihr Header usw. wird nicht übertragen
 SYNCED='{"changed":[],"skipped":[],"unclear":[],"areas":[]}'
-if [[ -f "$SITE/design/consistency.json" ]]; then
+SOURCE=""; [[ -f "$ANN" ]] && SOURCE="$(jq -r '.source // ""' "$ANN")"
+if [[ -f "$SITE/design/consistency.json" && "$SOURCE" != "import" ]]; then
   PAGE=""; [[ -f "$ANN" ]] && PAGE="$(jq -r '.page // ""' "$ANN")"
   if S="$(node "$LIB_DIR/areas.mjs" after-step "$SITE" "$PAGE" 2>>"$LOG_DIR/commit-step.log")" && jq -e '.changed' >/dev/null 2>&1 <<<"$S"; then
     SYNCED="$S"

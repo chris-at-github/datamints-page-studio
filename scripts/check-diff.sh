@@ -10,17 +10,19 @@ require_site "${1:-}"
 ID="${2:-}"
 if [[ -n "$ID" ]]; then valid_annotation_id "$ID" || usage "check-diff.sh <slug> [annotation-id]"; fi
 
-REMEMBER=false; ALLOW_TOKEN_CHANGE=false
+REMEMBER=false; ALLOW_TOKEN_CHANGE=false; LINKS_AS_WARNINGS=false
 if [[ -n "$ID" && -f "$SITE/annotations/$ID.json" ]]; then
   REMEMBER="$(jq -r 'if .remember == true then "true" else "false" end' "$SITE/annotations/$ID.json")"
   ALLOW_TOKEN_CHANGE="$(jq -r 'if .allow_token_change == true then "true" else "false" end' "$SITE/annotations/$ID.json")"
+  # Seitenimport in ein neues Projekt (page-import.sh): Links auf fremde Domains nur als Hinweis
+  [[ "$(jq -r '.source // ""' "$SITE/annotations/$ID.json")" == import && "$(site_kind "$SITE")" == neu ]] && LINKS_AS_WARNINGS=true
 fi
 
 # Neue Dateien sichtbar machen, ohne sie zu stagen
 git_site add --intent-to-add --all
 NAMES="$(mktemp)"; trap 'rm -f "$NAMES"' EXIT
 git_site diff --name-only -z >"$NAMES"
-RESULT="$(git_site diff --no-color --no-ext-diff -U0 | CHECK_REMEMBER="$REMEMBER" CHECK_ALLOW_TOKEN_CHANGE="$ALLOW_TOKEN_CHANGE" \
+RESULT="$(git_site diff --no-color --no-ext-diff -U0 | CHECK_REMEMBER="$REMEMBER" CHECK_ALLOW_TOKEN_CHANGE="$ALLOW_TOKEN_CHANGE" CHECK_LINKS_AS_WARNINGS="$LINKS_AS_WARNINGS" \
   node "$LIB_DIR/check-diff.mjs" "$SITE" "$NAMES")" || die "Diff-Prüfung fehlgeschlagen"
 COUNT="$(jq '.hits | length' <<<"$RESULT")"
 WARN="$(jq '.warnings | length' <<<"$RESULT")"

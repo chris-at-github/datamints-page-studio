@@ -126,7 +126,7 @@ export function renderStartPage({ sites, token }) {
   </section>
   <section>
     <h2>Neues Projekt (ohne Website)</h2>
-    <p class="muted">Für neue Designs ohne bestehende Website. Modio legt die Ordnerstruktur an; danach die Angaben in <code>sites/&lt;kurzname&gt;/design/</code> pflegen (notes.md, projekt.md, tokens-quelle.css) und „Paket erstellen“ wählen.</p>
+    <p class="muted">Für neue Designs ohne bestehende Website. Modio legt ein Projekt ohne Seiten an. Danach „Öffnen“ und unten in der Leiste über „Seiten › Seite importieren …“ HTML-Seiten aus Claude Chat einspielen und nachbearbeiten. Regeln, Hintergrund und Tokens pflegst du in <code>sites/&lt;kurzname&gt;/design/</code> (notes.md, projekt.md, tokens-quelle.css), „Paket erstellen“ bereitet sie für ein Projekt in claude.ai auf.</p>
     <form id="new-project">
       <div class="row">
         <div><label for="p-title">Titel</label><input id="p-title" name="title" type="text" maxlength="80" required placeholder="z. B. Relaunch Musterfirma"></div>
@@ -169,7 +169,7 @@ export function renderStartPage({ sites, token }) {
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
+  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'page-import': 'Seite importieren', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');
@@ -326,7 +326,8 @@ export function renderStartPage({ sites, token }) {
       if ((j.type === 'local-commit' || j.type === 'inspect-apply') && j.status === 'done' && j.result) details.append(j.result.status === 'nochange' ? 'keine Änderungen' : 'übernommen als ' + (j.result.annotationId || ''));
       if ((j.type === 'local-commit' || j.type === 'inspect-apply') && j.status === 'review') details.append('Prüfung nötig – im Overlay entscheiden');
       if (j.type === 'areas-sync' && j.status === 'done' && j.result) details.append((j.result.areas || []).join(', ') + ': ' + ((j.result.changed || []).length ? (j.result.changed || []).length + ' Seite(n) angeglichen' : 'schon gleich'));
-      if (j.type === 'project-new' && j.status === 'done' && j.result) details.append('Angaben pflegen in ' + j.result.design + ', dann „Paket erstellen“');
+      if (j.type === 'project-new' && j.status === 'done' && j.result) details.append('Öffnen und über „Seiten › Seite importieren …“ die erste Seite einspielen');
+      if (j.type === 'page-import' && j.result?.page) details.append(j.result.page + (j.result.replaced ? ' ersetzt' : ' importiert'));
       if ((j.type === 'project-package' || j.type === 'project-export') && j.status === 'done' && j.result) {
         details.append((j.type === 'project-package' ? 'Paket: ' : (j.result.components || []).length + ' Komponente(n): ') + j.result.dir);
         for (const w of j.result.warnings || []) { const d = document.createElement('div'); d.className = 'muted'; d.textContent = '⚠ ' + w; details.append(d); }

@@ -24,7 +24,7 @@ if ! curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then
   SERVER_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.3; done
 fi
-cleanup() { [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; [[ -n "${SRV_PID:-}" ]] && kill "$SRV_PID" 2>/dev/null; [[ -n "${TEST_JOBS_DIR:-}" ]] && rm -rf "$TEST_JOBS_DIR"; rm -rf "$S" "sites/modio-test-neu"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
+cleanup() { [[ -n "$SERVER_PID" ]] && { kill "$SERVER_PID" 2>/dev/null || true; }; [[ -n "${SRV_PID:-}" ]] && { kill "$SRV_PID" 2>/dev/null || true; }; [[ -n "${TEST_JOBS_DIR:-}" ]] && rm -rf "$TEST_JOBS_DIR"; rm -rf "$S" "sites/modio-test-neu" "sites/modio-test-leer"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 rm -rf "$S"
 
@@ -501,13 +501,49 @@ else
   rm -f "$JOBR" "$PROMPTF" logs/claude-job-test-render.json logs/claude-job-test-render.stderr.log
 fi
 
-echo "Neues Projekt ohne Website (project-new, project-package, Import, project-export)"
+echo "Neues Projekt ohne Website (project-new, page-import, project-package, Import, project-export)"
 NS="sites/modio-test-neu"; rm -rf "$NS"
-OUT="$(./scripts/project-new.sh modio-test-neu "Test <Neu>" 2 2>/dev/null)" || true
-check "Projekt angelegt: Leinwand mit Plätzen, Vorlagen, Baseline" '[[ "$(jq -r .kind <<<"$OUT")" == neu ]] && grep -q "id=\"platz-2\"" "$NS/www/leinwand/index.html" && grep -q "Test &lt;Neu&gt;" "$NS/www/leinwand/index.html" && [[ -f "$NS/design/tokens-quelle.css" && -f "$NS/design/projekt.md" ]] && git -C "$NS" rev-parse -q --verify baseline >/dev/null'
+OUT="$(./scripts/project-new.sh modio-test-neu "Test <Neu>" 2>/dev/null)" || true
+check "Projekt angelegt: ohne Seiten, Vorlagen, Baseline" '[[ "$(jq -r .kind <<<"$OUT")" == neu ]] && jq -e ".entry == null" "$NS/site.json" >/dev/null && [[ -z "$(find "$NS/www" -name "*.html")" ]] && [[ -f "$NS/design/tokens-quelle.css" && -f "$NS/design/projekt.md" ]] && git -C "$NS" rev-parse -q --verify baseline >/dev/null'
 check "Neues Projekt: CLAUDE.md mit Leitlinien für alle Projekte, ohne „bestehende Websites“" 'grep -q "Gestalterisch hochwertig" "$NS/CLAUDE.md" && ! grep -q "spürbar moderneres" "$NS/CLAUDE.md" && grep -q "^### Rangfolge" "$NS/CLAUDE.md"'
 set +e; OUT="$(./scripts/project-new.sh modio-test-neu 2>/dev/null)"; rc=$?; set -e
 check "Projekt doppelt: abgewiesen" '(( rc != 0 ))'
+
+# Seiten importieren (HTML aus Claude Chat, unverändert)
+PG="$(mktemp -d)"
+printf '%s\n' '<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Start</title><style>.hero{padding:2rem}</style></head><body><header class="kopf"><a href="#">Logo</a></header><main><section class="hero" id="hero"><h1>Willkommen</h1><p>Text</p></section><section id="teaser"><h2>Teaser</h2></section></main></body></html>' >"$PG/start.html"
+set +e; OUT="$(./scripts/page-import.sh modio-test-neu startseite "$PG/start.html" 2>/dev/null)"; rc=$?; set -e
+NA="$(jq -r .annotationId <<<"$OUT")"
+check "page-import.sh: Seite committet, byte-genau" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT")" == committed && "$(jq -r .page <<<"$OUT")" == /seiten/startseite.html ]] && cmp -s "$PG/start.html" "$NS/www/seiten/startseite.html" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
+check "page-import.sh: Schritt mit source import" 'jq -e ".source == \"import\" and .page == \"/seiten/startseite.html\" and .import.replaced == false" "$NS/annotations/$NA.json" >/dev/null'
+set +e; OUT="$(./scripts/page-import.sh modio-test-neu startseite "$PG/start.html" 2>/dev/null)"; rc=$?; set -e
+check "page-import.sh: gleicher Name ohne --replace abgewiesen" '(( rc == 4 )) && grep -q "gibt es schon" <<<"$OUT"'
+sed 's/Willkommen/Hallo neu/' "$PG/start.html" >"$PG/start2.html"
+set +e; OUT="$(./scripts/page-import.sh modio-test-neu startseite "$PG/start2.html" --replace 2>/dev/null)"; rc=$?; set -e
+check "page-import.sh --replace: ersetzt als eigener Schritt" '(( rc == 0 )) && jq -e ".replaced == true" <<<"$OUT" >/dev/null && grep -q "Hallo neu" "$NS/www/seiten/startseite.html" && [[ "$(jq -r .annotationId <<<"$OUT")" != "$NA" ]]'
+OUT="$(./scripts/rollback.sh modio-test-neu "$NA" 2>/dev/null)" || true
+check "Rücksprung auf den ersten Import" 'cmp -s "$PG/start.html" "$NS/www/seiten/startseite.html"'
+printf '%s\n' '<!doctype html><html><head><title>Kontakt</title></head><body><h1>Kontakt</h1><script>console.log(1)</script></body></html>' >"$PG/kontakt.html"
+set +e; OUT="$(./scripts/page-import.sh modio-test-neu kontakt "$PG/kontakt.html" 2>/dev/null)"; rc=$?; set -e
+check "page-import.sh: Script in der Seite braucht Prüfung" '(( rc == 3 )) && [[ "$(jq -r .status <<<"$OUT")" == review ]] && jq -e "[.hits[] | select(.rule == \"script-tag\")] | length > 0" <<<"$OUT" >/dev/null'
+./scripts/discard-step.sh modio-test-neu >/dev/null 2>&1 || true
+# Links auf fremde Domains: nur Hinweis, je Domain zusammengefasst
+{ printf '<!doctype html><html><head><title>Gross</title></head><body>\n'; for i in $(seq 1 3000); do printf '<p><a class="x" href="https://fremd.example/seite-%s">Eintrag %s mit etwas Text</a></p>\n' "$i" "$i"; done; printf '</body></html>\n'; } >"$PG/gross.html"
+set +e; OUT="$(./scripts/page-import.sh modio-test-neu links "$PG/gross.html" 2>/dev/null)"; rc=$?; set -e
+check "page-import.sh: Links auf fremde Domains nur als ein Hinweis je Domain" '(( rc == 0 )) && [[ "$(jq -r .status <<<"$OUT")" == committed ]] && jq -e "[.warnings[] | select(.rule == \"link-domain\")] | length == 1 and (.[0].text | startswith(\"3000 Link(s) auf fremd.example\"))" <<<"$OUT" >/dev/null'
+# Große Seite mit eingebundener fremder Ressource: Prüfung, Diff vollständig in der Ausgabe (keine Längengrenze)
+{ sed 's/fremd.example/anders.example/g' "$PG/gross.html" | sed '2i <img src="https://bilder.example/a.png" alt="">'; } >"$PG/gross2.html"
+set +e; OUT="$(./scripts/page-import.sh modio-test-neu gross "$PG/gross2.html" 2>/dev/null)"; rc=$?; set -e
+check "page-import.sh: fremdes Bild braucht Prüfung, großer Diff vollständig" '(( rc == 3 )) && (( $(jq -r ".diff | length" <<<"$OUT") > 100000 )) && jq -e "[.hits[] | select(.rule == \"unknown-domain\")] | length == 1 and (.[0].text | startswith(\"bilder.example\"))" <<<"$OUT" >/dev/null'
+./scripts/discard-step.sh modio-test-neu >/dev/null 2>&1 || true
+check "Verwerfen entfernt die importierte Seite" '[[ ! -e "$NS/www/seiten/kontakt.html" && -z "$(git -C "$NS" status --porcelain)" ]]'
+set +e; OUT="$(./scripts/page-import.sh modio-test-neu "Kontakt Seite" "$PG/kontakt.html" 2>/dev/null)"; rc=$?; set -e
+check "page-import.sh: ungültiger Seitenname abgewiesen" '(( rc == 2 ))'
+set +e; OUT="$(./scripts/page-import.sh "$SLUG" neu "$PG/start.html" 2>/dev/null)"; rc=$?; set -e
+check "page-import.sh: bei Abzügen abgewiesen" '(( rc == 2 )) && grep -q "Seiten hinzufügen" <<<"$OUT"'
+set +e; OUT="$(./scripts/pages-add.sh modio-test-neu /dev/null 2>/dev/null)"; rc=$?; set -e
+check "Seiten hinzufügen (Crawl) bei neuem Projekt abgewiesen" '(( rc != 0 ))'
+
 cat >"$NS/design/tokens-quelle.css" <<'TQ'
 :root {
   --color-primary: #0b5fa5;
@@ -526,37 +562,48 @@ OUT="$(./scripts/project-package.sh modio-test-neu 2>/dev/null)" || true
 check "Paket: Tokens aus CSS-Variablen (gesperrt, Verweise, clamp)" 'jq -e ".tokens == 7" <<<"$OUT" >/dev/null && jq -e ".tokens[\"color.link\"].value == \"var(--modio-color-primary)\" and .tokens[\"space.l\"].value == \"calc(var(--modio-space-m) * 2)\" and .tokens[\"size.h1\"].locked == true" "$NS/design/tokens.json" >/dev/null'
 check "Paket: --container-max-width als container.max-width, Inhaltsbreite im Paket" 'jq -e ".tokens[\"container.max-width\"].value == \"1100px\"" "$NS/design/tokens.json" >/dev/null && grep -q "var(--modio-container-max-width)" "$NS/paket/CLAUDE.md"'
 check "Paket: ungültige Variable gemeldet, Werte ohne Token im Paket" 'jq -e "[.warnings[] | select(test(\"--color-bad\"))] | length == 1" <<<"$OUT" >/dev/null && grep -q -- "--font-weight-bold: 700" "$NS/paket/CLAUDE.md"'
-check "Paket: CLAUDE.md, tokens.css, regeln.md, Hintergrund, README, entwuerfe/" 'P="$NS/paket"; [[ -f "$P/CLAUDE.md" && -f "$P/regeln.md" && -f "$P/projekt.md" && -f "$P/README.md" && -d "$P/entwuerfe" ]] && grep -q -- "--modio-color-primary: #0b5fa5" "$P/tokens.css" && grep -q "entwuerfe/<kurzer-name>.html" "$P/CLAUDE.md"'
+check "Paket: CLAUDE.md, tokens.css, regeln.md, Hintergrund, README, entwuerfe/" 'P="$NS/paket"; [[ -f "$P/CLAUDE.md" && -f "$P/regeln.md" && -f "$P/projekt.md" && -f "$P/README.md" && -d "$P/entwuerfe" ]] && grep -q -- "--modio-color-primary: #0b5fa5" "$P/tokens.css" && grep -q "entwuerfe/<seitenname>.html" "$P/CLAUDE.md" && grep -q "Ausgabeformat (je Seite)" "$P/CLAUDE.md" && grep -q "Seite importieren" "$P/README.md"'
 check "Paket: Leitlinien für alle Projekte aus templates/leitlinien.md" 'grep -q "Gestalterisch hochwertig" "$NS/paket/CLAUDE.md" && ! grep -q "spürbar moderneres" "$NS/paket/CLAUDE.md" && ! grep -q "Rangfolge" "$NS/paket/CLAUDE.md"'
 check "Paket: Angaben committet, Paket nicht versioniert" '[[ "$(git -C "$NS" log -1 --format=%s)" == "[design] Projektangaben übernommen"* ]] && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
 touch "$NS/paket/entwuerfe/a.html"; ./scripts/project-package.sh modio-test-neu >/dev/null 2>&1 || true
 check "Paket neu erzeugen: entwuerfe/ bleibt" '[[ -f "$NS/paket/entwuerfe/a.html" ]]'
 JOBN="$(mktemp)"; IMPN="jobs/assets/job-test-neu-import.html"
 printf '%s\n' '<!doctype html><html><head><style>.t{padding:var(--modio-space-m)}</style></head><body><section class="t"><h2>Neu</h2></section></body></html>' >"$IMPN"
-jq -n --arg f "$IMPN" '{id:"job-test-neu", params:{page:"/leinwand/index.html", selector:"#platz-1", html:"", text:"", prompt:"Teaser", viewport:{width:1440,height:900}, importFile:$f}}' >"$JOBN"
+jq -n --arg f "$IMPN" '{id:"job-test-neu", params:{page:"/seiten/startseite.html", selector:"#teaser", html:"", text:"", prompt:"Teaser", viewport:{width:1440,height:900}, importFile:$f}}' >"$JOBN"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_ARGS=/dev/null ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
 ND="$(jq -r .draft <<<"$OUT")"
-check "Import auf einen Platz der Leinwand" '[[ "$(jq -r .version <<<"$OUT")" == 1 ]]'
+check "Import auf ein Element der importierten Seite" '[[ "$(jq -r .version <<<"$OUT")" == 1 ]] && grep -q "<h2>Teaser</h2>" "$NS/drafts/$ND/source.html"'
+check "Importierte Seite: source.html ist Material (kein Leinwand-Hinweis)" '! grep -rq "freier Platz" "$NS/drafts/$ND/"*.md 2>/dev/null'
 check "Neues Projekt: Systemprompt ohne „bestehende Websites“" 'grep -q "Gestalterisch hochwertig" "$NS/drafts/$ND/SYSTEM.md" && ! grep -q "spürbar moderneres" "$NS/drafts/$ND/SYSTEM.md"'
 check "Tokens: neue Projekte als Palette, bestehende Websites Tokens beachten" 'grep -q "Die Tokens sind die Palette" "$NS/drafts/$ND/SYSTEM.md" && ! grep -q "Tokens beachten" "$NS/drafts/$ND/SYSTEM.md" && grep -q "Tokens beachten" "$S/CLAUDE.md" && ! grep -q "Die Tokens sind die Palette" "$S/CLAUDE.md" && grep -q "Die Tokens sind die Palette" "$NS/paket/CLAUDE.md"'
 OUT="$(./scripts/draft-apply.sh modio-test-neu "$ND" 2>/dev/null)" || true
-check "Übernahme ersetzt den Platz" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && ! grep -q "id=\"platz-1\"" "$NS/www/leinwand/index.html" && grep -q "class=\"mx-test\"" "$NS/www/leinwand/index.html"'
+check "Übernahme ersetzt das Element, kein freier Platz angefügt" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && ! grep -q "id=\"teaser\"" "$NS/www/seiten/startseite.html" && grep -q "class=\"mx-test\"" "$NS/www/seiten/startseite.html" && ! grep -q "data-modio-platz" "$NS/www/seiten/startseite.html" && grep -q "id=\"hero\"" "$NS/www/seiten/startseite.html"'
 printf '/* mx-test: Teaser */\n@scope (.mx-test) {\n  :scope { padding: var(--modio-space-l); color: var(--modio-color-link); }\n}\n' >"$NS/components/mx-test.css"
 OUT="$(./scripts/project-export.sh modio-test-neu 2>/dev/null)" || true
 EX="$(jq -r .dir <<<"$OUT")"
 check "Export: Komponente mit den Variablen des Projekts" '[[ -f "$EX/komponenten/test/component.html" ]] && grep -q "var(--space-l)" "$EX/komponenten/test/component.css" && grep -q "var(--color-link)" "$EX/komponenten/test/component.css" && ! grep -q -- "--modio-" "$EX/komponenten/test/component.css"'
 check "Export: tokens.css aus tokens-quelle.css, Vorschau, README" 'cmp -s "$NS/design/tokens-quelle.css" "$EX/tokens.css" && grep -q "komponenten.css" "$EX/vorschau.html" && grep -q "mx-test" "$EX/README.md"'
 git -C "$NS" checkout -q -- components
-# Letzter freier Platz übernommen: ein neuer Platz kommt dazu
-jq -n --arg f "$IMPN" '{id:"job-test-neu2", params:{page:"/leinwand/index.html", selector:"#platz-2", html:"", text:"", prompt:"Zweiter", viewport:{width:1440,height:900}, importFile:$f}}' >"$JOBN"
-OUT="$(FAKE_CLAUDE_NAME=zwei PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
-OUT="$(./scripts/draft-apply.sh modio-test-neu "$(jq -r .draft <<<"$OUT")" 2>/dev/null)" || true
-check "Kein freier Platz mehr: neuer Platz angefügt" 'grep -q "id=\"platz-3\"" "$NS/www/leinwand/index.html" && [[ -z "$(git -C "$NS" status --porcelain)" ]]'
-jq -n '{id:"job-test-neu3", params:{page:"/leinwand/index.html", selector:"#platz-3", html:"", text:"", prompt:"Hero für die Startseite", viewport:{width:1440,height:900}, mode:"brief"}}' >"$JOBN"
+jq -n '{id:"job-test-neu3", params:{page:"/seiten/startseite.html", selector:"#hero", html:"", text:"", prompt:"Hero für die Startseite", viewport:{width:1440,height:900}, mode:"brief"}}' >"$JOBN"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
-check "Briefing im neuen Projekt: nur Auftrag, verweist auf das Paket" 'B="$NS/drafts/$(jq -r .draft <<<"$OUT")/brief/briefing.md"; grep -q "Hero für die Startseite" "$B" && grep -q "Projektwissen" "$B" && ! grep -q "## Originalseite" "$B"'
+check "Briefing im neuen Projekt: Auftrag, Paket, Element als Material" 'BD="$NS/drafts/$(jq -r .draft <<<"$OUT")/brief"; B="$BD/briefing.md"; grep -q "Hero für die Startseite" "$B" && grep -q "Projektwissen" "$B" && ! grep -q "## Originalseite" "$B" && grep -q "genau ein Wurzelelement" "$B" && grep -q "Willkommen" "$BD/"*-element.html && jq -e ".files | length == 1" "$BD/brief.json" >/dev/null'
 set +e; OUT="$(./scripts/site-recrawl.sh modio-test-neu 2>/dev/null)"; rc=$?; set -e
 check "Neu einlesen bei neuem Projekt abgewiesen" '(( rc != 0 )) && grep -q "Neues Projekt" <<<"$OUT"'
+
+# Server: Platzhalter ohne Seiten, Seitenliste, Import-Endpunkt (ohne Worker)
+./scripts/project-new.sh modio-test-leer "Leer" >/dev/null 2>&1 || true
+# wie ein Altprojekt nach dem Löschen der Leinwand: entry zeigt auf eine Seite, die es nicht mehr gibt
+jq '.entry = "/leinwand/index.html"' sites/modio-test-leer/site.json >sites/modio-test-leer/site.json.tmp && mv sites/modio-test-leer/site.json.tmp sites/modio-test-leer/site.json
+# … und ohne www/ (git clean entfernt den leeren Ordner nach dem Verwerfen eines Imports)
+rm -rf sites/modio-test-leer/www
+check "site-list.sh: Projekt ohne www/ bricht die Liste nicht ab" 'jq -e ".sites[] | select(.slug == \"modio-test-leer\") | .pages == 0" <<<"$(./scripts/site-list.sh 2>/dev/null)" >/dev/null'
+TEST_JOBS_DIR="${TEST_JOBS_DIR:-$(mktemp -d)}"; export TEST_JOBS_DIR; mkdir -p "$TEST_JOBS_DIR"/{pending,running,review,done,failed,assets}
+JOBS_DIR="$TEST_JOBS_DIR" MODIO_API_TOKEN="$STOKEN" BRIDGE_PORT="$SPORT" node tools/server/index.js >/dev/null 2>&1 &
+SRV_PID=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$SPORT/" && break; sleep 0.3; done
+check "Server: Seiten importieren (Platzhalter, Seitenliste, Import-Endpunkt)" 'node tests/page-import-server-test.mjs "http://127.0.0.1:$SPORT" modio-test-neu modio-test-leer "$SLUG" "$STOKEN"'
+kill "$SRV_PID" 2>/dev/null || true
+rm -rf "$PG" "sites/modio-test-leer"
 rm -f "$JOBN" "$IMPN" logs/claude-job-test-neu*.json logs/claude-job-test-neu*.stderr.log
 rm -rf "$NS"
 

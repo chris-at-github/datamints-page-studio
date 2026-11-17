@@ -21,9 +21,9 @@
   // Vorschau eines Entwurfs: Seite mit ersetztem Element, nur ansehen (keine Auswahl, keine Änderungserkennung)
   var PREVIEW = CFG.preview && CFG.preview.draft ? { draft: String(CFG.preview.draft), version: Number(CFG.preview.version), name: String(CFG.preview.name || '') } : null;
   var ACTIVE = { pending: 1, running: 1, review: 1 };
-  var RELOAD_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var RELOAD_TYPES = { annotate: 1, 'page-import': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   // Jobs, die den Stand der Website verändern (der jüngste entscheidet, ob „Nachbessern“ möglich ist)
-  var STATE_TYPES = { annotate: 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
+  var STATE_TYPES = { annotate: 1, 'page-import': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
   var FLASH_KEY = 'modio-flash-' + SLUG;
@@ -498,6 +498,11 @@
     'a.pglink{flex:1;min-width:0;display:block;padding:6px 8px;border-radius:6px;color:#1d2330;text-decoration:none}' +
     'a.pglink:hover,a.pglink:focus-visible{background:#eef2ff}' +
     'a.pglink.current{background:#dbeafe}' +
+    '.pgimp{margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb}' +
+    '.pgimp .row{display:flex;gap:6px;align-items:center}' +
+    '.pgimp .textin{flex:1;min-width:0}' +
+    '.pgimp-form{margin-top:8px}' +
+    '.pgimp-file{margin-bottom:6px;word-break:break-all}' +
     '.pgtitle{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.pgpath{display:block;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     'button.icon-only{position:relative}' +
@@ -844,6 +849,7 @@
     'design-save': 'Design-Vorgaben',
     'tokens-propose': 'Token-Vorschläge',
     'pages-add': 'Seiten hinzufügen',
+    'page-import': 'Seite importieren',
     'areas-sync': 'Bereiche angleichen',
     'local-commit': 'Lokale Änderungen',
     'inspect-apply': 'Inspektor-Änderung',
@@ -1754,11 +1760,24 @@
   var pgFilter = el('input', { type: 'text', class: 'textin', placeholder: 'Seiten filtern …', 'aria-label': 'Seiten filtern', spellcheck: 'false' });
   var pgList = el('ul', { class: 'pglist' });
   var pgInfo = el('div', { class: 'hint' });
+  // Neue Projekte: Seite importieren (HTML-Datei aus Claude Chat, unverändert übernommen)
+  var pgImpFile = el('input', { type: 'file', accept: '.html,.htm,text/html', hidden: '' });
+  var pgImpBtn = iconButton('files', 'Seite importieren …', { class: 'primary', title: 'HTML-Datei (z. B. aus Claude Chat) unverändert als Seite übernehmen' });
+  var pgImpName = el('input', { type: 'text', class: 'textin', placeholder: 'seitenname', 'aria-label': 'Seitenname (a-z, 0-9, Bindestrich)', spellcheck: 'false', maxlength: '63' });
+  var pgImpGo = el('button', { type: 'button', class: 'primary', text: 'Importieren' });
+  var pgImpCancel = el('button', { type: 'button', text: 'Abbrechen' });
+  var pgImpForm = el('div', { class: 'pgimp-form', hidden: '' }, [
+    el('div', { class: 'hint pgimp-file' }),
+    el('div', { class: 'row' }, [pgImpName, pgImpGo, pgImpCancel]),
+  ]);
+  var pgImpErr = el('div', { class: 'err', role: 'alert' });
+  var pgImport = el('div', { class: 'pgimp', hidden: '' }, [el('div', { class: 'row' }, [pgImpBtn, pgImpFile]), pgImpForm, pgImpErr]);
   var pagesPanel = el('div', { id: 'modio-pages', class: 'panel', role: 'dialog', 'aria-labelledby': 'modio-pgh' }, [
     el('h2', { id: 'modio-pgh', text: 'Seiten im Abzug' }),
     pgFilter,
     pgList,
     pgInfo,
+    pgImport,
   ]);
   ui.appendChild(pagesPanel);
   var pagesData = null;
@@ -1778,15 +1797,78 @@
       if (pagesData && p.path === pagesData.entry) li.appendChild(el('span', { class: 'badge', text: 'Start' }));
       pgList.appendChild(li);
     });
-    if (!list.length) pgList.appendChild(el('li', { class: 'hint', text: all.length ? 'Keine passende Seite.' : 'Lade …' }));
-    pgInfo.textContent = all.length + ' Seite(n). Weitere Seiten: Startseite › Aktionen › „Seiten hinzufügen“.';
+    var neu = pagesData && pagesData.kind === 'neu';
+    if (!list.length) pgList.appendChild(el('li', { class: 'hint', text: all.length ? 'Keine passende Seite.' : !pagesData ? 'Lade …' : neu ? 'Noch keine Seiten.' : 'Keine Seiten.' }));
+    pgInfo.textContent = neu
+      ? all.length + ' Seite(n). Weitere Seiten: HTML-Datei aus Claude Chat importieren, sie wird unverändert übernommen.'
+      : all.length + ' Seite(n). Weitere Seiten: Startseite › Aktionen › „Seiten hinzufügen“.';
+    pgImport.hidden = !neu;
+    pgImpBtn.disabled = isBusy();
   }
+
+  var pgImpHtml = null, pgImpReplace = false;
+  function pageNameFrom(fileName) {
+    var n = String(fileName || '').replace(/\.html?$/i, '').toLowerCase()
+      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
+    return n;
+  }
+  function resetPageImport() {
+    pgImpHtml = null; pgImpReplace = false;
+    pgImpForm.hidden = true; pgImpErr.textContent = '';
+    pgImpGo.textContent = 'Importieren';
+    pgImpBtn.disabled = isBusy();
+  }
+  pgImpBtn.addEventListener('click', function () { pgImpFile.value = ''; pgImpFile.click(); });
+  pgImpFile.addEventListener('change', function () {
+    var f = pgImpFile.files && pgImpFile.files[0];
+    if (!f) return;
+    resetPageImport();
+    readHtmlFile(f).then(function (html) {
+      pgImpHtml = html;
+      var empty = !((pagesData && pagesData.pages) || []).length;
+      pgImpName.value = empty ? 'startseite' : pageNameFrom(f.name);
+      pgImpForm.querySelector('.pgimp-file').textContent = f.name + ' → /' + ((pagesData && pagesData.importDir) || 'seiten') + '/<seitenname>.html' + (empty ? ' (erste Seite, Start)' : '');
+      pgImpForm.hidden = false;
+      pgImpName.focus(); pgImpName.select();
+    }).catch(function (e) { pgImpErr.textContent = e.message; });
+  });
+  pgImpName.addEventListener('input', function () {
+    if (pgImpReplace) { pgImpReplace = false; pgImpGo.textContent = 'Importieren'; pgImpErr.textContent = ''; }
+  });
+  pgImpName.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pgImpGo.click(); } });
+  pgImpCancel.addEventListener('click', resetPageImport);
+  pgImpGo.addEventListener('click', function () {
+    var name = pgImpName.value.trim();
+    pgImpErr.textContent = '';
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(name)) { pgImpErr.textContent = 'Seitenname: Kleinbuchstaben, Ziffern und Bindestrich.'; pgImpName.focus(); return; }
+    if (!pgImpHtml) return;
+    pgImpGo.disabled = true;
+    api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/pages/import', { name: name, html: pgImpHtml, replace: pgImpReplace })
+      .then(function (data) {
+        if (data && data.job) trackJob(data.job);
+        showToast('Seite „' + name + '“ wird importiert …', false);
+        resetPageImport();
+        closePages();
+      })
+      .catch(function (err) {
+        if (err.status === 409 && /gibt es schon/.test(err.message)) {
+          pgImpReplace = true;
+          pgImpGo.textContent = 'Ersetzen';
+          pgImpErr.textContent = err.message + ' Ersetzen? Nachbearbeitungen dieser Seite gehen dabei verloren, ein Rücksprung im Verlauf bleibt möglich.';
+        } else {
+          pgImpErr.textContent = err.status === 409 ? err.message : 'Fehlgeschlagen: ' + err.message;
+        }
+      })
+      .then(function () { pgImpGo.disabled = false; });
+  });
   function openPages() {
     closePanels();
     pagesPanel.classList.add('open');
     btnPages.classList.add('on');
     btnPages.setAttribute('aria-expanded', 'true');
     pgFilter.value = '';
+    resetPageImport();
     renderPages();
     api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/pages').then(function (d) { pagesData = d; renderPages(); })
       .catch(function (err) { clear(pgList); pgList.appendChild(el('li', { class: 'err', text: 'Fehler: ' + err.message })); });
@@ -1995,6 +2077,16 @@
         return;
       }
       loadDrafts(); showToast('Entwurf verworfen.', false); return;
+    }
+    if (job.type === 'page-import' || (job.type === 'decision' && job.params && job.params.action === 'accept' && jobs[job.params.jobId] && jobs[job.params.jobId].type === 'page-import')) {
+      var ir = job.type === 'page-import' ? r : (jobs[job.params.jobId].result || {});
+      var ipage = ir.page || (jobs[job.params.jobId] && jobs[job.params.jobId].params && jobs[job.params.jobId].params.page);
+      msg = r.status === 'nochange' ? 'Seite ' + (ipage || '') + ' ist unverändert (gleiche Datei).' : 'Seite ' + (ipage || '') + (ir.replaced ? ' ersetzt' : ' importiert') + ' (' + (ir.annotationId || '') + ').';
+      if (r.warnings && r.warnings.length) msg += '\n\nHinweise der Prüfung:\n' + r.warnings.slice(0, 5).map(function (w) { return '– ' + truncate(w.text || w.rule, 160); }).join('\n');
+      try { sessionStorage.setItem(FLASH_KEY, msg); } catch (e) { /* ignorieren */ }
+      reloading = true;
+      setTimeout(function () { location.href = ipage ? BASE + ipage.split('/').map(encodeURIComponent).join('/') : BASE + '/'; }, 600);
+      return;
     }
     if (job.type === 'annotate' || job.type === 'local-commit' || job.type === 'inspect-apply' || job.type === 'draft-apply') {
       msg = r.status === 'nochange' && job.type !== 'annotate' ? (r.summary || 'Keine Änderungen.') : r.status === 'nochange' ? 'Keine Änderung (' + (r.annotationId || '') + ').' : 'Fertig: ' + (r.annotationId || '');
@@ -3790,6 +3882,8 @@
   }
 
   // ----------------------------------------------------------------- Start
+
+  if (CFG.empty) setTimeout(openPages, 0);
 
   try {
     var flash = sessionStorage.getItem(FLASH_KEY);

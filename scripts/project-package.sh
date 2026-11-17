@@ -75,16 +75,17 @@ $( [[ "$HAS_CONTENT" == true ]] && echo "- Inhaltsbreite höchstens var(--modio-
 - Inhalte realistisch und passend zum Hintergrund. Erfundene Angaben (Namen, Preise, Zahlen) sind erkennbare Beispiele.
 - Keine Bilder von außen: Bildflächen als Flächen mit festem Seitenverhältnis und kurzem Alternativtext.
 
-## Ausgabeformat (je Design)
-- Eine vollständige HTML-Datei. Keine React-Komponente, kein JavaScript.
+## Ausgabeformat (je Seite)
+- Eine vollständige HTML-Seite mit <title>. Keine React-Komponente, kein JavaScript.
 - Genau ein <style> im <head>: zuerst der :root-Block aus tokens.css, danach dein CSS.
-- Im <body> genau ein Wurzelelement (z. B. <section class="…">) mit dem gesamten Markup, nichts außerhalb.
+- Im <body> die ganze Seite mit semantischen Bereichen (<header>, <main>, <footer>). Bereiche, die auf jeder Seite vorkommen (Kopf, Navigation, Fuß), sind auf allen Seiten gleich aufgebaut (gleiches Markup, gleiche Klassen).
+- Links auf andere Seiten des Projekts als <seitenname>.html (Kleinbuchstaben, Ziffern, Bindestrich; die Startseite heißt startseite.html). Modio legt alle Seiten in einen Ordner, die Links funktionieren dann ohne Anpassung.
 - Keine externen Schriften (kein Google Fonts, kein @import), keine externen Bilder, keine Icon-Bibliotheken von außen. Icons als Inline-SVG, sofern regeln.md nichts anderes vorgibt.
 - Interaktion nur mit HTML und CSS (<details>, :has(), :target, Scroll-Snap).
 
 ## Arbeitsweise
-- In claude.ai: Jedes Design in einem eigenen Chat dieses Projekts, Ergebnis als HTML-Artefakt.
-- Mit Claude Code: Lege jedes Design als eigene Datei entwuerfe/<kurzer-name>.html an. Ändere keine anderen Dateien.
+- In claude.ai: Jede Seite als eigenes HTML-Artefakt (weitere Seiten gern im selben Chat, damit Kopf und Fuß gleich bleiben).
+- Mit Claude Code: Lege jede Seite als eigene Datei entwuerfe/<seitenname>.html an. Ändere keine anderen Dateien.
 - Schließe mit einer kurzen Zusammenfassung: Gestaltungsidee, wie kleine Bildschirme gelöst sind, welche Inhalte Beispiele sind.
 C
 
@@ -97,8 +98,8 @@ Erzeugt von Modio ($(date '+%d.%m.%Y %H:%M')). Neu erzeugen mit „Paket erstell
 1. Neues Projekt anlegen.
 2. Den Inhalt von CLAUDE.md in die Projektanweisungen kopieren.
 3. regeln.md, tokens.css${BG_FILES[*]:+ und ${BG_FILES[*]}} als Projektwissen hochladen.
-4. Je Design einen Chat starten und den Auftrag beschreiben (was, für wen, welche Inhalte).
-5. Das HTML-Artefakt herunterladen und in Modio auf der Leinwand übernehmen: freien Platz wählen → „HTML importieren …“.
+4. Einen Chat starten und die Seite beschreiben (was, für wen, welche Inhalte). Weitere Seiten im selben Chat.
+5. Jedes HTML-Artefakt herunterladen und in Modio übernehmen: Projekt öffnen → Seiten → „Seite importieren …“ (Seitenname wie der Dateiname, z. B. startseite). Die Seite kommt unverändert dazu und wird dort nachbearbeitet.
 
 ## Mit Claude Code
 1. Im Ordner $P \`claude\` starten und den Auftrag beschreiben.

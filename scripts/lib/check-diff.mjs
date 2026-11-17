@@ -1,6 +1,7 @@
 // Analysiert einen Unified-Diff (stdin) auf riskante Änderungen.
 // Aufruf: git diff -U0 | node check-diff.mjs <site-dir> <names-file>
-// Umgebung: CHECK_REMEMBER=true (notes.md darf geändert werden), CHECK_ALLOW_TOKEN_CHANGE=true (gesperrte Tokens dürfen geändert werden)
+// Umgebung: CHECK_REMEMBER=true (notes.md darf geändert werden), CHECK_ALLOW_TOKEN_CHANGE=true (gesperrte Tokens dürfen geändert werden),
+//           CHECK_LINKS_AS_WARNINGS=true (fremde Domains in <a href> nur als Hinweis, je Domain zusammengefasst)
 // Ausgabe: { files, hits (Stufe block), warnings (Stufe warn) }
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,6 +11,8 @@ import { parseTokens, buildCss, validateNotes, NOTES_MAX_LINES } from './design.
 const [siteDir, namesFile] = process.argv.slice(2);
 const REMEMBER = process.env.CHECK_REMEMBER === 'true';
 const ALLOW_TOKEN_CHANGE = process.env.CHECK_ALLOW_TOKEN_CHANGE === 'true';
+// Import einer Seite in ein neues Projekt: Links (<a href>) auf fremde Domains nur als Hinweis
+const LINKS_AS_WARNINGS = process.env.CHECK_LINKS_AS_WARNINGS === 'true';
 const diff = fs.readFileSync(0, 'utf8');
 const hits = [];
 const warnings = [];
@@ -66,6 +69,8 @@ const hunks = [];
     else if (raw.startsWith('+')) { cur.added.push({ text: raw.slice(1), line }); line++; }
   }
 }
+const linkHosts = new Map(); // host -> { count, file, line, text }
+const isLinkHref = (text, at) => /<a\b[^>]*\bhref\s*=\s*["']?\s*$/i.test(text.slice(Math.max(0, at - 2000), at));
 const countOf = (re, texts) => texts.reduce((n, t) => n + (t.match(new RegExp(re.source, re.flags.replace('g', '') + 'g')) || []).length, 0);
 for (const h of hunks) {
   if (!h.file || h.file.startsWith('annotations/')) continue; // Metadaten des Skripts
@@ -88,10 +93,19 @@ for (const h of hunks) {
       const host = m[1].toLowerCase();
       if (!known.has(host) && !before.has(host)) {
         const from = Math.max(0, m.index - 80);
-        hits.push({ rule: 'unknown-domain', file: h.file, line: a.line, text: `${host}: ${a.text.slice(from, from + 200).trim()}` });
+        const text = `${host}: ${a.text.slice(from, from + 200).trim()}`;
+        if (LINKS_AS_WARNINGS && isHtml && isLinkHref(a.text, m.index)) {
+          const e = linkHosts.get(host);
+          if (e) e.count++; else linkHosts.set(host, { count: 1, file: h.file, line: a.line, text });
+        } else {
+          hits.push({ rule: 'unknown-domain', file: h.file, line: a.line, text });
+        }
       }
     }
   }
+}
+for (const [host, e] of linkHosts) {
+  warnings.push({ rule: 'link-domain', file: e.file, line: e.line, text: `${e.count} Link(s) auf ${host} (fremde Domain, im echten Projekt prüfen). Erster: ${e.text.slice(host.length + 2)}` });
 }
 
 // ---------- Design-Vorgaben ----------

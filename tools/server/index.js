@@ -152,10 +152,11 @@ async function createJob(type, slug, params, id = newJobId()) {
 
 // opts.layered: Alt-CSS (samt tokens.css und overrides.css) in @layer legacy, Komponenten ohne Ebene darüber.
 // opts.preview: { draft, version, name } – Vorschau eines Entwurfs (dessen CSS statt der gleichnamigen Komponente)
+// opts.empty: Platzhalter eines neuen Projekts ohne Seiten (Overlay öffnet „Seiten“)
 function injectHtml(buf, slug, opts = {}) {
-  const { layered = false, preview = null } = opts;
+  const { layered = false, preview = null, empty = false } = opts;
   const cfg = JSON.stringify({ slug, token: TOKEN, base: `/s/${slug}`, imageMaxCount: IMAGE_MAX_COUNT, imageMaxMb: IMAGE_MAX_MB,
-    preview: preview ? { draft: preview.draft, version: preview.version, name: preview.name } : null })
+    preview: preview ? { draft: preview.draft, version: preview.version, name: preview.name } : null, ...(empty ? { empty: true } : {}) })
     .replace(/</g, '\\u003c');
   const b = `/s/${slug}`;
   let head;
@@ -178,6 +179,13 @@ function injectHtml(buf, slug, opts = {}) {
   const bi = bodyMatches.length ? bodyMatches.at(-1).index : -1;
   html = bi >= 0 ? html.slice(0, bi) + body + html.slice(bi) : html + body;
   return Buffer.from(html, 'latin1');
+}
+
+function emptyProjectHtml(title) {
+  const t = String(title).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${t} – noch ohne Seiten</title>
+<style>body{margin:0;font:16px/1.5 system-ui,sans-serif;color:#1f2328;background:#fff}main{max-width:640px;margin:0 auto;padding:96px 24px}h1{margin:0 0 8px;font-size:28px}p{margin:0 0 12px;color:#57606a}</style></head>
+<body><main data-modio-empty><h1>${t}</h1><p>Dieses Projekt hat noch keine Seiten.</p><p>Eine Seite aus Claude Chat als HTML-Datei herunterladen und unten in der Leiste über <strong>Seiten › Seite importieren …</strong> einspielen.</p></main></body></html>`;
 }
 
 // ---------- Komponenten und Entwürfe ----------
@@ -242,8 +250,18 @@ async function serveSite(req, res, slug, rest, search) {
 
   if (rest === '' || rest === '/') {
     const site = await readJson(path.join(dir, 'site.json'), {});
-    if (!site.entry) return sendError(res, 404, 'Kein Einstiegspfad');
-    res.writeHead(302, { Location: `/s/${slug}${site.entry.split('/').map(encodeURIComponent).join('/')}`, 'Cache-Control': 'no-store' });
+    let entry = site.entry;
+    if (site.kind === 'neu' && (!entry || !fs.existsSync(path.join(dir, 'www', path.normalize(entry))))) {
+      entry = (await listSitePages(slug)).entry;
+      // Neues Projekt noch ohne Seiten: Platzhalter mit Overlay (nicht im Abzug), dort „Seiten › Seite importieren …“
+      if (!entry) {
+        const buf = injectHtml(Buffer.from(emptyProjectHtml(site.title || slug), 'utf8'), slug, { empty: true });
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': SITE_CSP, 'Content-Length': buf.length });
+        return res.end(req.method === 'HEAD' ? undefined : buf);
+      }
+    }
+    if (!entry) return sendError(res, 404, 'Kein Einstiegspfad');
+    res.writeHead(302, { Location: `/s/${slug}${entry.split('/').map(encodeURIComponent).join('/')}`, 'Cache-Control': 'no-store' });
     return res.end();
   }
   if (rest === '/__overrides.css') {
@@ -495,13 +513,33 @@ async function jobLogLines(id) {
   return (lines.length ? [...script.slice(-4), ...lines] : script).slice(-40);
 }
 
-// Seiten des Abzugs (HTML-Dateien im Ordner der Einstiegsseite) mit Titel und ursprünglicher Adresse
+// Neue Projekte: Ordner für importierte Seiten (wie page-import.sh: Ordner der Einstiegsseite, sonst "seiten")
+function importDir(dir, site) {
+  const d = String(site.entry || '').split('/')[1] || '';
+  return d && d !== '..' && fs.existsSync(path.join(dir, 'www', d)) ? d : 'seiten';
+}
+
+// Neue Projekte ohne feste Einstiegsseite: index.html, sonst startseite.html, sonst die erste Seite
+function defaultEntry(pages) {
+  const by = (name) => pages.find((p) => p.path.split('/').pop() === name);
+  return (by('index.html') || by('startseite.html') || pages[0] || {}).path || null;
+}
+
+// Seiten des Abzugs (HTML-Dateien im Ordner der Einstiegsseite) mit Titel und ursprünglicher Adresse.
+// Neue Projekte (kind "neu"): alle Seiten unter www/, Adresse ist der Pfad.
 async function listSitePages(slug) {
   const dir = siteDir(slug);
   const site = await readJson(path.join(dir, 'site.json'), {});
-  const hostDir = String(site.entry || '').split('/')[1] || '';
+  const neu = site.kind === 'neu';
+  const kind = neu ? 'neu' : 'abzug';
+  const entryDir = String(site.entry || '').split('/')[1] || '';
+  // Neue Projekte: ohne (vorhandenen) Ordner der Einstiegsseite alle Seiten unter www/
+  const hostDir = neu && (!entryDir || entryDir === '..' || !fs.existsSync(path.join(dir, 'www', entryDir))) ? '' : entryDir;
   const root = path.join(dir, 'www', hostDir);
-  if (!hostDir || hostDir.includes('..') || !fs.existsSync(root)) return { entry: site.entry || null, pages: [] };
+  if ((!neu && !hostDir) || hostDir.includes('..') || !fs.existsSync(root)) {
+    // Neue Projekte ohne Seiten (auch ohne www/): kein Einstieg, auch wenn site.json noch einen alten nennt
+    return neu ? { kind, entry: null, pages: [], importDir: importDir(dir, site) } : { kind, entry: site.entry || null, pages: [] };
+  }
   const files = [];
   const walk = async (d) => {
     for (const e of await fsp.readdir(d, { withFileTypes: true }).catch(() => [])) {
@@ -524,11 +562,14 @@ async function listSitePages(slug) {
       const m = buf.subarray(0, bytesRead).toString('utf8').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
       if (m) title = m[1].replace(/\s+/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
     } catch { /* ohne Titel */ }
+    if (neu) return { path: rel, title, url: rel };
     const urlPath = rel.slice(hostDir.length + 1).replace(/(^|\/)index\.html?$/i, '$1').replace(/@(.*)$/, '?$1');
     return { path: rel, title, url: `${proto}://${hostDir.replace('+', ':')}${urlPath}` };
   }));
-  pages.sort((a, b) => (a.path === site.entry ? -1 : b.path === site.entry ? 1 : a.path.localeCompare(b.path)));
-  return { entry: site.entry || null, pages };
+  pages.sort((a, b) => a.path.localeCompare(b.path));
+  const entry = neu ? (pages.some((p) => p.path === site.entry) ? site.entry : defaultEntry(pages)) : site.entry || null;
+  pages.sort((a, b) => (a.path === entry ? -1 : b.path === entry ? 1 : 0));
+  return { kind, entry, pages, ...(neu ? { importDir: importDir(dir, site) } : {}) };
 }
 
 // Job-Parameter einer Annotation (direkt oder aus der Queue)
@@ -733,12 +774,34 @@ async function handleApi(req, res, url) {
     sse.emit('queue', { slug });
     return send(res, 200, { items: await readQueue(slug) });
   }
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/pages\/import$/)) && req.method === 'POST') {
+    // Neues Projekt: HTML-Seite (z. B. aus Claude Chat) unverändert als Seite übernehmen
+    const slug = m[1];
+    if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
+    if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
+    const site = await readJson(path.join(siteDir(slug), 'site.json'), {});
+    if (site.kind !== 'neu') return sendError(res, 400, 'Seiten importieren gibt es nur bei neuen Projekten. Bei Abzügen: Seiten hinzufügen.');
+    const body = await readBody(req, IMPORT_MAX_BYTES + 64 * 1024);
+    const name = String(body.name || '').trim();
+    if (!validSlug(name)) return sendError(res, 400, 'Ungültiger Seitenname (a-z, 0-9, Bindestrich)');
+    const err = validateImportHtml(body.html);
+    if (err) return sendError(res, 400, err);
+    const page = `/${importDir(siteDir(slug), site)}/${name}.html`;
+    const exists = fs.existsSync(path.join(siteDir(slug), 'www', page));
+    if (exists && body.replace !== true) return send(res, 409, { error: `Die Seite ${page} gibt es schon.`, exists: true, page });
+    if (await busyCheck(res, slug, 'Der Import')) return;
+    const jobId = newJobId();
+    const file = `jobs/assets/${jobId}-page.html`;
+    await fsp.writeFile(path.join(JOBS_DIR, 'assets', path.basename(file)), body.html);
+    return send(res, 202, { job: await createJob('page-import', slug, { name, page, file, replace: exists }, jobId) });
+  }
+
   if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts|package|export)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
-    if ((action === 'recrawl' || action === 'pages') && (await readJson(path.join(siteDir(slug), 'site.json'), {})).kind === 'neu') {
-      return sendError(res, 400, 'Neues Projekt ohne Website: Neu einlesen und Seiten hinzufügen gibt es hier nicht');
+    if ((action === 'recrawl' || (action === 'pages' && req.method === 'POST')) && (await readJson(path.join(siteDir(slug), 'site.json'), {})).kind === 'neu') {
+      return sendError(res, 400, 'Neues Projekt ohne Website: Neu einlesen und Seiten hinzufügen gibt es hier nicht (Seiten: „Seite importieren …“)');
     }
 
     if (action === 'history' && req.method === 'GET') {

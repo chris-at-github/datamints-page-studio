@@ -185,10 +185,13 @@ fi
 
 # Vorhandene Dateien nennen: Es gibt keine Screenshots oder Bilder des Elements, Claude soll nicht danach suchen
 DRAFT_FILES="$(cd "$DDIR" && find . -maxdepth 2 -type f ! -name 'SYSTEM.md' ! -path './v*/*' ! -path './brief/*' ! -name '*.original.html' -printf '%P\n' | sort | paste -sd, - | sed 's/,/, /g')"
-# Neues Projekt ohne Altsystem: source.html ist nur ein freier Platz auf der Leinwand
+# Neues Projekt ohne Altsystem: Auf der Leinwand (Altprojekte) ist source.html nur ein freier Platz.
+# Auf importierten Seiten ist source.html echtes Material wie bei einem Abzug.
 SITE_KIND="$(jq -r '.kind // ""' "$SITE/site.json")"
+PLATZ=false
+[[ "$SITE_KIND" == neu ]] && grep -q 'data-modio-platz' "$DDIR/source.html" 2>/dev/null && PLATZ=true
 NEU_NOTE=""
-if [[ "$SITE_KIND" == neu ]]; then
+if [[ "$PLATZ" == true ]]; then
   NEU_NOTE=$'\n'"Neues Projekt ohne bestehende Website: source.html ist nur ein freier Platz auf einer Leinwand, kein Material. Inhalte entstehen aus Auftrag und Hintergrund (erfundene Angaben als erkennbare Beispiele). Maßgeblich sind Regeln, Tokens und Hintergrund. bausteine.json beschreibt nur die Leinwand."
 fi
 NO_LAYOUT_NOTE=""
@@ -232,7 +235,7 @@ Anpassen musst du nur, was die Regeln in CLAUDE.md verlangen:
 1. Format: genau ein Wurzelelement mit der Klasse mx-<name>, alles CSS in @scope (.mx-<name>). Regeln für html, body, :root oder * auf :scope bzw. auf Elemente innerhalb umschreiben. Den :root-Block mit --modio-Variablen nicht übernehmen (die Tokens sind auf der Seite vorhanden).
 2. Tokens: Farben und Schriften über var(--modio-…); abweichende Farben auf den nächstliegenden passenden Token abbilden, fremde Schriften durch die Schrift der Website ersetzen. Größen und Abstände des Imports bleiben; Werte, die einem Token entsprechen, schreibst du als var(--modio-…). Gesperrte Tokens sind fest (z. B. Button-Höhe, Radien): dort gilt der Token, nie abwandeln.
 3. Nicht breiter als das Element, Texte und Bedienelemente innerhalb der Inhaltsbreite (siehe unten und CLAUDE.md „Hauptraster“). Die Spaltenaufteilung des Imports bleibt.
-4. $( [[ "$SITE_KIND" == neu ]] && echo "Inhalte: Sie kommen aus dem Import (neues Projekt, source.html ist nur ein freier Platz). Übernimm sie vollständig. Externe Bilder oder Adressen ersetzt du durch Bildflächen mit festem Seitenverhältnis bzw. entfernst sie." || echo "Inhalte: Umfang und Auswahl wie im Import (der Import kann bewusst nur eine Auswahl oder Beispiele zeigen). Was der Import zeigt, gleichst du mit source.html ab: Texte stimmen, src- und href-Werte exakt aus source.html, externe Adressen aus dem Import ersetzen. Einträge aus source.html, die im Import fehlen, ergänzt du NICHT, sondern nennst sie zusammengefasst als einen Punkt in befund.json mit \"umgesetzt\": false (Ausnahme: der Auftrag verlangt Vollständigkeit). Erfundene Angaben nur, wenn der Auftrag sie verlangt, dann mit data-mx-platzhalter.")
+4. $( [[ "$PLATZ" == true ]] && echo "Inhalte: Sie kommen aus dem Import (neues Projekt, source.html ist nur ein freier Platz). Übernimm sie vollständig. Externe Bilder oder Adressen ersetzt du durch Bildflächen mit festem Seitenverhältnis bzw. entfernst sie." || echo "Inhalte: Umfang und Auswahl wie im Import (der Import kann bewusst nur eine Auswahl oder Beispiele zeigen). Was der Import zeigt, gleichst du mit source.html ab: Texte stimmen, src- und href-Werte exakt aus source.html, externe Adressen aus dem Import ersetzen. Einträge aus source.html, die im Import fehlen, ergänzt du NICHT, sondern nennst sie zusammengefasst als einen Punkt in befund.json mit \"umgesetzt\": false (Ausnahme: der Auftrag verlangt Vollständigkeit). Erfundene Angaben nur, wenn der Auftrag sie verlangt, dann mit data-mx-platzhalter.")
 5. Kein JavaScript, keine Event-Handler; Interaktion nur mit HTML und CSS.
 6. Bausteine: Nur Teile des Imports, die einem Baustein aus bausteine.json entsprechen (z. B. Buttons), kommen in meta.json (\"source\": \"neu\", klassen.neu und klassen.bestand) und tragen data-mx-baustein, wie in CLAUDE.md beschrieben. Alle anderen Teile bleiben ohne Baustein-Angaben.
 befund.json enthält nur Punkte zur Übernahme: was du angepasst hast und warum (Token statt Wert, Schrift ersetzt, Inhalte ergänzt, Raster), jeweils \"umgesetzt\": true; Punkte, die eine Entscheidung brauchen, mit \"umgesetzt\": false. Leere Liste, wenn nichts anzupassen war.
