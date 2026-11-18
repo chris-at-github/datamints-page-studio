@@ -96,6 +96,32 @@ try {
   check('Hinweis: Selektor von Hand angepasst', (await noteSel()).includes('.mx-hero h1') && (await ov('ul.nlist .nhead code').first().textContent()).includes('h1'), await noteSel());
   await ov('textarea.ndesc').first().fill('Überschrift kleiner');
   check('Hinweis zählt als Änderung', (await ov('#modio-drafts').textContent()).includes('Neue Version (2 Änderung(en) gewählt)'));
+  // Token oder Komponente in den Hinweis einfügen
+  await page.route('**/api/sites/*/components', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ components: [{
+    name: 'knopf', title: 'Knopf', slots: [{ key: 'text', typ: 'text' }], varianten: [{ key: 'primaer', label: 'Primär' }],
+  }] }) }));
+  await ov('ul.nlist button.tokbtn').first().click();
+  await page.waitForTimeout(500);
+  check('Hinweis: Auswahl Token/Komponente öffnet am Hinweis', await ov('ul.nlist #modio-tokpop').isVisible());
+  await ov('#modio-tokpop input').fill('knopf');
+  await page.waitForTimeout(200);
+  await ov('#modio-tokpop input').press('Enter');
+  await page.waitForTimeout(200);
+  const noteVal = await ov('textarea.ndesc').first().inputValue();
+  check('Hinweis: Komponente eingefügt', noteVal === 'Überschrift kleiner mx-knopf (Variante primaer; Slots: text)', noteVal);
+  check('Hinweis: Popup danach zu', !(await ov('#modio-tokpop').isVisible()));
+  await ov('#modio-drafts textarea[data-fk="ta"]').fill('Darunter');
+  await ov('#modio-drafts textarea[data-fk="ta"]').press('Control+ ');
+  await page.waitForTimeout(500);
+  check('Nachbessern: Auswahl öffnet am Feld', await ov('#modio-drafts .dsec #modio-tokpop').isVisible());
+  await ov('#modio-tokpop input').fill('knopf');
+  await page.waitForTimeout(200);
+  await ov('#modio-tokpop input').press('Enter');
+  await page.waitForTimeout(200);
+  const fixVal = await ov('#modio-drafts textarea[data-fk="ta"]').inputValue();
+  check('Nachbessern: Komponente eingefügt', fixVal === 'Darunter mx-knopf (Variante primaer; Slots: text)', fixVal);
+  await ov('#modio-drafts textarea[data-fk="ta"]').fill('');
+  await page.unroute('**/api/sites/*/components');
   await ov('#modio-drafts button.phbtn').click();
   check('Platzhalter markieren', await page.evaluate(() => !!document.querySelector('style[data-modio="platzhalter"]') && document.querySelector('[data-mx-platzhalter]').title.includes('Merkliste')));
 

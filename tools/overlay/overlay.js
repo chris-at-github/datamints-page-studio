@@ -599,6 +599,7 @@
     '.nhead .nsnip{color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}' +
     '.nhead button{padding:3px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;flex:none}' +
     'textarea.ndesc{min-height:52px;margin-top:4px;font-size:13px}' +
+    '.nlist .tokrow,.dsec .tokrow{margin-top:4px}' +
     '.bf-group{font-size:12px;font-weight:600;color:#374151;margin:10px 0 2px}' +
     '.bf-item{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #f1f2f4;font-size:13px}' +
     '.bf-main{flex:1;min-width:0}' +
@@ -741,12 +742,13 @@
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token oder Komponente suchen …', 'aria-label': 'Token oder Komponente suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens und Komponenten' });
   var pTokPop = el('div', { id: 'modio-tokpop', class: 'tokpop', hidden: '' }, [pTokFilter, pTokList]);
+  var pTokRow = el('div', { class: 'row tokrow' }, [pTokBtn]);
   var promptPanel = el('div', { class: 'panel prompt', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
     pHead,
     pMeta,
     el('label', { for: 'modio-prompt', class: 'sr', text: 'Prompt' }),
     pText,
-    el('div', { class: 'row tokrow' }, [pTokBtn]),
+    pTokRow,
     pTokPop,
     pDrop,
     pFile,
@@ -1216,7 +1218,7 @@
         return;
       }
       if (e.key === 'Escape' && isOwn(e)) {
-        if (!pTokPop.hidden) { e.preventDefault(); closeTokPop(true); }
+        if (!pTokPop.hidden && pTokPop.isConnected) { e.preventDefault(); closeTokPop(true); }
         else if (!pQMenu.hidden) { e.preventDefault(); closeQMenu(true); }
         else if (selEditing) { /* Esc bricht nur die Bearbeitung des Selektors ab (eigener Handler) */ }
         else if (areaPanel.classList.contains('open')) closeAreaDialog();
@@ -1741,6 +1743,10 @@
   var tokLis = [];
   var tokActive = 0;
   var tokCaret = 0;
+  // Ein Auswahlfeld für alle Textfelder: Prompt im Annotationsdialog und Hinweise zu Elementen im Entwurf.
+  // Beim Öffnen wandert es hinter die Zeile mit dem Knopf des jeweiligen Felds.
+  var tokTarget = null;
+  var tokOwner = null;
   function loadTokens() {
     var tok = tokCache ? Promise.resolve(tokCache) : api('GET', '/api/sites/' + encodeURIComponent(SLUG) + '/design').then(function (d) {
       var t = (d && d.tokens) || {};
@@ -1803,10 +1809,15 @@
     var act = tokLis[tokActive];
     if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest' });
   }
-  function openTokPop() {
-    tokCaret = pText.selectionStart || pText.value.length;
+  function openTokPop(ta, btn, anchor) {
+    if (tokOwner && tokOwner !== btn) tokOwner.setAttribute('aria-expanded', 'false');
+    tokTarget = ta || pText;
+    tokOwner = btn || pTokBtn;
+    anchor = anchor || pTokRow;
+    if (anchor.nextSibling !== pTokPop) anchor.parentNode.insertBefore(pTokPop, anchor.nextSibling);
+    tokCaret = tokTarget.selectionStart || tokTarget.value.length;
     pTokPop.hidden = false;
-    pTokBtn.setAttribute('aria-expanded', 'true');
+    tokOwner.setAttribute('aria-expanded', 'true');
     pTokFilter.value = '';
     tokActive = 0;
     clear(pTokList);
@@ -1817,20 +1828,31 @@
   function closeTokPop(focusText) {
     if (pTokPop.hidden) return;
     pTokPop.hidden = true;
-    pTokBtn.setAttribute('aria-expanded', 'false');
-    if (focusText) pText.focus();
+    if (tokOwner) tokOwner.setAttribute('aria-expanded', 'false');
+    if (focusText && tokTarget && tokTarget.isConnected) tokTarget.focus();
   }
   function insertToken(key) {
-    var v = pText.value, pos = Math.min(tokCaret, v.length);
+    var ta = tokTarget && tokTarget.isConnected ? tokTarget : null;
+    if (!ta) { closeTokPop(false); return; }
+    var v = ta.value, pos = Math.min(tokCaret, v.length);
     var before = v.slice(0, pos), after = v.slice(pos);
     var ins = (before && !/\s$/.test(before) ? ' ' : '') + key + (after && !/^\s/.test(after) ? ' ' : '');
-    pText.value = before + ins + after;
+    ta.value = before + ins + after;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
     closeTokPop(false);
-    pText.focus();
+    ta.focus();
     var c = (before + ins).length;
-    pText.setSelectionRange(c, c);
+    ta.setSelectionRange(c, c);
   }
-  pTokBtn.addEventListener('click', function () { if (pTokPop.hidden) openTokPop(); else closeTokPop(true); });
+  // Knopf und Strg+Leertaste für ein weiteres Textfeld; liefert die Zeile mit dem Knopf
+  function tokPicker(ta, title) {
+    var btn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: title });
+    var row = el('div', { class: 'row tokrow' }, [btn]);
+    btn.addEventListener('click', function () { if (pTokPop.hidden || tokOwner !== btn) openTokPop(ta, btn, row); else closeTokPop(true); });
+    ta.addEventListener('keydown', function (e) { if (e.key === ' ' && e.ctrlKey) { e.preventDefault(); openTokPop(ta, btn, row); } });
+    return row;
+  }
+  pTokBtn.addEventListener('click', function () { if (pTokPop.hidden || tokOwner !== pTokBtn) openTokPop(); else closeTokPop(true); });
   pTokFilter.addEventListener('input', function () { tokActive = 0; renderTokList(); });
   pTokFilter.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowDown') { e.preventDefault(); if (tokItems.length) { tokActive = (tokActive + 1) % tokItems.length; renderTokList(); } }
@@ -4182,6 +4204,7 @@
         el('div', { class: 'nhead' }, [el('code', { text: n.label }), el('span', { class: 'nsnip', text: n.snippet ? '„' + n.snippet + '“' : '' }), el('span', { class: 'spacer' }), del]),
         nmeta,
         ta2,
+        tokPicker(ta2, 'Design-Token oder Komponente aus der Bibliothek in den Hinweis einfügen (Strg+Leertaste)'),
       ]);
       renderNoteMeta(nmeta, n);
       li.addEventListener('mouseenter', function () { var nn = noteNode(n); if (nn) placeHighlight(nn, true); });
@@ -4208,7 +4231,7 @@
     var bApply = iconButton('check', 'v' + v.v + ' übernehmen', { class: 'primary', title: d.target === 'library' ? 'Ersetzt Vorlage, CSS und Beschreibung der Komponente durch diese Version (Schritt mit Prüfung und Verlauf)' : 'Ersetzt das Element in der Seite durch diese Version (Schritt mit Prüfung und Verlauf)' });
     var bDiscard = iconButton('trash', 'Verwerfen', { class: 'ghost danger' });
     var err = el('div', { class: 'err', role: 'alert' });
-    dBody.appendChild(el('section', { class: 'dsec' }, [el('h3', { text: 'Nachbessern' }), ta, err, el('div', { class: 'row end' }, [bNew])]));
+    dBody.appendChild(el('section', { class: 'dsec' }, [el('h3', { text: 'Nachbessern' }), ta, tokPicker(ta, 'Design-Token oder Komponente aus der Bibliothek in den Auftrag einfügen (Strg+Leertaste)'), err, el('div', { class: 'row end' }, [bNew])]));
     dBody.appendChild(el('div', { class: 'row dactions' }, [bDiscard, el('span', { class: 'spacer' }), bApply]));
     bNew.disabled = bApply.disabled = isBusy();
     if (isBusy()) err.textContent = 'Es läuft noch ein Auftrag – danach möglich.';
