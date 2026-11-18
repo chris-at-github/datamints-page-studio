@@ -9,6 +9,8 @@ fake_total() { # fake_total <kosten dieses aufrufs> -> neuer Gesamtstand der Ses
 }
 RESUMED=0; for a in "$@"; do [[ "$a" == "--resume" ]] && RESUMED=1; done
 PROMPT="$(cat)"
+# Für den Abbrechen-Test: lange laufen (der Worker beendet den Prozessbaum)
+[[ -n "${FAKE_CLAUDE_SLEEP:-}" ]] && sleep "$FAKE_CLAUDE_SLEEP"
 # Für Tests: Aufrufparameter und Anmeldung protokollieren
 if [[ -n "${FAKE_CLAUDE_ARGS:-}" ]]; then printf '%s\n' "$@" >"$FAKE_CLAUDE_ARGS"; echo "KEY=${ANTHROPIC_API_KEY:-}" >>"$FAKE_CLAUDE_ARGS"; printf "PROMPT:\n%s\n" "$PROMPT" >>"$FAKE_CLAUDE_ARGS"; fi
 # Verwendete Variante weggelassen: die Korrekturrunde behebt nichts (Dateien bleiben, Prüfung meldet die Variante)

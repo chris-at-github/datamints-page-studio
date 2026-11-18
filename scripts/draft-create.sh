@@ -113,6 +113,15 @@ write_source() {
 }
 
 CREATED_DIR=""
+# Abbrechen (Worker schickt SIGTERM an das Skript und alle Unterprozesse): Angefangenes aufräumen wie bei einem Fehler.
+# Bash führt den Handler aus, sobald der laufende Unterprozess beendet ist. Exit 5 = abgebrochen.
+on_cancel() {
+  trap '' TERM INT
+  if [[ -n "$CREATED_DIR" ]]; then rm -rf "$CREATED_DIR"
+  elif [[ -n "${DDIR:-}" && -n "${VERSION:-}" ]]; then rm -rf "$DDIR/v$VERSION" "$DDIR/import-v$VERSION.html" "$DDIR/import-v$VERSION.original.html"; fi
+  die "Abgebrochen" 5
+}
+trap on_cancel TERM INT
 if [[ -z "$DID" ]]; then
   # ----- neuer Entwurf -----
   if [[ "$MODE" == library ]]; then
@@ -492,6 +501,8 @@ if (( ${#MATERIAL_WARN[@]} )); then
   WARN="$(jq -c '. as $w | $ARGS.positional + $w' --args "${MATERIAL_WARN[@]}" <<<"$WARN")"
 fi
 NPH="$(jq '.platzhalter | length' <<<"$CHECK")"; NOPEN="$(jq '[.befund[] | select(.umgesetzt | not)] | length' <<<"$CHECK")"; NBEF="$(jq '.befund | length' <<<"$CHECK")"
+# Ab hier ist die Version fertig: ein später Abbruch verwirft sie nicht mehr
+trap '' TERM INT
 tmp="$(mktemp)"
 jq --argjson v "$VERSION" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)" --arg summary "$SUMMARY" --arg name "$NAME" \
    --arg title "$TITLE" --arg model "$MODEL" --arg effort "$EFFORT" --argjson cost "$COST" --arg session "$SESSION" --argjson scost "$SESSION_COST" --argjson warn "$WARN" \

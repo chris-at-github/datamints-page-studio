@@ -320,6 +320,7 @@
     'button.primary{background:#2563eb;border-color:#2563eb;color:#fff}' +
     'button.primary:hover:not([disabled]){background:#1d4ed8}' +
     'button.danger{background:#fff;border-color:#dc2626;color:#b91c1c}' +
+    'button.cancel-job{color:#b91c1c;border-color:#fca5a5}' +
     'button.on{background:#dbeafe;border-color:#2563eb}' +
     'button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible,.drop:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}' +
     '.status{max-width:280px;padding:0 6px;font-size:13px;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
@@ -638,6 +639,11 @@
   btnFollowup.style.display = 'none';
   var lnkHome = el('a', { class: 'btn icon-only ghost', href: '/', title: 'Zur Übersicht aller Websites', 'aria-label': 'Zur Übersicht' }, [icon('grid')]);
   var statusEl = el('span', { class: 'status', role: 'status', 'aria-live': 'polite' });
+  // Laufenden oder wartenden Entwurf abbrechen (Server: POST /api/jobs/<id>/cancel)
+  var CANCELABLE = { draft: 1 };
+  var cancelling = {}; // id -> true, solange der Abbruch angefordert ist
+  var btnCancel = iconButton('x', 'Abbrechen', { class: 'cancel-job', title: 'Entwurf abbrechen' });
+  btnCancel.style.display = 'none';
   var bar = el('div', { class: 'bar', role: 'toolbar', 'aria-label': 'Modio' }, [
     el('span', { class: 'brand' }, [icon('sparkles'), 'Modio']),
     lnkHome,
@@ -649,8 +655,26 @@
     btnFollowup,
     btnChanges,
     statusEl,
+    btnCancel,
   ]);
   ui.appendChild(bar);
+  btnCancel.addEventListener('click', function () {
+    var job = btnCancel.modioJob;
+    if (!job || cancelling[job.id]) return;
+    var q = job.status === 'pending'
+      ? 'Wartenden Entwurf abbrechen? Er wird nicht gestartet.'
+      : 'Entwurf abbrechen? Claude wird sofort beendet. Was in diesem Lauf entstanden ist, wird verworfen; bisherige Versionen bleiben.';
+    if (!window.confirm(q)) return;
+    cancelling[job.id] = true;
+    renderStatus();
+    api('POST', '/api/jobs/' + encodeURIComponent(job.id) + '/cancel').then(function (d) {
+      if (d && d.job && !d.cancelling) trackJob(d.job); // wartender Auftrag: sofort erledigt
+    }).catch(function (e) {
+      delete cancelling[job.id];
+      renderStatus();
+      showToast('Abbrechen nicht möglich: ' + e.message, true);
+    });
+  });
 
   // Hinweis/Toast
   var toastText = el('span');
@@ -938,6 +962,7 @@
       var label = TYPE_LABEL[job.type] || job.type;
       var txt;
       if (job.status === 'pending') txt = label + ': in Warteschlange';
+      else if (cancelling[job.id]) txt = 'Wird abgebrochen …';
       else if (job.status === 'running') txt = job.type === 'annotate' ? 'Claude arbeitet …' : job.type === 'draft' ? (job.params && job.params.importFile ? 'Claude übernimmt den Import …' : job.params && job.params.mode === 'brief' ? 'Briefing wird erstellt …' : 'Claude entwirft …') : label + ' läuft …';
       else txt = 'Prüfung nötig – anzeigen';
       statusEl.classList.add(job.status);
@@ -966,6 +991,10 @@
     } else {
       statusEl.appendChild(document.createTextNode('bereit'));
     }
+    var canCancel = !!job && !!CANCELABLE[job.type] && (job.status === 'running' || job.status === 'pending');
+    btnCancel.style.display = canCancel ? '' : 'none';
+    btnCancel.disabled = !!(job && cancelling[job.id]);
+    btnCancel.modioJob = canCancel ? job : null;
     var busy = !!job;
     btnSelect.disabled = false; // auch während eines Schritts: Annotationen können in die Queue
     btnSelect.title = busy ? 'Element auswählen (Alt+A) – während der Schritt läuft nur in die Queue' : 'Element auswählen (Alt+A)';
@@ -2390,6 +2419,13 @@
 
   function onFinished(job) {
     delete seenActive[job.id];
+    delete cancelling[job.id];
+    if (job.status === 'failed' && job.cancelled) {
+      lastFailed = null;
+      if (job.type === 'draft') loadDrafts();
+      showToast((TYPE_LABEL[job.type] || job.type) + ' abgebrochen.', false);
+      return;
+    }
     if (job.status === 'failed') {
       lastFailed = job;
       if (job.type === 'design-save' || job.type === 'tokens-propose' || job.type === 'areas-sync') {

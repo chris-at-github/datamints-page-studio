@@ -72,12 +72,56 @@ async function readJob(status, id) {
   return JSON.parse(await fsp.readFile(jobPath(status, id), 'utf8'));
 }
 
+// ---------- Abbrechen ----------
+// Der Server legt jobs/running/<id>.cancel an (er läuft ggf. im Container und kann keine Prozesse beenden).
+// Der Worker beendet dann das laufende Skript samt allen Unterprozessen (timeout, claude, Browser), das Skript räumt per Trap auf.
+const CANCEL_TYPES = new Set(['draft']);
+const cancelPath = (id) => path.join(JOBS_DIR, 'running', `${id}.cancel`);
+let currentChild = null;
+
+// Alle Nachfahren eines Prozesses über /proc (timeout legt eine eigene Prozessgruppe an, ein Gruppen-Signal reicht nicht)
+function descendants(rootPid) {
+  const children = new Map();
+  for (const d of fs.readdirSync('/proc')) {
+    if (!/^\d+$/.test(d)) continue;
+    let stat;
+    try { stat = fs.readFileSync(`/proc/${d}/stat`, 'utf8'); } catch { continue; }
+    const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+    if (!children.has(ppid)) children.set(ppid, []);
+    children.get(ppid).push(Number(d));
+  }
+  const out = [];
+  const queue = [rootPid];
+  while (queue.length) for (const c of children.get(queue.shift()) || []) { out.push(c); queue.push(c); }
+  return out;
+}
+
+function killTree(rootPid, signal) {
+  for (const pid of [rootPid, ...descendants(rootPid)]) {
+    try { process.kill(pid, signal); } catch { /* schon beendet */ }
+  }
+}
+
+function cancelRunning(id) {
+  const child = currentChild;
+  if (!child || child.exitCode !== null) return;
+  log(`■ ${id} wird abgebrochen`);
+  child.modioCancelled = true;
+  // Unterprozesse zuerst merken: nach dem Ende von timeout/claude hängen sie sonst an init
+  const tree = [child.pid, ...descendants(child.pid)];
+  for (const pid of tree) { try { process.kill(pid, 'SIGTERM'); } catch { /* schon beendet */ } }
+  setTimeout(() => {
+    for (const pid of tree) { try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* beendet */ } }
+  }, 10000).unref();
+}
+
 // ---------- Skripte ausführen ----------
 function runScript(name, args, logFile) {
   return new Promise((resolve) => {
     const out = fs.createWriteStream(logFile, { flags: 'a' });
     out.write(`\n$ scripts/${name} ${args.map((a) => JSON.stringify(a)).join(' ')}\n`);
     const child = spawn(path.join(SCRIPTS, name), args, { cwd: ROOT, env: process.env });
+    currentChild = child;
     let stdout = '';
     child.stdout.on('data', (d) => { stdout += d; out.write(d); });
     child.stderr.on('data', (d) => out.write(d));
@@ -86,7 +130,8 @@ function runScript(name, args, logFile) {
       const line = stdout.trim().split('\n').filter(Boolean).at(-1) || '';
       let result = null;
       try { result = JSON.parse(line); } catch { /* keine JSON-Ausgabe */ }
-      resolve({ code, result });
+      if (currentChild === child) currentChild = null;
+      resolve({ code, result, cancelled: !!child.modioCancelled });
     });
     child.on('error', (e) => { out.end(); resolve({ code: 1, result: { status: 'error', error: e.message } }); });
   });
@@ -241,20 +286,34 @@ async function processJob(id) {
   log(`▶ ${id} ${job.type} ${job.slug}`);
 
   let r;
+  let cancelRequested = false;
+  const cancelTimer = CANCEL_TYPES.has(job.type) ? setInterval(() => {
+    if (cancelRequested || !fs.existsSync(cancelPath(id))) return;
+    cancelRequested = true;
+    cancelRunning(id);
+  }, 500) : null;
   try {
     r = await handle(job, logFile);
   } catch (e) {
     r = { code: 1, result: { status: 'error', error: e.message } };
+  } finally {
+    clearInterval(cancelTimer);
+    await fsp.rm(cancelPath(id), { force: true });
   }
   job.finished = new Date().toISOString();
   job.result = r.result;
   job.exitCode = r.code;
   let status;
+  // Abbruch zählt nur, wenn das Skript nicht doch noch fertig geworden ist
+  if (r.code !== 0 && (r.cancelled || cancelRequested)) {
+    job.cancelled = true;
+    job.result = { ...(r.result || {}), status: 'cancelled', error: 'Abgebrochen' };
+  }
   if (r.code === 0) status = 'done';
   else if (r.code === 3 && ['annotate', 'local-commit', 'inspect-apply', 'draft-apply', 'page-import', 'page-delete', 'component-delete', 'component-sync', 'component-rename', 'component-merge'].includes(job.type)) status = 'review';
   else {
     status = 'failed';
-    job.error = r.result?.error || `Skript endete mit Exit-Code ${r.code} (siehe ${job.log})`;
+    job.error = job.cancelled ? 'Abgebrochen' : r.result?.error || `Skript endete mit Exit-Code ${r.code} (siehe ${job.log})`;
   }
 
   // Hochgeladene Bilder werden nach Übernahme nicht mehr gebraucht
@@ -270,12 +329,13 @@ async function processJob(id) {
 
   await refreshState(job.slug, logFile).catch((e) => log(`Status-Aktualisierung fehlgeschlagen: ${e.message}`));
   await writeJob(job, status);
-  log(`${status === 'done' ? '✔' : status === 'review' ? '⚠' : '✖'} ${id} ${status}${job.error ? ': ' + job.error : ''}`);
+  log(`${status === 'done' ? '✔' : status === 'review' ? '⚠' : job.cancelled ? '■' : '✖'} ${id} ${job.cancelled ? 'abgebrochen' : status}${job.error && !job.cancelled ? ': ' + job.error : ''}`);
 }
 
 // Jobs, die bei einem Absturz in running/ hängen geblieben sind, als fehlgeschlagen markieren
 async function recoverStale() {
   for (const f of await fsp.readdir(path.join(JOBS_DIR, 'running'))) {
+    if (f.endsWith('.cancel')) { await fsp.rm(path.join(JOBS_DIR, 'running', f), { force: true }); continue; }
     if (!f.endsWith('.json')) continue;
     const job = await readJob('running', f.slice(0, -5)).catch(() => null);
     if (!job) continue;

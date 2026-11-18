@@ -603,6 +603,33 @@ git -C "$NS" checkout -q -- components
 jq -n '{id:"job-test-neu3", params:{page:"/seiten/startseite.html", selector:"#hero", html:"", text:"", prompt:"Hero für die Startseite", viewport:{width:1440,height:900}, mode:"brief"}}' >"$JOBN"
 OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN" 2>/dev/null)" || true
 check "Briefing im neuen Projekt: Auftrag, Paket, Element als Material" 'BD="$NS/drafts/$(jq -r .draft <<<"$OUT")/brief"; B="$BD/briefing.md"; grep -q "Hero für die Startseite" "$B" && grep -q "Projektwissen" "$B" && ! grep -q "## Originalseite" "$B" && grep -q "genau ein Wurzelelement" "$B" && grep -q "Willkommen" "$BD/"*-element.html && jq -e ".files | length == 1" "$BD/brief.json" >/dev/null'
+
+echo "Entwurf abbrechen (Server-Endpunkt, Worker beendet den Prozessbaum)"
+CJ="$(mktemp -d)"; mkdir -p "$CJ"/{pending,running,review,done,failed,assets}
+CPORT="${TEST_CANCEL_PORT:-3997}"
+JOBS_DIR="$CJ" MODIO_API_TOKEN="$STOKEN" BRIDGE_PORT="$CPORT" node tools/server/index.js >/dev/null 2>&1 &
+CSRV=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$CPORT/" && break; sleep 0.3; done
+cancel() { curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Modio-Token: $STOKEN" "http://127.0.0.1:$CPORT/api/jobs/$1/cancel"; }
+CID="job-20991231000000-c0ffee"; ND_BEFORE="$(ls "$NS/drafts" | wc -l)"
+jq -n --arg id "$CID" '{id:$id, type:"draft", slug:"modio-test-neu", status:"pending", params:{page:"/seiten/startseite.html", selector:"#hero", html:"", text:"", prompt:"Hero lang", viewport:{width:1440,height:900}}}' >"$CJ/pending/$CID.json"
+JOBS_DIR="$CJ" FAKE_CLAUDE_SLEEP=60 PATH="$ROOT/tests/fake-claude:$PATH" node tools/worker/index.js >/dev/null 2>&1 &
+CWK=$!
+for _ in $(seq 1 120); do pgrep -f "tests/fake-claude/claude" >/dev/null && break; sleep 0.5; done
+check "Abbrechen: Claude läuft, neuer Entwurf angelegt" 'pgrep -f "tests/fake-claude/claude" >/dev/null && (( $(ls "$NS/drafts" | wc -l) == ND_BEFORE + 1 ))'
+CODE="$(cancel "$CID")"
+for _ in $(seq 1 40); do [[ -f "$CJ/failed/$CID.json" ]] && break; sleep 0.5; done
+check "Abbrechen: Server antwortet 202, Job abgebrochen" '[[ "$CODE" == 202 ]] && jq -e ".cancelled == true and .error == \"Abgebrochen\" and .result.status == \"cancelled\"" "$CJ/failed/$CID.json" >/dev/null'
+check "Abbrechen: kein Claude-Prozess mehr, Entwurf aufgeräumt, Markierung entfernt" '! pgrep -f "tests/fake-claude/claude" >/dev/null && (( $(ls "$NS/drafts" | wc -l) == ND_BEFORE )) && [[ ! -e "$CJ/running/$CID.cancel" ]]'
+kill "$CWK" 2>/dev/null || true; wait "$CWK" 2>/dev/null || true
+CID2="job-20991231000001-c0ffee"
+jq -n --arg id "$CID2" '{id:$id, type:"draft", slug:"modio-test-neu", status:"pending", params:{page:"/seiten/startseite.html", selector:"#hero", prompt:"x"}}' >"$CJ/pending/$CID2.json"
+CODE="$(cancel "$CID2")"
+check "Abbrechen: wartender Entwurf sofort abgebrochen" '[[ "$CODE" == 200 && ! -e "$CJ/pending/$CID2.json" ]] && jq -e ".status == \"failed\" and .cancelled == true" "$CJ/failed/$CID2.json" >/dev/null'
+CID3="job-20991231000002-c0ffee"
+jq -n --arg id "$CID3" '{id:$id, type:"report", slug:"modio-test-neu", status:"pending", params:{}}' >"$CJ/pending/$CID3.json"
+check "Abbrechen: nur für Entwürfe, beendete Aufträge 409" '[[ "$(cancel "$CID3")" == 400 && "$(cancel "$CID")" == 409 ]]'
+kill "$CSRV" 2>/dev/null || true; rm -rf "$CJ"
 set +e; OUT="$(./scripts/site-recrawl.sh modio-test-neu 2>/dev/null)"; rc=$?; set -e
 check "Neu einlesen bei neuem Projekt abgewiesen" '(( rc != 0 )) && grep -q "Neues Projekt" <<<"$OUT"'
 

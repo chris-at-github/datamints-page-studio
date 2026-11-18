@@ -34,6 +34,7 @@ const ALLOWED_ORIGINS = new Set(
 );
 const STATUSES = ['pending', 'running', 'review', 'done', 'failed'];
 const ACTIVE = ['pending', 'running', 'review'];
+const CANCELABLE = ['draft']; // Aufträge mit Abbrechen-Knopf (Worker: CANCEL_TYPES)
 const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
 
 if (!TOKEN || TOKEN.length < 16 || TOKEN.startsWith('<')) {
@@ -707,6 +708,34 @@ async function handleApi(req, res, url) {
     const dup = await listJobs((j) => j.type === 'decision' && j.params?.jobId === job.id);
     if (dup.some((j) => ['pending', 'running'].includes(j.status))) return sendError(res, 409, 'Entscheidung wird bereits verarbeitet');
     return send(res, 202, { job: await createJob('decision', job.slug, { jobId: job.id, action: body.action, annotationId: job.result?.annotationId }) });
+  }
+
+  if ((m = p.match(/^\/api\/jobs\/([^/]+)\/cancel$/)) && req.method === 'POST') {
+    if (!validJobId(m[1])) return sendError(res, 400, 'Ungültige Job-ID');
+    let job = await findJob(m[1]);
+    if (!job) return sendError(res, 404, 'Job nicht gefunden');
+    if (!CANCELABLE.includes(job.type)) return sendError(res, 400, 'Abbrechen gibt es nur für Entwürfe');
+    if (job.status === 'pending') {
+      // Noch nicht gestartet: selbst als abgebrochen ablegen. Schlägt das Verschieben fehl, hat der Worker ihn gerade übernommen.
+      const to = path.join(JOBS_DIR, 'failed', `${job.id}.json`);
+      let moved = false;
+      try { await fsp.rename(path.join(JOBS_DIR, 'pending', `${job.id}.json`), to); moved = true; } catch { /* inzwischen gestartet */ }
+      if (moved) {
+        const now = new Date().toISOString();
+        const done = { ...job, status: 'failed', cancelled: true, error: 'Abgebrochen', result: { status: 'cancelled', error: 'Abgebrochen' }, finished: now, updated: now };
+        const tmp = path.join(JOBS_DIR, `.${job.id}.cancel.tmp`);
+        await fsp.writeFile(tmp, JSON.stringify(done, null, 2));
+        await fsp.rename(tmp, to);
+        const files = [...(job.params?.references || []).filter((r) => r.type === 'upload').map((r) => r.file), job.params?.importFile].filter(Boolean);
+        for (const f of files) if (/^jobs\/assets\/[^/]+$/.test(f)) await fsp.rm(path.join(ROOT, f), { force: true });
+        return send(res, 200, { job: slimJob(done) });
+      }
+      job = await findJob(m[1]);
+    }
+    if (job?.status !== 'running') return sendError(res, 409, 'Der Entwurf läuft nicht mehr');
+    // Laufender Auftrag: der Worker beendet ihn, sobald er die Markierung sieht
+    await fsp.writeFile(path.join(JOBS_DIR, 'running', `${job.id}.cancel`), new Date().toISOString());
+    return send(res, 202, { job: slimJob(job), cancelling: true });
   }
 
   if (p === '/api/jobs' && req.method === 'GET') {
