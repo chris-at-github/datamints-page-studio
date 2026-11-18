@@ -104,7 +104,7 @@ K1 bis K4 sind umgesetzt:
 
 - **Skripte:** `draft-create.sh`, `draft-apply.sh` und `draft-discard.sh`, dazu `scripts/lib/draft.mjs` und `templates/DRAFT.md`. `add-reference.sh` nimmt auch Entwurfs-IDs an, `check-diff` lässt `components/mx-*.css` zu (mit Token-Hinweisen wie bei `overrides.css`).
 - **Server und Worker:** Entwurfs-API, Vorschau im Seitenkontext, `__components.css`, `__draft.css`, CSS-Ebenen sowie die Job-Typen `draft`, `draft-apply` und `draft-discard`.
-- **Overlay:** Knopf „Entwurf erstellen“ (Strg+Alt+Enter), Panel „Entwürfe“ (Versionen, Bausteine „neu/wie bisher“, Nachbessern, Übernehmen, Verwerfen) und das Vorschau-Band mit Umschalten „Aktuell / v1 / v2 …“ (Taste V). Nach einem fertigen Entwurf öffnet sich die Vorschau automatisch.
+- **Overlay:** Knopf „Entwurf erstellen“ (Strg+Enter, Hauptknopf im Dialog), Panel „Entwürfe“ (Versionen, Bausteine „neu/wie bisher“, Nachbessern, Übernehmen, Verwerfen) und das Vorschau-Band mit Umschalten „Aktuell / v1 / v2 …“ (Taste V). Nach einem fertigen Entwurf öffnet sich die Vorschau automatisch.
 - **Report:** Abschnitt „Komponenten und CSS-Ebenen“ und Bezug zum Entwurf je Schritt.
 - **Regeln:** `templates/CLAUDE.md` (spätere Annotationen an Komponenten ändern `components/…`, `drafts/` tabu) und `run-annotation.sh`.
 - **Tests** (`tests/run.sh`): Prüfung und Übernahme, `draft-create.sh` mit simuliertem Claude (`tests/fake-claude/`), Server (`tests/draft-server-test.mjs`) und Browser (`tests/draft-overlay-test.mjs`, prüft im echten Rendering, dass die Komponente eine spezifischere Alt-Regel schlägt). Mit `SKIP_BROWSER=1` lässt sich der Browser-Test überspringen.

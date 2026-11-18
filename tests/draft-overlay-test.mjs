@@ -182,12 +182,13 @@ try {
       wraps: vis.filter((b) => getComputedStyle(b).whiteSpace !== 'nowrap').length,
       foot: [...p.querySelectorAll('.pfoot button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim() || b.title),
       keys: p.querySelector('.pkeys').textContent, menuHidden: p.querySelector('.qmenu').hidden,
+      primary: [...p.querySelectorAll('.pfoot button.primary')].filter((b) => b.offsetParent).map((b) => b.textContent.trim()),
     };
   });
   check('Dialog: ohne Bild-URL, Abbrechen und claude.ai', !dlg.urlField && !/Abbrechen|URL hinzufügen|claude\.ai|HTML importieren/.test(dlg.text), dlg.text.slice(0, 200));
-  check('Dialog: Footer Entwurf und Split-Button In die Queue', dlg.foot.includes('Entwurf') && dlg.foot.includes('In die Queue') && dlg.menuHidden, JSON.stringify(dlg.foot));
+  check('Dialog: Footer Split-Button In die Queue und Hauptknopf Entwurf erstellen', dlg.foot.includes('In die Queue') && dlg.foot[dlg.foot.length - 1] === 'Entwurf erstellen' && dlg.primary.join() === 'Entwurf erstellen' && dlg.menuHidden, JSON.stringify(dlg));
   check('Dialog: Buttons mit gleicher Höhe, ohne Umbruch', dlg.heights.length === 1 && dlg.wraps === 0, JSON.stringify(dlg.heights));
-  check('Dialog: Kürzel-Hinweis unter dem Footer', /Strg\+Enter In die Queue · Esc Schließen/.test(dlg.keys), dlg.keys);
+  check('Dialog: Kürzel-Hinweis unter dem Footer', /Strg\+Enter Entwurf erstellen · Esc Schließen/.test(dlg.keys), dlg.keys);
   let direct = null;
   await page.route('**/api/sites/*/annotations', async (route) => {
     direct = route.request().postData();

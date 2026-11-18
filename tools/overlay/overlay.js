@@ -489,7 +489,8 @@
     '.pfoot .textin{width:170px;font-size:12px;padding:4px 8px}' +
     '.split{position:relative;display:inline-flex}' +
     '.split>button:first-child{border-top-right-radius:0;border-bottom-right-radius:0}' +
-    '.split>button.icon-only{border-top-left-radius:0;border-bottom-left-radius:0;border-left-color:rgba(255,255,255,.3)}' +
+    '.split>button.icon-only{border-top-left-radius:0;border-bottom-left-radius:0;border-left-color:var(--ui-line-strong)}' +
+    '.split>button.primary.icon-only,.split>button.primary+button.icon-only{border-left-color:rgba(255,255,255,.3)}' +
     '.qmenu{position:absolute;right:0;bottom:calc(100% + 4px);min-width:250px;background:#fff;border:1px solid var(--ui-line-strong);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.15);padding:4px;z-index:2}' +
     '.qmenu[hidden]{display:none}' +
     '.qmenu button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:16px;background:transparent;border-color:transparent;text-align:left}' +
@@ -727,15 +728,15 @@
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pClose = iconButton('x', 'Schließen', { class: 'ghost', title: 'Schließen (Esc)' }, true);
   var pHead = el('div', { class: 'phead', title: 'Zum Verschieben ziehen' }, [pTitle, pClose]);
-  // Split-Button: „In die Queue“ (Strg+Enter), im Menü „Direkt umsetzen“ (Strg+Umschalt+Enter). Beim Nachbessern nur „Direkt umsetzen“.
-  var pQueue = el('button', { type: 'button', class: 'primary', text: 'In die Queue', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)' });
-  var pQueueMore = iconButton('chevronDown', 'Weitere Optionen', { class: 'primary', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'dps-qmenu' }, true);
+  // Hauptknopf „Entwurf erstellen“ (Strg+Enter). Split-Button: „In die Queue“ (Strg+Alt+Enter), im Menü „Direkt umsetzen“ (Strg+Umschalt+Enter). Beim Nachbessern nur „Direkt umsetzen“ (Strg+Enter).
+  var pQueue = el('button', { type: 'button', text: 'In die Queue', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Alt+Enter)' });
+  var pQueueMore = iconButton('chevronDown', 'Weitere Optionen', { 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'dps-qmenu' }, true);
   var pSend = el('button', { type: 'button', role: 'menuitem', title: 'Sofort als eigenen Schritt mit Claude umsetzen' }, [
     el('span', { text: 'Direkt umsetzen' }), el('span', { class: 'hint', text: 'Strg+Umschalt+Enter' }),
   ]);
   var pQMenu = el('div', { id: 'dps-qmenu', class: 'qmenu', role: 'menu', hidden: '' }, [pSend]);
   var pSplit = el('div', { class: 'split' }, [pQueue, pQueueMore, pQMenu]);
-  var pDraft = iconButton('pencilSparkles', 'Entwurf', { title: 'Claude gestaltet das Element ohne Altlasten als eigene Komponente neu. Erst „Übernehmen“ ändert die Website. (Strg+Alt+Enter)' });
+  var pDraft = iconButton('pencilSparkles', 'Entwurf erstellen', { class: 'primary', title: 'Claude gestaltet das Element ohne Altlasten als eigene Komponente neu. Erst „Übernehmen“ ändert die Website. (Strg+Enter)' });
   // Neue Projekte: Element als Komponente für die Bibliothek anlegen (Name, Hinweise zu Varianten im Prompt optional)
   var pComp = iconButton('component', 'Komponente speichern', { title: 'Element ohne Neugestaltung als wiederverwendbare Komponente mit Varianten und austauschbaren Inhalten anlegen. Der Prompt ist optional (z. B. gewünschte Varianten).' });
   var pCompName = el('input', { type: 'text', class: 'textin', placeholder: 'name, z. B. produktkachel', 'aria-label': 'Name der Komponente (a-z, 0-9, Bindestrich)', spellcheck: 'false', maxlength: '40' });
@@ -744,7 +745,7 @@
   function showCompName(on) { pComp.style.display = on ? 'none' : ''; pCompName.style.display = pCompGo.style.display = on ? '' : 'none'; }
   showCompName(false);
   var pCompRow = el('div', { class: 'pcomp' }, [pComp, pCompName, pCompGo]);
-  var pKeysQueue = el('span', { text: 'In die Queue' });
+  var pKeysQueue = el('span', { text: 'Entwurf erstellen' });
   var pKeys = el('div', { class: 'pkeys' }, [el('kbd', { text: 'Strg' }), '+', el('kbd', { text: 'Enter' }), ' ', pKeysQueue, ' · ', el('kbd', { text: 'Esc' }), ' Schließen']);
   var pTokBtn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'dps-tokpop', title: 'Design-Token oder Komponente aus der Bibliothek in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token oder Komponente suchen …', 'aria-label': 'Token oder Komponente suchen', spellcheck: 'false' });
@@ -762,7 +763,7 @@
     pFile,
     pThumbs,
     pErr,
-    el('div', { class: 'pfoot' }, [pCompRow, el('span', { class: 'spacer' }), pDraft, pSplit]),
+    el('div', { class: 'pfoot' }, [pCompRow, el('span', { class: 'spacer' }), pSplit, pDraft]),
     pKeys,
   ]);
   ui.appendChild(promptPanel);
@@ -1018,11 +1019,12 @@
     pSend.disabled = busy;
     // Nachbessern: nur „Direkt umsetzen“ (Hauptknopf des Split-Buttons, ohne Menü)
     pQueue.textContent = followupJob ? 'Direkt umsetzen' : 'In die Queue';
-    pQueue.title = followupJob ? 'Korrektur sofort als eigenen Schritt umsetzen (Strg+Enter)' : 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)';
+    pQueue.title = followupJob ? 'Korrektur sofort als eigenen Schritt umsetzen (Strg+Enter)' : 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Alt+Enter)';
     if (followupJob) pQueue.disabled = busy;
+    pQueue.classList.toggle('primary', !!followupJob); // Hauptknopf ist sonst „Entwurf erstellen“
     pQueueMore.style.display = followupJob ? 'none' : '';
     if (followupJob) closeQMenu(false);
-    pKeysQueue.textContent = followupJob ? 'Direkt umsetzen' : 'In die Queue';
+    pKeysQueue.textContent = followupJob ? 'Direkt umsetzen' : 'Entwurf erstellen';
     pDraft.style.display = followupJob ? 'none' : '';
     pCompRow.style.display = followupJob || CFG.kind !== 'neu' ? 'none' : '';
     if (PREVIEW) { btnSelect.disabled = true; btnSelect.title = 'In der Vorschau eines Entwurfs nicht möglich'; }
@@ -1633,8 +1635,8 @@
   pText.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      if (e.altKey && !followupJob) { submit('draft'); return; }
-      submit(e.shiftKey || followupJob ? 'direct' : 'queue');
+      if (followupJob || e.shiftKey) { submit('direct'); return; }
+      submit(e.altKey ? 'queue' : 'draft'); // Strg+Enter = Hauptknopf „Entwurf erstellen“, Strg+Alt+Enter = In die Queue
     }
   });
   pSend.addEventListener('click', function () { closeQMenu(false); submit('direct'); });
