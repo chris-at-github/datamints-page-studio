@@ -22,6 +22,9 @@ const STATE_DIR = abs(env.STATE_DIR, './state');
 const OVERLAY_FILE = path.join(ROOT, 'tools/overlay/overlay.js');
 const FAVICON_SVG = path.join(ROOT, 'tools/server/favicon.svg');
 const FAVICON_ICO = path.join(ROOT, 'tools/server/favicon.ico');
+const FONTS_DIR = path.join(ROOT, 'tools/server/fonts');
+const LOGO_SVG = path.join(ROOT, 'tools/server/logo.svg');
+const LOGO_MARK_SVG = path.join(ROOT, 'tools/server/logo-mark.svg');
 const PORT = Number(env.BRIDGE_PORT || 3000);
 const TOKEN = env.DPS_API_TOKEN || '';
 const IMAGE_MAX_COUNT = Number(env.IMAGE_MAX_COUNT || 3);
@@ -1262,6 +1265,14 @@ const server = http.createServer(async (req, res) => {
       if (!validSlug(m[1])) return sendError(res, 400, 'Ungültiger Slug');
       if (m[2] === undefined) { res.writeHead(302, { Location: `/s/${m[1]}/` }); return res.end(); }
       return await serveSite(req, res, m[1], m[2], url.search);
+    }
+    if ((m = p.match(/^\/__dps\/fonts\/(Sora-(?:Regular|Medium|SemiBold|Bold)\.ttf)$/))) {
+      const ttf = await fsp.readFile(path.join(FONTS_DIR, m[1]));
+      return send(res, 200, ttf, { 'Content-Type': 'font/ttf', 'Cache-Control': 'public, max-age=604800' });
+    }
+    if (p === '/__dps/logo.svg' || p === '/__dps/logo-mark.svg') {
+      const svg = await fsp.readFile(p === '/__dps/logo.svg' ? LOGO_SVG : LOGO_MARK_SVG);
+      return send(res, 200, svg, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
     }
     if (p === '/favicon.svg') {
       const svg = await fsp.readFile(FAVICON_SVG);
