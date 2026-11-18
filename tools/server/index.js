@@ -76,6 +76,12 @@ const slugFromUrl = (url) =>
   new URL(url).hostname.replace(/^www\./, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
 const siteDir = (slug) => path.join(SITES_DIR, slug);
 const siteExists = (slug) => fs.existsSync(path.join(siteDir(slug), 'site.json'));
+// Pfad, wie ihn der Explorer des Rechners erwartet: unter WSL der Windows-Pfad (\\wsl.localhost\<distro>\…)
+const hostPath = (p) => {
+  const distro = process.env.WSL_DISTRO_NAME;
+  if (process.platform === 'linux' && distro && /^[\w.-]+$/.test(distro)) return `\\\\wsl.localhost\\${distro}${p.replace(/\//g, '\\')}`;
+  return p;
+};
 
 function newJobId() {
   const d = new Date();
@@ -767,7 +773,7 @@ async function handleApi(req, res, url) {
     if (!file) {
       const text = await fsp.readFile(path.join(bdir, meta.text || 'briefing.md'), 'utf8').catch(() => '');
       const files = await Promise.all((meta.files || []).map(async (f) => ({ ...f, size: (await fsp.stat(path.join(bdir, f.file)).catch(() => ({ size: 0 }))).size })));
-      return send(res, 200, { created: meta.created, text, files });
+      return send(res, 200, { created: meta.created, text, files, dir: hostPath(bdir) });
     }
     if (!(meta.files || []).some((f) => f.file === file)) return sendError(res, 404, 'Datei nicht im Briefing');
     const buf = await fsp.readFile(path.join(bdir, file)).catch(() => null);

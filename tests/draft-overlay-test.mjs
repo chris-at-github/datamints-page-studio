@@ -81,6 +81,19 @@ try {
   await page.waitForTimeout(300);
   const noteText = await ov('ul.nlist').textContent().catch(() => '');
   check('Element im Entwurf gewählt (Hinweis mit Selektor)', noteText.includes('Willkommen'), noteText.slice(0, 120));
+  const noteSel = () => ov('ul.nlist .nmeta .sel-full').first().textContent();
+  const sel0 = await noteSel();
+  const crumbs = await ov('ul.nlist .nmeta .crumbs button').allTextContents();
+  check('Hinweis: Pfad bis zur Komponente, Selektor sichtbar', crumbs.length >= 2 && crumbs[0].includes('mx-hero') && sel0.includes('.mx-hero'), JSON.stringify([crumbs, sel0]));
+  await ov('ul.nlist .nmeta .crumbs button').nth(crumbs.length - 2).click();
+  const sel1 = await noteSel();
+  check('Hinweis: Elternelement über die Pfadleiste wählen', sel1 !== sel0 && sel1.includes('.mx-hero') && (await ov('ul.nlist .nmeta .crumbs button').count()) === crumbs.length, JSON.stringify([sel0, sel1]));
+  await ov('ul.nlist .nmeta button.sel-edit').first().click();
+  await ov('ul.nlist .nmeta input.textin').fill('body');
+  check('Hinweis: Selektor außerhalb der Komponente abgelehnt', (await ov('ul.nlist .nmeta .hint').textContent()).includes('außerhalb der Komponente'));
+  await ov('ul.nlist .nmeta input.textin').fill('.mx-hero h1');
+  await ov('ul.nlist .nmeta input.textin').press('Enter');
+  check('Hinweis: Selektor von Hand angepasst', (await noteSel()).includes('.mx-hero h1') && (await ov('ul.nlist .nhead code').first().textContent()).includes('h1'), await noteSel());
   await ov('textarea.ndesc').first().fill('Überschrift kleiner');
   check('Hinweis zählt als Änderung', (await ov('#modio-drafts').textContent()).includes('Neue Version (2 Änderung(en) gewählt)'));
   await ov('#modio-drafts button.phbtn').click();
@@ -193,7 +206,34 @@ try {
   await page.waitForTimeout(800);
   await ov('#modio-drafts details.claude > summary').click();
   await page.waitForTimeout(300);
+  // Leiste waagerecht verschieben, Doppelklick setzt zurück
+  const hb = await ov('#modio-drafts .sb-head h2').boundingBox();
+  const pb0 = await ov('#modio-drafts').boundingBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + hb.width / 2 - 300, hb.y + hb.height / 2 + 80, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(350); // Leiste gleitet (transition)
+  const pb1 = await ov('#modio-drafts').boundingBox();
+  const bar1 = await ov('.bar').boundingBox();
+  check('Entwurfsleiste waagerecht verschoben, Leiste weicht aus', Math.abs(pb0.x - pb1.x - 300) < 3 && pb1.y === pb0.y && (bar1.x > pb1.x + pb1.width || bar1.x + bar1.width < pb1.x), JSON.stringify([pb0, pb1, bar1]));
+  await ov('#modio-drafts .sb-head h2').dblclick();
+  check('Entwurfsleiste per Doppelklick zurück am rechten Rand', Math.abs((await ov('#modio-drafts').boundingBox()).x - pb0.x) < 2);
   check('Panel: Bereich „Gestaltung in claude.ai“ mit Briefing', (await ov('#modio-drafts details.claude').count()) === 1 && (await ov('#modio-drafts textarea.brieftext').inputValue()).includes('## Auftrag') && (await ov('#modio-drafts ul.brieffiles').textContent()).includes('D-001-element.html'));
+  // Briefing anpassen: Kopieren nimmt den angepassten Text; Ordnerpfad kopieren
+  await page.evaluate(() => { navigator.clipboard.writeText = (t) => { window.__copied = t; return Promise.resolve(); }; });
+  await ov('#modio-drafts details.claude details > summary').click();
+  const bt = ov('#modio-drafts textarea.brieftext');
+  await bt.fill((await bt.inputValue()) + '\nZusatz: bitte dunkler Hintergrund');
+  await ov('#modio-drafts button:has-text("Briefing kopieren")').click();
+  await page.waitForTimeout(200);
+  check('Briefing angepasst und kopiert', (await page.evaluate(() => window.__copied || '')).endsWith('Zusatz: bitte dunkler Hintergrund') && (await ov('#modio-drafts .briefedit').textContent()).includes('angepasst'));
+  await ov('#modio-drafts button:has-text("Original wiederherstellen")').click();
+  check('Briefing: Original wiederhergestellt', !(await bt.inputValue()).includes('Zusatz:') && (await ov('#modio-drafts .briefedit').textContent()) === '');
+  await ov('#modio-drafts button.pathbtn').click();
+  await page.waitForTimeout(200);
+  const copiedPath = await page.evaluate(() => window.__copied || '');
+  check('Ordnerpfad kopieren', /[\\/]drafts[\\/]D-001[\\/]brief$/.test(copiedPath) && (!process.env.WSL_DISTRO_NAME || copiedPath.startsWith('\\\\wsl.localhost\\')), copiedPath);
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 5000 }).catch(() => null), ov('#modio-drafts ul.brieffiles button:has-text("D-001-element.html")').click()]);
   check('Panel: Briefing-Datei herunterladen', dl && dl.suggestedFilename() === 'D-001-element.html', String(dl && dl.suggestedFilename()));
   let impBody = null;

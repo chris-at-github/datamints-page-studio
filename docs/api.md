@@ -148,7 +148,7 @@ Alle `/api/`-Routen verlangen den Header `X-Modio-Token` (bei `GET /api/events` 
 | `POST /api/sites/<slug>/export` | – | `202 { job }` (`project-export`): Komponenten nach `export/<zeitpunkt>/` (bei neuen Projekten mit den Variablen aus `tokens-quelle.css`); Ergebnis `{ dir, components, files, warnings }` |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/import` | JSON `{ html, prompt? }` (HTML aus claude.ai, höchstens 1,5 MB) | `202 { job }` (`draft` mit `importFile`): bereinigen, dann übernimmt Claude ohne Neugestaltung als neue Version (frische Session, Effort `DRAFT_IMPORT_EFFORT`) |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/brief` | – | `202 { job }` (`draft-brief`): Briefing neu erzeugen |
-| `GET /api/sites/<slug>/drafts/<D-xxx>/brief` | – | `{ created, text, files: [{ file, kind: "html"|"md"|"png", viewport?, cut?, size }] }`; `404` ohne Briefing |
+| `GET /api/sites/<slug>/drafts/<D-xxx>/brief` | – | `{ created, text, files: [{ file, kind: "html"|"md"|"png", viewport?, cut?, size }], dir }` (`dir`: Ordner des Briefings, unter WSL als Windows-Pfad `\\wsl.localhost\<distro>\…`); `404` ohne Briefing |
 | `GET /api/sites/<slug>/drafts/<D-xxx>/brief/<datei>` | – | Datei als Download (`Content-Disposition: attachment`); nur Dateien aus `brief.json` |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/apply` | JSON `{ version? }` (Standard: neueste) | `202 { job }` (`draft-apply`) |
 | `POST /api/sites/<slug>/drafts/<D-xxx>/discard` | – | `202 { job }` (`draft-discard`) |

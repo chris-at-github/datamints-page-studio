@@ -92,6 +92,7 @@
     imagePlus: ['path:M16 5h6', 'path:M19 2v6', 'path:M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5',
       'path:m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21', 'circle:9,9,2'],
     chevronDown: ['path:m6 9 6 6 6-6'],
+    folder: ['path:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'],
     pencil: ['path:M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'path:m15 5 4 4'],
   };
   var SVGNS = 'http://www.w3.org/2000/svg';
@@ -458,7 +459,13 @@
     '.dsec{margin-bottom:18px}' +
     '.dsec.claude summary{cursor:pointer;list-style:none}.dsec.claude summary::-webkit-details-marker{display:none}.dsec.claude summary h3{display:inline-flex}' +
     '.dsec.claude summary h3::before{content:"▸";margin-right:4px}.dsec.claude[open] summary h3::before{content:"▾"}' +
-    '.brieftext{width:100%;min-height:120px;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}' +
+    '.brieftext{width:100%;min-height:160px;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box;resize:vertical}' +
+    '.briefedit{font-size:11px;color:#b45309}' +
+    'button.pathbtn{font-size:12px;padding:3px 8px;color:#374151}' +
+    /* Entwurfsleiste: am Kopf waagerecht verschiebbar (Doppelklick setzt zurück) */
+    '.drafts .sb-head{cursor:ew-resize;user-select:none;touch-action:none}.drafts .sb-head button{cursor:pointer}' +
+    '.sidebar.drafts.moving{transition:none}' +
+    '.nlist .nmeta{margin:2px 0 6px}.nlist .nmeta .sel-full{margin-top:2px;padding-top:4px}' +
     '.brieffiles{list-style:none;margin:4px 0 8px;padding:0}.brieffiles li{margin:2px 0}' +
     '.linkish{background:none;border:0;padding:0;color:#2563eb;text-decoration:underline;cursor:pointer;font:inherit}' +
     /* Annotationsdialog: Kopf mit X, kompakte Ablage, Footer mit Split-Button */
@@ -518,7 +525,7 @@
     '.ui.sb-open .logpop{right:416px}' +
     '.ui.sb-design .logpop{right:476px}' +
     '.sidebar.drafts{width:500px}' +
-    '.ui.sb-drafts .bar,.ui.sb-drafts .toast,.ui.sb-drafts .logpop,.ui.sb-drafts .panel{right:516px}' +
+    '.ui.sb-drafts .bar,.ui.sb-drafts .toast,.ui.sb-drafts .logpop,.ui.sb-drafts .panel{right:var(--modio-sbr,516px)}' +
     '@media (max-width:980px){.ui.sb-drafts .bar{right:16px;bottom:auto;top:16px;left:16px;right:auto}}' +
     '.drafts .sb-body .dsec{border-top:1px solid #9ca3af;padding-top:14px;margin-top:14px;margin-bottom:0}' +
     '.drafts .dhead{margin-bottom:4px}' +
@@ -1423,12 +1430,15 @@
     });
   }
 
-  function renderCrumbs(box, leaf, current, onSelect, panel, selFn) {
+  function renderCrumbs(box, leaf, current, onSelect, panel, selFn, stop) {
     var old = box.querySelector('.crumbs');
     var oldScroll = old && old.modioLeaf === leaf ? old.scrollLeft : null;
     clear(box);
     var chain = [];
-    for (var n = leaf; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) chain.unshift(n);
+    for (var n = leaf; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) {
+      chain.unshift(n);
+      if (n === stop) break; // nicht über dieses Element hinaus (z. B. Wurzel der Komponente)
+    }
     var nav = el('div', { class: 'crumbs', role: 'group', 'aria-label': 'Element-Pfad' });
     nav.modioLeaf = leaf;
     chain.forEach(function (node, i) {
@@ -3662,11 +3672,47 @@
   var dBack = iconButton('undo', 'Zur Liste', { class: 'ghost' }, true);
   var dTitle = el('span', { text: 'Entwürfe' });
   var dScroll = el('div', { class: 'sb-body' }, [dErr, dBody]);
+  var dHead = el('div', { class: 'sb-head', title: 'Zum Verschieben waagerecht ziehen (Doppelklick: zurück an den rechten Rand)' }, [dBack, el('h2', { id: 'modio-dh' }, [icon('pencilSparkles', 18), dTitle]), el('span', { class: 'spacer' }), dClose]);
   var draftsPanel = el('aside', { id: 'modio-drafts', class: 'sidebar drafts', role: 'complementary', 'aria-labelledby': 'modio-dh' }, [
-    el('div', { class: 'sb-head' }, [dBack, el('h2', { id: 'modio-dh' }, [icon('pencilSparkles', 18), dTitle]), el('span', { class: 'spacer' }), dClose]),
+    dHead,
     dScroll,
   ]);
   ui.appendChild(draftsPanel);
+
+  // Entwurfsleiste waagerecht verschieben: Abstand zum rechten Rand, gilt für die Sitzung (auch beim Wechsel der Vorschau)
+  var DRAFTS_POS_KEY = 'modio-drafts-right:' + SLUG;
+  var draftsRight = 0;
+  function placeDraftsPanel(r) {
+    var w = draftsPanel.offsetWidth || 500;
+    draftsRight = Math.max(0, Math.min(Math.round(r) || 0, window.innerWidth - w));
+    draftsPanel.style.right = draftsRight ? draftsRight + 'px' : '';
+    // Leiste, Hinweise und Dialog auf die Seite mit mehr Platz neben der Entwurfsleiste
+    var leftSpace = window.innerWidth - draftsRight - w;
+    if (!draftsRight) ui.style.removeProperty('--modio-sbr');
+    else ui.style.setProperty('--modio-sbr', (draftsRight >= leftSpace ? 16 : draftsRight + w + 16) + 'px');
+  }
+  function saveDraftsPos() { try { if (draftsRight) sessionStorage.setItem(DRAFTS_POS_KEY, String(draftsRight)); else sessionStorage.removeItem(DRAFTS_POS_KEY); } catch (e) { /* ignorieren */ } }
+  try { draftsRight = Number(sessionStorage.getItem(DRAFTS_POS_KEY)) || 0; } catch (e) { draftsRight = 0; }
+  dHead.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    e.preventDefault();
+    var x0 = e.clientX, r0 = draftsRight;
+    dHead.setPointerCapture(e.pointerId);
+    draftsPanel.classList.add('moving');
+    function move(ev) { placeDraftsPanel(r0 - (ev.clientX - x0)); }
+    function up() {
+      draftsPanel.classList.remove('moving');
+      dHead.removeEventListener('pointermove', move);
+      dHead.removeEventListener('pointerup', up);
+      dHead.removeEventListener('pointercancel', up);
+      saveDraftsPos();
+    }
+    dHead.addEventListener('pointermove', move);
+    dHead.addEventListener('pointerup', up);
+    dHead.addEventListener('pointercancel', up);
+  });
+  dHead.addEventListener('dblclick', function (e) { if (e.target.closest('button')) return; placeDraftsPanel(0); saveDraftsPos(); });
+  window.addEventListener('resize', function () { if (draftsRight) placeDraftsPanel(draftsRight); });
 
 
   var DRAFT_PARAM = '__modio_draft', DRAFT_V_PARAM = '__modio_v';
@@ -3865,11 +3911,59 @@
     var d = PREVIEW && draftById(PREVIEW.draft);
     if (!d || !pvLive.node || !pvLive.node.contains(node)) return;
     var list = draftNotes[d.id] = draftNotes[d.id] || [];
-    list.push({ selector: relSelector(node), label: describe(node), snippet: truncate((node.innerText || node.textContent || '').trim().replace(/\s+/g, ' '), 60), desc: '' });
+    var sel = relSelector(node);
+    list.push({ selector: sel, leaf: sel, label: describe(node), snippet: noteSnippet(node), desc: '' });
     openDrafts(d.id, pvLive.shown || null, true);
     setTimeout(function () { var f = dBody.querySelector('[data-fk="note-' + (list.length - 1) + '"]'); if (f) f.focus(); }, 0);
   }
-  function noteNode(n) { try { return document.querySelector(n.selector); } catch (e) { return null; } }
+  function noteSnippet(node) { return truncate((node.innerText || node.textContent || '').trim().replace(/\s+/g, ' '), 60); }
+  function noteNode(n, leaf) { try { return document.querySelector(leaf ? n.leaf || n.selector : n.selector); } catch (e) { return null; } }
+  function setNoteTarget(n, node, custom) {
+    n.selector = custom || relSelector(node);
+    n.custom = !!custom;
+    n.label = describe(node);
+    n.snippet = noteSnippet(node);
+  }
+  // Pfadleiste (Komponente bis gewähltes Element) und bearbeitbarer Selektor eines Hinweises, wie beim Auswählen
+  function renderNoteMeta(box, n) {
+    var cur = noteNode(n), leaf = noteNode(n, true) || cur;
+    var inComp = function (x) { return !!(x && pvLive.node && pvLive.node.contains(x)); };
+    if (!inComp(cur)) { clear(box); box.appendChild(el('div', { class: 'sel-full' }, [el('span', { class: 'sel-lbl', text: 'Selektor' }), n.selector])); return; }
+    if (!inComp(leaf)) leaf = cur;
+    var inChain = false;
+    for (var x = leaf; x; x = x.parentElement) if (x === cur) inChain = true;
+    if (!inChain) leaf = cur;
+    var rerender = function () { renderNoteMeta(box, n); var h = box.closest('li'); if (h) { var c = h.querySelector('.nhead code'); if (c) c.textContent = n.label; var sn = h.querySelector('.nsnip'); if (sn) sn.textContent = n.snippet ? '„' + n.snippet + '“' : ''; } };
+    selEditing = false;
+    renderCrumbs(box, leaf, cur, function (node) {
+      setNoteTarget(n, node);
+      rerender();
+      placeHighlight(node, true);
+    }, draftsPanel, function () { return n.selector; }, pvLive.node);
+    attachSelEditor(box, {
+      value: function () { return n.selector; },
+      base: function () { return noteNode(n); },
+      validate: function (v) {
+        if (/[`\n]/.test(v)) return 'Unzulässiges Zeichen (`).';
+        if (v.length > 300) return 'Höchstens 300 Zeichen.';
+        var f = null;
+        try { f = document.querySelector(v); } catch (e) { return ''; }
+        return f && !inComp(f) ? 'Liegt außerhalb der Komponente.' : '';
+      },
+      apply: function (v, found) {
+        if (!v) setNoteTarget(n, noteNode(n, true) || cur);
+        else {
+          setNoteTarget(n, found, v === relSelector(found) ? null : v);
+          var ch = false;
+          for (var y = noteNode(n, true); y; y = y.parentElement) if (y === found) ch = true;
+          if (!ch) n.leaf = relSelector(found);
+        }
+        rerender();
+        placeHighlight(noteNode(n), true);
+      },
+      rerender: rerender,
+    });
+  }
 
   // ---- Panel
 
@@ -4083,10 +4177,13 @@
       ta2.addEventListener('input', function () { n.desc = ta2.value; updateNewLabel(); });
       var del = iconButton('trash', 'Hinweis entfernen', { class: 'ghost' }, true);
       del.addEventListener('click', function () { notes.splice(i, 1); hl.style.display = 'none'; renderDrafts(); });
+      var nmeta = el('div', { class: 'nmeta' });
       var li = el('li', {}, [
-        el('div', { class: 'nhead' }, [el('code', { text: n.label }), n.snippet ? el('span', { class: 'nsnip', text: '„' + n.snippet + '“' }) : null, el('span', { class: 'spacer' }), del]),
+        el('div', { class: 'nhead' }, [el('code', { text: n.label }), el('span', { class: 'nsnip', text: n.snippet ? '„' + n.snippet + '“' : '' }), el('span', { class: 'spacer' }), del]),
+        nmeta,
         ta2,
       ]);
+      renderNoteMeta(nmeta, n);
       li.addEventListener('mouseenter', function () { var nn = noteNode(n); if (nn) placeHighlight(nn, true); });
       li.addEventListener('mouseleave', function () { if (!selecting) hl.style.display = 'none'; });
       nlist.appendChild(li);
@@ -4170,6 +4267,7 @@
   // ---- Gestaltung in claude.ai: Briefing (Text und Dateien) und Import als neue Version
   var briefCache = {}; // Entwurf-ID -> { created, text, files }
   var claudeOpen = {}; // Entwurf-ID -> Bereich aufgeklappt (bleibt beim Neuzeichnen erhalten)
+  var briefTextOpen = {}; // Entwurf-ID -> Briefing-Text aufgeklappt
   function briefUrl(d, file) { return '/api/sites/' + encodeURIComponent(SLUG) + '/drafts/' + d.id + '/brief' + (file ? '/' + encodeURIComponent(file) : ''); }
   function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
   function downloadBrief(d, file) {
@@ -4184,8 +4282,22 @@
   }
   function copyText(text, ta) {
     if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
-    ta.select(); // Ersatz ohne Clipboard-API (http)
-    return document.execCommand('copy') ? Promise.resolve() : Promise.reject(new Error('Kopieren nicht möglich – Text markieren und mit Strg+C kopieren.'));
+    // Ersatz ohne Clipboard-API (http): über ein (notfalls unsichtbares) Textfeld
+    var tmp = !ta && el('textarea', { readonly: '', style: 'position:fixed;left:-9999px;top:0;opacity:0' });
+    if (tmp) { tmp.value = text; ui.appendChild(tmp); ta = tmp; }
+    ta.select();
+    var ok = document.execCommand('copy');
+    if (tmp) tmp.remove();
+    return ok ? Promise.resolve() : Promise.reject(new Error('Kopieren nicht möglich – Text markieren und mit Strg+C kopieren.'));
+  }
+  // Angepasster Briefing-Text: im Browser gemerkt, bis das Briefing neu erzeugt wird (Schlüssel enthält den Zeitstempel)
+  function briefEditKey(d, b) { return 'modio-brief:' + SLUG + ':' + d.id + ':' + (b.created || ''); }
+  function briefEdited(d, b) { try { return localStorage.getItem(briefEditKey(d, b)); } catch (e) { return null; } }
+  function setBriefEdited(d, b, text) {
+    try {
+      Object.keys(localStorage).forEach(function (k) { if (k.indexOf('modio-brief:' + SLUG + ':' + d.id + ':') === 0) localStorage.removeItem(k); });
+      if (text !== null && text !== (b.text || '')) localStorage.setItem(briefEditKey(d, b), text);
+    } catch (e) { /* ohne Speicher nur für diese Ansicht */ }
   }
   function renderClaudeSection(d, v, open) {
     var err = el('div', { class: 'err', role: 'alert' });
@@ -4195,17 +4307,34 @@
     det.addEventListener('toggle', function () { claudeOpen[d.id] = det.open; });
     dBody.appendChild(det);
     var busy = isBusy();
-    body.appendChild(el('p', { class: 'hint', text: '1. Briefing kopieren und in einen neuen Chat auf claude.ai einfügen, die Dateien dort hochladen. 2. Das fertige HTML-Artefakt herunterladen. 3. Hier importieren: Claude bringt es ohne Neugestaltung ins Komponentenformat (Tokens, Raster, Inhalte).' }));
+    body.appendChild(el('p', { class: 'hint', text: '1. Briefing bei Bedarf anpassen, kopieren und in einen neuen Chat auf claude.ai einfügen, die Dateien dort hochladen. 2. Das fertige HTML-Artefakt herunterladen. 3. Hier importieren: Claude bringt es ohne Neugestaltung ins Komponentenformat (Tokens, Raster, Inhalte).' }));
     // Briefing
     var bWrap = el('div');
     body.appendChild(bWrap);
     function showBrief(b) {
       clear(bWrap);
-      var ta = el('textarea', { readonly: '', class: 'brieftext', 'aria-label': 'Briefing für claude.ai', rows: '6' });
-      ta.value = b.text || '';
+      var ta = el('textarea', { class: 'brieftext', 'aria-label': 'Briefing für claude.ai (anpassbar)', rows: '8', spellcheck: 'false', 'data-fk': 'brief-text' });
+      var edited = briefEdited(d, b);
+      ta.value = edited !== null ? edited : b.text || '';
+      var editHint = el('span', { class: 'briefedit', 'aria-live': 'polite' });
+      var bReset = el('button', { type: 'button', class: 'linkish', text: 'Original wiederherstellen' });
+      function markEdited() {
+        var changed = ta.value !== (b.text || '');
+        editHint.textContent = changed ? 'angepasst ' : '';
+        bReset.hidden = !changed;
+      }
+      markEdited();
+      ta.addEventListener('input', function () { setBriefEdited(d, b, ta.value); markEdited(); });
+      bReset.addEventListener('click', function () { ta.value = b.text || ''; setBriefEdited(d, b, null); markEdited(); ta.focus(); });
       var bCopy = iconButton('files', 'Briefing kopieren', { class: 'primary' });
       bCopy.addEventListener('click', function () {
-        copyText(b.text || '', ta).then(function () { showToast('Briefing kopiert. Jetzt in claude.ai einfügen und die Dateien hochladen.', false); })
+        copyText(ta.value, ta).then(function () { showToast('Briefing kopiert. Jetzt in claude.ai einfügen und die Dateien hochladen.', false); })
+          .catch(function (e) { err.textContent = e.message; });
+      });
+      var bPath = iconButton('folder', 'Ordnerpfad kopieren', { class: 'ghost pathbtn', title: b.dir ? 'Pfad zum Ordner mit den Dateien kopieren: ' + b.dir : 'Pfad nicht bekannt' });
+      bPath.disabled = !b.dir;
+      bPath.addEventListener('click', function () {
+        copyText(b.dir || '').then(function () { showToast('Ordnerpfad kopiert: ' + b.dir, false); })
           .catch(function (e) { err.textContent = e.message; });
       });
       var list = el('ul', { class: 'brieffiles' });
@@ -4223,10 +4352,13 @@
       bRe.disabled = busy;
       bRe.addEventListener('click', makeBrief);
       bWrap.appendChild(el('div', { class: 'row' }, [bCopy, el('span', { class: 'spacer' }), bRe]));
-      bWrap.appendChild(el('details', {}, [el('summary', { class: 'hint', text: 'Text ansehen' }), ta]));
+      var tDet = el('details', {}, [el('summary', { class: 'hint' }, ['Text ansehen und anpassen ', editHint]), ta, el('div', { class: 'row' }, [bReset])]);
+      tDet.open = hasOwn(briefTextOpen, d.id) ? briefTextOpen[d.id] : edited !== null;
+      tDet.addEventListener('toggle', function () { briefTextOpen[d.id] = tDet.open; });
+      bWrap.appendChild(tDet);
       bWrap.appendChild(el('div', { class: 'hint', text: 'Dateien zum Hochladen (' + fmtDate(b.created) + '):' }));
       bWrap.appendChild(list);
-      bWrap.appendChild(el('div', { class: 'row' }, [bAll]));
+      bWrap.appendChild(el('div', { class: 'row' }, [bAll, el('span', { class: 'spacer' }), bPath]));
     }
     function makeBrief() {
       err.textContent = '';
@@ -4286,6 +4418,7 @@
     }
     draftsPanel.classList.add('open');
     ui.classList.add('sb-open', 'sb-drafts');
+    placeDraftsPanel(draftsRight);
     btnDrafts.classList.add('on');
     btnDrafts.setAttribute('aria-expanded', 'true');
     dErr.textContent = '';
@@ -4295,6 +4428,7 @@
   function closeDrafts() {
     draftsPanel.classList.remove('open');
     ui.classList.remove('sb-open', 'sb-drafts');
+    ui.style.removeProperty('--modio-sbr');
     btnDrafts.classList.remove('on');
     btnDrafts.setAttribute('aria-expanded', 'false');
   }
