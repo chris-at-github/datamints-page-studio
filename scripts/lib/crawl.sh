@@ -22,6 +22,19 @@ crawl_wget() {
   set -e
   if (( rc != 0 && rc != 8 )); then die "wget fehlgeschlagen (Exit $rc), siehe ${logfile#$DPS_ROOT/}"; fi
   (( rc == 8 )) && log "Einige Ressourcen konnten nicht geladen werden (siehe ${logfile#$DPS_ROOT/})"
+  crawl_srcset "$dest" "$urls" "$logfile"
+  return 0
+}
+
+# Bilder aus srcset (<picture><source>, <img srcset>) nachladen; wget übernimmt nur <img src>.
+crawl_srcset() {
+  local dest="$1" urls="$2" logfile="$3" out
+  if out="$(node "$LIB_DIR/srcset.mjs" "$dest" "$urls" "$LIB_DIR/allowed-domains.txt" 2>>"$logfile")"; then
+    log "srcset: $(jq -r '"\(.downloaded) Bild(er) nachgeladen, \(.failed | length) nicht ladbar, \(.files) Datei(en) umgeschrieben"' <<<"$out")"
+    (( $(jq '.failed | length' <<<"$out") )) && log "srcset nicht ladbar (bleibt Live-URL): $(jq -r '.failed | join(" ")' <<<"$out")"
+  else
+    log "srcset-Bilder konnten nicht nachgeladen werden (siehe ${logfile#$DPS_ROOT/})"
+  fi
   return 0
 }
 
