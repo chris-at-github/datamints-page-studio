@@ -19,6 +19,17 @@ npm run worker                             # Worker in der WSL (eigenes Terminal
 
 **Node-Versionen:** Der Bridge-Server läuft im DDEV-Container (Node 22, `.ddev/config.yaml`), Worker und Skripte in der WSL. Die Skripte wählen ihre Node-Version selbst (`scripts/lib/node-env.sh`): zuerst `DPS_NODE` aus der `.env`, dann ein passender `node` im PATH (ab 20.6), dann nvm (Version aus `.nvmrc`). Ein alter System-Node wie `/usr/bin/node` 18 wird so auch in Shells ohne nvm übergangen; findet sich keine passende Version, bricht das Skript mit einer klaren Meldung ab. `npm run worker` selbst in einer Shell mit nvm starten (`nvm use`).
 
+### Abzüge aus einer Modio-Installation übernehmen
+
+Bis 2026-11 hieß das Werkzeug Modio. Abzüge von dort übernimmt `site-migrate.sh` in die neue Installation:
+
+```bash
+./scripts/site-migrate.sh <slug> ~/www/modio --dry-run   # nur anzeigen, was sich ändert
+./scripts/site-migrate.sh <slug> ~/www/modio             # übernehmen
+```
+
+Das Skript kopiert `sites/<slug>/` (und archivierte Stände `archive/<slug>-*`) und stellt die alten Namen um: `--modio-*` → `--dps-*`, `_modio-assets` → `_dps-assets`, `data-modio-*` → `data-dps-*`, von Claude vergebene Klassen wie `modio-btn` → `dps-btn`, „Modio“ → „Page Studio“. Umgeschrieben werden Seiten, CSS, Komponenten, Annotationen, Entwürfe und der **ganze Verlauf samt Tags**, damit Rücksprünge auf ältere Schritte weiter passen (die Commit-IDs ändern sich dabei). Binärdateien wie Schriften bleiben unverändert, Wörter mit „modio“ in der Mitte (z. B. *commodious*) ebenfalls. Die alte Installation wird nur gelesen. Voraussetzung: In der alten Installation gibt es für die Website keine offenen Jobs, keine gesammelten Annotationen und keine nicht übernommenen Änderungen. „Nachbessern“ des letzten Schritts startet nach dem Umzug neu, Entwürfe setzen mit einer frischen Claude-Sitzung fort.
+
 ## Bedienung
 
 1. `https://datamints-page-studio.ddev.site:3443` öffnen, URL eintragen (optional Seitenliste) → Abzug wird erstellt. Weitere Seiten einer bestehenden Website später über „Seiten hinzufügen“ in der Websiteliste: Die bisherigen Schritte bleiben erhalten, nur fehlende Dateien kommen dazu, Links auf die neuen Seiten zeigen danach auf den Abzug. Seiten löschen: Panel „Seiten“ im Overlay → Papierkorb-Symbol, nach Rückfrage ein Schritt A-xxx; die URL verschwindet auch aus `urls.txt`, die Startseite bleibt. Links anderer Seiten auf die gelöschte Seite werden als Hinweis gemeldet.

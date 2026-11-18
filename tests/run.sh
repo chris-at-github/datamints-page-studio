@@ -24,7 +24,7 @@ if ! curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then
   SERVER_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.3; done
 fi
-cleanup() { [[ -n "$SERVER_PID" ]] && { kill "$SERVER_PID" 2>/dev/null || true; }; [[ -n "${SRV_PID:-}" ]] && { kill "$SRV_PID" 2>/dev/null || true; }; [[ -n "${TEST_JOBS_DIR:-}" ]] && rm -rf "$TEST_JOBS_DIR"; rm -rf "$S" "sites/dps-test-neu" "sites/dps-test-leer"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
+cleanup() { [[ -n "$SERVER_PID" ]] && { kill "$SERVER_PID" 2>/dev/null || true; }; [[ -n "${SRV_PID:-}" ]] && { kill "$SRV_PID" 2>/dev/null || true; }; [[ -n "${TEST_JOBS_DIR:-}" ]] && rm -rf "$TEST_JOBS_DIR"; rm -rf "$S" "sites/dps-test-neu" "sites/dps-test-leer" "sites/dps-test-mig"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 rm -rf "$S"
 
@@ -818,6 +818,37 @@ kill "$SRV_PID" 2>/dev/null || true
 rm -rf "$PG" "sites/dps-test-leer"
 rm -f "$JOBN" "$IMPN" logs/claude-job-test-neu*.json logs/claude-job-test-neu*.stderr.log
 rm -rf "$NS"
+
+echo "Abzug aus einer alten Modio-Installation übernehmen (site-migrate.sh)"
+OLDI="$(mktemp -d)"; MS=dps-test-mig; OS="$OLDI/sites/$MS"
+mkdir -p "$OS/www/_modio-assets" "$OLDI/jobs/queue" "$OLDI/archive/$MS-20261101-120000"
+printf '%s\n' '.gitignore' 'drafts/' '.state.json' >"$OS/.gitignore"
+printf '{"slug":"%s","entry":"/index.html"}\n' "$MS" >"$OS/site.json"
+printf '<div data-modio-platz="x" class="modio-btn">commodious</div>\n' >"$OS/www/index.html"
+printf ':root{--modio-color-primary:#c00}\n' >"$OS/overrides.css"
+printf 'wOF2\0\0modio\0' >"$OS/www/_modio-assets/f.woff2"
+git -C "$OS" init -q -b main && git -C "$OS" add -A && GIT_AUTHOR_NAME=Modio GIT_AUTHOR_EMAIL=modio@localhost GIT_COMMITTER_NAME=Modio GIT_COMMITTER_EMAIL=modio@localhost git -C "$OS" commit -qm "Baseline Modio" && git -C "$OS" tag baseline
+printf '.a{color:var(--modio-color-primary)}\n' >>"$OS/overrides.css"
+git -C "$OS" add -A && GIT_AUTHOR_NAME=Modio GIT_AUTHOR_EMAIL=modio@localhost GIT_COMMITTER_NAME=Modio GIT_COMMITTER_EMAIL=modio@localhost git -C "$OS" commit -qm "[A-001] .modio-btn rot"
+mkdir -p "$OS/drafts/D-001/v1"; printf '.mx-a{color:var(--modio-color-primary)}\n' >"$OS/drafts/D-001/v1/component.css"
+printf '{"counter":1,"sessionId":"abc","sessionHead":"%s","sessionAnnotation":"A-001"}\n' "$(git -C "$OS" rev-parse HEAD)" >"$OS/.state.json"
+printf 'Erzeugt von Modio\n' >"$OLDI/archive/$MS-20261101-120000/CHANGES.md"
+OLDHEAD="$(git -C "$OS" rev-parse HEAD)"
+OUT="$(./scripts/site-migrate.sh "$MS" "$OLDI" --dry-run 2>/dev/null)"
+check "site-migrate.sh --dry-run: Übersicht, nichts angelegt" '[[ "$(jq -r .status <<<"$OUT")" == dry-run ]] && jq -e ".replacements > 0 and (.renamed | length) == 1" <<<"$OUT" >/dev/null && [[ ! -e sites/$MS ]]'
+echo x >>"$OS/www/index.html"
+check "site-migrate.sh: offene Änderungen in der alten Website abgewiesen" '! ./scripts/site-migrate.sh "$MS" "$OLDI" >/dev/null 2>&1 && [[ ! -e sites/$MS ]]'
+git -C "$OS" checkout -q -- www/index.html
+OUT="$(./scripts/site-migrate.sh "$MS" "$OLDI" 2>/dev/null)"
+M="sites/$MS"
+check "site-migrate.sh: übernommen" '[[ "$(jq -r .status <<<"$OUT")" == ok ]] && [[ -d $M/.git ]]'
+check "site-migrate.sh: Namen in Seiten, CSS und Entwürfen umgestellt, Wörter wie commodious bleiben" 'grep -q "data-dps-platz=\"x\" class=\"dps-btn\">commodious<" $M/www/index.html && grep -q -- "--dps-color-primary" $M/overrides.css && grep -q -- "--dps-color-primary" $M/drafts/D-001/v1/component.css'
+check "site-migrate.sh: Ordner _dps-assets, Binärdatei unverändert" '[[ ! -e $M/www/_modio-assets ]] && cmp -s "$OS/www/_modio-assets/f.woff2" $M/www/_dps-assets/f.woff2'
+check "site-migrate.sh: Verlauf, Tag und Autoren umgeschrieben" '[[ "$(git -C $M rev-list --count HEAD)" == 2 ]] && git -C $M show baseline:overrides.css | grep -q -- "--dps-color-primary" && git -C $M cat-file -e baseline:www/_dps-assets/f.woff2 && [[ "$(git -C $M log -1 --format=%s)" == "[A-001] .dps-btn rot" ]] && [[ "$(git -C $M log --format="%an %ae" | sort -u)" == "datamints Page Studio page-studio@localhost" ]]'
+check "site-migrate.sh: Claude-Sitzung zurückgesetzt, Archiv mitgenommen" 'jq -e ".sessionId == null and .sessionHead == null and .counter == 1" $M/.state.json >/dev/null && grep -q "Erzeugt von Page Studio" archive/$MS-20261101-120000/CHANGES.md'
+check "site-migrate.sh: Rücksprung auf baseline ohne alte Namen" './scripts/rollback.sh "$MS" baseline >/dev/null 2>&1 && ! grep -rIqP "$(node scripts/lib/rename-names.mjs --leftover)" $M/www $M/overrides.css && grep -q commodious $M/www/index.html'
+check "site-migrate.sh: alte Installation unverändert, zweiter Lauf abgewiesen" '[[ "$(git -C "$OS" rev-parse HEAD)" == "$OLDHEAD" ]] && [[ -d "$OS/www/_modio-assets" ]] && ! ./scripts/site-migrate.sh "$MS" "$OLDI" >/dev/null 2>&1'
+rm -rf "$OLDI" "$M" archive/"$MS"-*
 
 echo "Neu einlesen"
 OUT="$(./scripts/site-recrawl.sh "$SLUG" 2>/dev/null)"

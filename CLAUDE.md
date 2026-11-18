@@ -27,6 +27,7 @@ Page Studio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne El
 | `inspect-apply.sh` | `inspect-apply.sh <slug> <payload.json>` |
 | `areas-sync.sh` | `areas-sync.sh <slug> <seite> [--add <name> <selektor>]` |
 | `site-rename.sh` | `site-rename.sh <slug> <neuer-slug>` |
+| `site-migrate.sh` | `site-migrate.sh <slug> <alte-installation> [--dry-run]` |
 | `site-recrawl.sh` | `site-recrawl.sh <slug> [--keep-design\|--no-keep-design]` |
 | `run-annotation.sh` | `run-annotation.sh <slug> <job.json>` |
 | `add-reference.sh` | `add-reference.sh <slug> <annotation-id> <url\|datei>` |
