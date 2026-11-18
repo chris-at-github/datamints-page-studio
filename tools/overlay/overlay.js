@@ -78,6 +78,7 @@
       'path:M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z'],
     lock: ['rect:3,11,18,11', 'path:M7 11V7a5 5 0 0 1 10 0v4'],
     unlock: ['rect:3,11,18,11', 'path:M7 11V7a5 5 0 0 1 9.9-1'],
+    ellipsis: ['circle:12,12,1', 'circle:19,12,1', 'circle:5,12,1'],
     trash: ['path:M3 6h18', 'path:M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6', 'path:M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2'],
     pipette: ['path:m2 22 1-1h3l9-9', 'path:M3 21v-3l9-9',
       'path:m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z'],
@@ -294,7 +295,7 @@
   }
 
   var STYLE =
-    ':host{all:initial;--ui-font:"dps-sora",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--ui-primary:#0f5446;--ui-primary-tint:#e4f3ee;--ui-accent:#123740;--ui-accent-hover:#15414d;--ui-on-accent:#fff;--ui-aqua:#2febcb;--ui-ink:#252624;--ui-muted:#5b5b56;--ui-faint:#9b9890;--ui-line:#e1ded8;--ui-line-strong:#cfcbc3;--ui-surface:#faf9f6;--ui-surface-2:#f2f1ed;--ui-dark:#0f2c33;--ui-dark-line:#2c4146;--ui-on-dark:#eeece7;--ui-on-dark-muted:#aeb1aa;--ui-warn:#e2a355;--ui-warn-ink:#974c00;--ui-warn-tint:#fdeddc;--ui-warn-soft:#fbb86d;--ui-error:#d63b25;--ui-error-ink:#a82d1c;--ui-error-tint:#fbebe8;--ui-error-soft:#eea597;--ui-info:#1a6e40;--ui-info-tint:#eaf5ec;--ui-info-soft:#a3e3bc;--ui-success:#508223;--ui-success-ink:#3c6219;--ui-success-tint:#f2f6ea;--ui-success-soft:#c5dcae;--ui-radius-leaf:14px 0 14px 14px}' +
+    ':host{all:initial;--ui-font:"dps-sora",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--ui-primary:#0f5446;--ui-primary-tint:#e4f3ee;--ui-accent:#123740;--ui-accent-hover:#15414d;--ui-on-accent:#fff;--ui-aqua:#2febcb;--ui-ink:#252624;--ui-muted:#5b5b56;--ui-faint:#9b9890;--ui-line:#e1ded8;--ui-line-strong:#cfcbc3;--ui-surface:#faf9f6;--ui-surface-2:#f2f1ed;--ui-dark:#0f2c33;--ui-dark-line:#2c4146;--ui-on-dark:#eeece7;--ui-on-dark-muted:#aeb1aa;--ui-warn:#e2a355;--ui-warn-ink:#974c00;--ui-warn-tint:#fdeddc;--ui-warn-soft:#fbb86d;--ui-error:#d63b25;--ui-error-ink:#a82d1c;--ui-error-hover:#862316;--ui-error-tint:#fbebe8;--ui-error-soft:#eea597;--ui-info:#1a6e40;--ui-info-tint:#eaf5ec;--ui-info-soft:#a3e3bc;--ui-success:#508223;--ui-success-ink:#3c6219;--ui-success-tint:#f2f6ea;--ui-success-soft:#c5dcae;--ui-radius-leaf:14px 0 14px 14px}' +
     '*{box-sizing:border-box}' +
     '.ui{font:14px/1.45 var(--ui-font);color:var(--ui-ink)}' +
     '.hl{position:fixed;pointer-events:none;border:2px solid var(--ui-primary);background:rgba(15,84,70,.10);border-radius:2px;display:none;transition:all .05s}' +
@@ -341,7 +342,7 @@
     '@keyframes pulse{from{opacity:.25}to{opacity:1}}' +
     '.panel{position:fixed;right:16px;bottom:72px;width:440px;max-width:calc(100vw - 32px);max-height:calc(100vh - 100px);overflow:auto;pointer-events:auto;background:#fff;border:1px solid var(--ui-line-strong);border-radius:var(--ui-radius-leaf);box-shadow:0 12px 40px rgba(0,0,0,.25);padding:14px 16px;display:none}' +
     '.panel.wide{width:760px}' +
-    '.panel.prompt{width:520px}' +
+    '.panel.prompt{width:570px}' +
     '.panel.open{display:block}' +
     '.panel h2{font-size:16px;margin:0 0 8px}' +
     '.meta{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-muted);background:var(--ui-surface-2);border-radius:6px;padding:6px 8px;margin-bottom:8px;word-break:break-all}' +
@@ -548,6 +549,7 @@
     '.pgdel{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 8px;width:100%;background:var(--ui-error-tint);border-radius:6px}' +
     '.pgdel .pgdel-q{flex:1;min-width:0;overflow-wrap:anywhere}' +
     'button.danger{background:var(--ui-error-ink);border-color:var(--ui-error-ink);color:#fff}' +
+    'button.danger:hover:not([disabled]){background:var(--ui-error-hover);border-color:var(--ui-error-hover);color:#fff}' +
     '.pgimp{margin-top:10px;padding-top:10px;border-top:1px solid var(--ui-line)}' +
     '.pgimp .row{display:flex;gap:6px;align-items:center}' +
     '.pgimp .textin{flex:1;min-width:0}' +
@@ -2122,14 +2124,41 @@
       .catch(function (err) { clear(pgList); pgList.appendChild(el('li', { class: 'err', text: 'Fehler: ' + err.message })); });
     setTimeout(function () { pgFilter.focus(); }, 0);
   }
+  // Stylesheet für die Bedienelemente der Komponentenseite (Seiten-DOM, CI-Werte wie im Overlay)
+  var KB_STYLE =
+    '[data-dps^="kb-"]{--kb-font:"dps-sora",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--kb-ink:#252624;--kb-muted:#5b5b56;--kb-faint:#9b9890;--kb-line:#e1ded8;--kb-line-strong:#cfcbc3;--kb-surface:#faf9f6;--kb-surface-2:#f2f1ed;--kb-primary:#0f5446;--kb-primary-tint:#e4f3ee;--kb-error-tint:#fbebe8;--kb-btn:#123740;--kb-btn-hover:#15414d;--kb-info:#1a6e40;--kb-info-tint:#eaf5ec;--kb-error:#a82d1c}' +
+    'span[data-dps="kb-tools"]{display:inline-flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;margin-left:auto;vertical-align:middle;font:400 12px/1 var(--kb-font)}' +
+    'button[data-dps="kb-btn"].kb-icon{width:28px;padding:0;justify-content:center;color:var(--kb-muted)}' +
+    'button[data-dps="kb-btn"].kb-icon svg{display:block}' +
+    'button[data-dps="kb-btn"].kb-danger:hover:not([disabled]){color:var(--kb-error);border-color:var(--kb-error);background:var(--kb-error-tint)}' +
+    'span[data-dps="kb-menuwrap"]{position:relative;display:inline-flex}' +
+    'span[data-dps="kb-menu"]{position:absolute;right:0;top:calc(100% + 4px);z-index:30;display:flex;flex-direction:column;min-width:200px;padding:4px;background:#fff;border:1px solid var(--kb-line);border-radius:8px;box-shadow:0 8px 24px rgba(15,44,51,.14)}' +
+    'span[data-dps="kb-menu"][hidden]{display:none}' +
+    'span[data-dps="kb-menu"] button{all:unset;box-sizing:border-box;display:block;padding:7px 10px;border-radius:5px;font:400 13px/1.3 var(--kb-font);color:var(--kb-ink);white-space:nowrap;text-align:left;cursor:pointer}' +
+    'span[data-dps="kb-menu"] button:hover,span[data-dps="kb-menu"] button:focus-visible{background:var(--kb-primary-tint);outline:none}' +
+    'button[data-dps="kb-btn"]{box-sizing:border-box;display:inline-flex;align-items:center;height:28px;margin:0;padding:0 10px;font:500 12px/1 var(--kb-font);letter-spacing:0;text-transform:none;white-space:nowrap;color:var(--kb-ink);background:#fff;border:1px solid var(--kb-line-strong);border-radius:6px;box-shadow:none;cursor:pointer;vertical-align:middle}' +
+    'button[data-dps="kb-btn"]:hover:not([disabled]){background:var(--kb-surface-2);border-color:var(--kb-faint)}' +
+    'button[data-dps="kb-btn"].kb-primary{background:var(--kb-btn);border-color:var(--kb-btn);color:#fff}' +
+    'button[data-dps="kb-btn"].kb-primary:hover:not([disabled]){background:var(--kb-btn-hover);border-color:var(--kb-btn-hover)}' +
+    'button[data-dps="kb-btn"].kb-info{color:var(--kb-info);border-color:var(--kb-info)}' +
+    'button[data-dps="kb-btn"].kb-info:hover:not([disabled]){background:var(--kb-info-tint);border-color:var(--kb-info)}' +
+    'button[data-dps="kb-btn"][disabled]{opacity:.5;cursor:not-allowed}' +
+    '[data-dps="kb-btn"]:focus-visible,[data-dps="kb-form"] :focus-visible{outline:3px solid var(--kb-primary);outline-offset:2px}' +
+    'div[data-dps="kb-form"]{box-sizing:border-box;display:grid;gap:8px;max-width:720px;margin:10px 0 14px;padding:12px 14px;background:var(--kb-surface);border:1px solid var(--kb-line);border-radius:10px 0 10px 10px;font:400 13px/1.45 var(--kb-font);color:var(--kb-ink);text-align:left;text-transform:none;letter-spacing:0}' +
+    '[data-dps="kb-form"] input,[data-dps="kb-form"] select,[data-dps="kb-form"] textarea{box-sizing:border-box;width:100%;margin:0;padding:6px 9px;font:400 13px/1.4 var(--kb-font);color:var(--kb-ink);background:#fff;border:1px solid var(--kb-line-strong);border-radius:6px;box-shadow:none}' +
+    '[data-dps="kb-form"] textarea{min-height:76px;resize:vertical}' +
+    '[data-dps="kb-form"] .kb-hint{color:var(--kb-muted);font-size:12px}' +
+    '[data-dps="kb-form"] .kb-err{color:var(--kb-error);font-size:12px}' +
+    '[data-dps="kb-form"] .kb-err:empty{display:none}' +
+    '[data-dps="kb-form"] .kb-actions{display:flex;gap:6px;margin-top:2px}';
+
   // Komponentenseite: Komponenten ändern, Varianten hinzufügen, Kopien angleichen, Komponenten und Varianten löschen
   // (Verwendungen bleiben beim Löschen als Markup ohne Kennzeichnung). In der Vorschau eines Entwurfs steuert das Entwürfe-Panel.
   function libraryControls() {
     if (!LIBRARY || PREVIEW) return;
     function delButton(label, body, question) {
       // liegt im DOM der Seite (nicht im Overlay): eigene Inline-Styles statt Overlay-Klassen
-      var b = el('button', { type: 'button', title: label, 'aria-label': label, 'data-dps': 'kb-del' }, [icon('trash', 16)]);
-      b.style.cssText = 'cursor:pointer;background:none;border:0;padding:2px 4px;margin-left:4px;color:var(--ui-faint);vertical-align:middle;line-height:0';
+      var b = el('button', { type: 'button', title: label, 'aria-label': label, 'data-dps': 'kb-btn', class: 'kb-icon kb-danger' }, [icon('trash', 16)]);
       b.addEventListener('click', function () {
         if (isBusy()) { showToast('Es läuft noch ein Schritt. Bitte warten.', true); return; }
         if (!confirm(question)) return;
@@ -2140,13 +2169,13 @@
       });
       return b;
     }
-    var BTN = 'cursor:pointer;background:#fff;border:1px solid var(--ui-line-strong);border-radius:6px;padding:3px 8px;margin-left:6px;font:12px var(--ui-font);color:var(--ui-ink);vertical-align:middle';
-    function textBtn(label, title) { var b = el('button', { type: 'button', title: title || label, 'data-dps': 'kb-btn', text: label }); b.style.cssText = BTN; return b; }
+    // Die Bedienelemente liegen im DOM der Seite (nicht im Shadow DOM des Overlays): eigenes Stylesheet mit eigenen Variablen
+    if (!document.querySelector('style[data-dps="kb-styles"]')) document.head.appendChild(el('style', { 'data-dps': 'kb-styles', text: KB_STYLE }));
+    function textBtn(label, title, kind) { return el('button', { type: 'button', title: title || label, 'data-dps': 'kb-btn', class: kind ? 'kb-' + kind : null, text: label }); }
     // Formular unter der Überschrift bzw. der Variante: Auftrag (und für neue Varianten Name und Bezeichnung)
     function openForm(sec, opts) {
       var old = sec.querySelector('[data-dps="kb-form"]'); if (old) old.remove();
       var f = el('div', { 'data-dps': 'kb-form' });
-      f.style.cssText = 'margin:8px 0 12px;padding:10px;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-surface);font:13px var(--ui-font);display:grid;gap:6px';
       var key = null, lab = null;
       if (opts.newVariant) {
         key = el('input', { type: 'text', placeholder: 'name, z. B. kompakt', maxlength: '40', spellcheck: 'false', 'aria-label': 'Name der Variante' });
@@ -2154,11 +2183,9 @@
         f.appendChild(key); f.appendChild(lab);
       }
       var ta = el('textarea', { rows: '3', placeholder: opts.newVariant ? 'Worin unterscheidet sich die Variante?' : opts.variant ? 'Was soll sich an der Variante ' + opts.variant + ' ändern?' : 'Was soll sich ändern?', 'aria-label': 'Auftrag' });
-      var err = el('div', { role: 'alert' }); err.style.color = 'var(--ui-error-ink)';
-      var go = textBtn('Entwurf erstellen'), cancel = textBtn('Abbrechen');
-      go.style.marginLeft = '0';
-      f.appendChild(ta); f.appendChild(el('div', {}, [go, cancel])); f.appendChild(err);
-      [key, lab, ta].forEach(function (i) { if (i) i.style.cssText = 'font:13px var(--ui-font);padding:5px 7px;border:1px solid var(--ui-line-strong);border-radius:6px'; });
+      var err = el('div', { role: 'alert', class: 'kb-err' });
+      var go = textBtn('Entwurf erstellen', null, 'primary'), cancel = textBtn('Abbrechen');
+      f.appendChild(ta); f.appendChild(el('div', { class: 'kb-actions' }, [go, cancel])); f.appendChild(err);
       cancel.addEventListener('click', function () { f.remove(); });
       ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go.click(); } });
       go.addEventListener('click', function () {
@@ -2183,15 +2210,10 @@
     function smallForm(sec, children, goLabel, onGo) {
       var old = sec.querySelector('[data-dps="kb-form"]'); if (old) old.remove();
       var f = el('div', { 'data-dps': 'kb-form' });
-      f.style.cssText = 'margin:8px 0 12px;padding:10px;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-surface);font:13px var(--ui-font);display:grid;gap:6px';
-      var err = el('div', { role: 'alert' }); err.style.color = 'var(--ui-error-ink)';
-      var go = textBtn(goLabel), cancel = textBtn('Abbrechen');
-      go.style.marginLeft = '0';
-      children.forEach(function (c) {
-        if (c.tagName === 'INPUT' || c.tagName === 'SELECT') c.style.cssText = 'font:13px var(--ui-font);padding:5px 7px;border:1px solid var(--ui-line-strong);border-radius:6px';
-        f.appendChild(c);
-      });
-      f.appendChild(el('div', {}, [go, cancel])); f.appendChild(err);
+      var err = el('div', { role: 'alert', class: 'kb-err' });
+      var go = textBtn(goLabel, null, 'primary'), cancel = textBtn('Abbrechen');
+      children.forEach(function (c) { f.appendChild(c); });
+      f.appendChild(el('div', { class: 'kb-actions' }, [go, cancel])); f.appendChild(err);
       cancel.addEventListener('click', function () { f.remove(); });
       go.addEventListener('click', function () {
         if (isBusy()) { err.textContent = 'Es läuft noch ein Schritt. Bitte warten.'; return; }
@@ -2209,8 +2231,7 @@
     }
     function openRename(sec, name) {
       var inp = el('input', { type: 'text', value: name, maxlength: '60', spellcheck: 'false', 'aria-label': 'Neuer Name' });
-      var hint = el('div', { text: 'Neuer Name ohne mx-. Klassen, Modifier und @scope werden auf allen Seiten und in allen Vorlagen umbenannt.' });
-      hint.style.color = 'var(--ui-muted)';
+      var hint = el('div', { class: 'kb-hint', text: 'Neuer Name ohne mx-. Klassen, Modifier und @scope werden auf allen Seiten und in allen Vorlagen umbenannt.' });
       var ui = smallForm(sec, [inp, hint], 'Umbenennen', function () {
         var n = inp.value.trim().replace(/^mx-/, '');
         if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(n)) return 'Kleinbuchstaben, Ziffern und Bindestrich, mit einem Buchstaben beginnen.';
@@ -2221,13 +2242,12 @@
     }
     function openMerge(sec, name) {
       var sel = el('select', { 'aria-label': 'Ziel: Komponente und Variante' });
-      var hint = el('div', { text: 'Alle Kopien von mx-' + name + ' (auf den Seiten und in anderen Komponenten) werden zur gewählten Variante des Ziels; Texte, Bilder, Links und Kontextklassen bleiben. Danach ist mx-' + name + ' nicht mehr in der Bibliothek.' });
-      hint.style.color = 'var(--ui-muted)';
+      var hint = el('div', { text: 'Alle Kopien von mx-' + name + ' (auf den Seiten und in anderen Komponenten) werden zur gewählten Variante des Ziels; Texte, Bilder, Links und Kontextklassen bleiben. Danach ist mx-' + name + ' nicht mehr in der Bibliothek.', class: 'kb-hint' });
       sel.appendChild(el('option', { value: '', text: 'Lädt …' }));
       var ui = smallForm(sec, [sel, hint], 'Zusammenführen', function () {
         if (!sel.value) return 'Bitte Ziel und Variante wählen.';
         var o = sel.options[sel.selectedIndex];
-        if (o.getAttribute('data-missing')) return 'mx-' + o.getAttribute('data-into') + ' fehlen Inhalte von mx-' + name + ': ' + o.getAttribute('data-missing') + '. Erst dort ergänzen (Ändern …).';
+        if (o.getAttribute('data-missing')) return 'mx-' + o.getAttribute('data-into') + ' fehlen Inhalte von mx-' + name + ': ' + o.getAttribute('data-missing') + '. Erst dort ergänzen („Ändern“).';
         if (!confirm('mx-' + name + ' in mx-' + o.getAttribute('data-into') + ' (Variante ' + o.getAttribute('data-variant') + ') zusammenführen?\n\nZurückholen über den Verlauf.')) return;
         runAction(ui, 'merge', { name: name, into: o.getAttribute('data-into'), variant: o.getAttribute('data-variant') }, 'mx-' + name + ' wird zusammengeführt …');
       });
@@ -2250,24 +2270,47 @@
       }).catch(function (e) { clear(sel); ui.err.textContent = e.message; });
       sel.focus();
     }
+    // „…“-Menü mit weiteren Aktionen (Tastatur: Pfeile, Esc schließt)
+    var kbMenus = [];
+    function moreMenu(label, items) {
+      var id = 'dps-kb-menu-' + (kbMenus.length + 1);
+      var btn = el('button', { type: 'button', 'data-dps': 'kb-btn', class: 'kb-icon', title: label, 'aria-label': label, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': id }, [icon('ellipsis', 16)]);
+      var menu = el('span', { id: id, role: 'menu', 'data-dps': 'kb-menu', hidden: '' });
+      var m = {
+        close: function (focusBtn) { if (menu.hidden) return; menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); if (focusBtn) btn.focus(); },
+      };
+      items.forEach(function (it) {
+        var b = el('button', { type: 'button', role: 'menuitem', title: it.title, text: it.label });
+        b.addEventListener('click', function () { m.close(false); it.run(); });
+        menu.appendChild(b);
+      });
+      btn.addEventListener('click', function () {
+        if (!menu.hidden) { m.close(false); return; }
+        kbMenus.forEach(function (o) { o.close(false); });
+        menu.hidden = false; btn.setAttribute('aria-expanded', 'true');
+        menu.firstChild.focus();
+      });
+      menu.addEventListener('keydown', function (e) {
+        var list = Array.prototype.slice.call(menu.children), i = list.indexOf(document.activeElement);
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); m.close(true); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+        else if (e.key === 'Tab') m.close(false);
+      });
+      m.wrap = el('span', { 'data-dps': 'kb-menuwrap' }, [btn, menu]);
+      kbMenus.push(m);
+      return m.wrap;
+    }
+    document.addEventListener('click', function (e) {
+      kbMenus.forEach(function (m) { if (!m.wrap.contains(e.target)) m.close(false); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('.kb-comp[data-kb-name]'), function (sec) {
       var name = sec.getAttribute('data-kb-name'), uses = Number(sec.getAttribute('data-kb-uses')) || 0;
       var off = Number(sec.getAttribute('data-kb-off')) || 0;
       var h = sec.querySelector('h2');
-      if (h) h.appendChild(delButton('Komponente mx-' + name + ' löschen', { name: name },
-        'Komponente mx-' + name + ' aus der Bibliothek löschen?' + (uses ? '\n\n' + uses + ' Verwendung(en) bleiben als normales Markup (mit Klassen und CSS), aber ohne Kennzeichnung als Komponente.' : '') + '\n\nZurückholen über den Verlauf.'));
-      var bEdit = textBtn('Ändern …', 'Komponente mit Claude ändern (Entwurf mit Vorschau)');
-      bEdit.addEventListener('click', function () { openForm(sec, { name: name }); });
-      var bVar = textBtn('Variante hinzufügen …', 'Neue Variante mit Claude entwerfen (Entwurf mit Vorschau)');
-      bVar.addEventListener('click', function () { openForm(sec, { name: name, newVariant: true }); });
-      var bRen = textBtn('Umbenennen …', 'Komponente umbenennen (Klassen auf allen Seiten und in allen Vorlagen)');
-      bRen.addEventListener('click', function () { openRename(sec, name); });
-      var bMerge = textBtn('Zusammenführen …', 'Diese Komponente als Variante einer anderen weiterführen (z. B. Buttons)');
-      bMerge.addEventListener('click', function () { openMerge(sec, name); });
-      if (h) { h.appendChild(bEdit); h.appendChild(bVar); h.appendChild(bRen); h.appendChild(bMerge); }
+      var tools = el('span', { 'data-dps': 'kb-tools' });
       if (off) {
-        var bSync = textBtn(off + ' Kopie(n) angleichen', 'Abweichende Kopien auf den Seiten nach der Vorlage neu aufbauen; Inhalte und Kontextklassen bleiben');
-        bSync.style.borderColor = 'var(--ui-info)'; bSync.style.color = 'var(--ui-info)';
+        var bSync = textBtn(off + ' Kopie(n) angleichen', 'Abweichende Kopien auf den Seiten nach der Vorlage neu aufbauen; Inhalte und Kontextklassen bleiben', 'info');
         bSync.addEventListener('click', function () {
           if (isBusy()) { showToast('Es läuft noch ein Schritt. Bitte warten.', true); return; }
           if (!confirm(off + ' Kopie(n) von mx-' + name + ' nach der Vorlage neu aufbauen?\n\nTexte, Bilder, Links und Kontextklassen bleiben. Nicht eindeutig zuzuordnende Kopien bleiben unverändert.\n\nZurückholen über den Verlauf.')) return;
@@ -2276,19 +2319,33 @@
             .then(function (d) { if (d && d.job) trackJob(d.job); showToast('Kopien werden angeglichen …', false); })
             .catch(function (e) { bSync.disabled = false; showToast('Angleichen fehlgeschlagen: ' + e.message, true, true); });
         });
-        if (h) h.appendChild(bSync);
+        tools.appendChild(bSync);
       }
+      var bEdit = textBtn('Ändern', 'Komponente mit Claude ändern (Entwurf mit Vorschau)');
+      bEdit.addEventListener('click', function () { openForm(sec, { name: name }); });
+      tools.appendChild(bEdit);
+      tools.appendChild(moreMenu('Weitere Aktionen für mx-' + name, [
+        { label: 'Variante hinzufügen', title: 'Neue Variante mit Claude entwerfen (Entwurf mit Vorschau)', run: function () { openForm(sec, { name: name, newVariant: true }); } },
+        { label: 'Umbenennen', title: 'Komponente umbenennen (Klassen auf allen Seiten und in allen Vorlagen)', run: function () { openRename(sec, name); } },
+        { label: 'Zusammenführen', title: 'Diese Komponente als Variante einer anderen weiterführen (z. B. Buttons)', run: function () { openMerge(sec, name); } },
+      ]));
+      tools.appendChild(delButton('Komponente mx-' + name + ' löschen', { name: name },
+        'Komponente mx-' + name + ' aus der Bibliothek löschen?' + (uses ? '\n\n' + uses + ' Verwendung(en) bleiben als normales Markup (mit Klassen und CSS), aber ohne Kennzeichnung als Komponente.' : '') + '\n\nZurückholen über den Verlauf.'));
+      if (h) h.appendChild(tools);
       var vars = sec.querySelectorAll('.kb-var[data-kb-variant]');
       Array.prototype.forEach.call(vars, function (v) {
         var key = v.getAttribute('data-kb-variant'), vu = Number(v.getAttribute('data-kb-uses')) || 0;
         var lab = v.querySelector('.kb-vlabel');
         if (!lab) return;
-        var bv = textBtn('Ändern …', 'Nur die Variante ' + key + ' ändern (Entwurf mit Vorschau)');
+        var vtools = el('span', { 'data-dps': 'kb-tools' });
+        var bv = textBtn('Ändern', 'Nur die Variante ' + key + ' ändern (Entwurf mit Vorschau)');
         bv.addEventListener('click', function () { openForm(sec, { name: name, variant: key, after: sec.classList.contains('kb-schmal') ? sec.querySelector('.kb-vars') : lab }); }); // Varianten nebeneinander: Formular unter der Reihe
-        lab.appendChild(bv);
-        if (vars.length < 2) return; // die einzige Variante: Komponente löschen
-        lab.appendChild(delButton('Variante ' + key + ' löschen', { name: name, variant: key },
-          'Variante „' + key + '“ von mx-' + name + ' löschen?' + (vu ? '\n\n' + vu + ' Verwendung(en) dieser Variante bleiben als normales Markup (Klassen und CSS bleiben), aber ohne Kennzeichnung als Komponente.' : '') + '\n\nZurückholen über den Verlauf.'));
+        vtools.appendChild(bv);
+        if (vars.length > 1) { // die einzige Variante: Komponente löschen
+          vtools.appendChild(delButton('Variante ' + key + ' löschen', { name: name, variant: key },
+            'Variante „' + key + '“ von mx-' + name + ' löschen?' + (vu ? '\n\n' + vu + ' Verwendung(en) dieser Variante bleiben als normales Markup (Klassen und CSS bleiben), aber ohne Kennzeichnung als Komponente.' : '') + '\n\nZurückholen über den Verlauf.'));
+        }
+        lab.appendChild(vtools);
       });
     });
   }

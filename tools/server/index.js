@@ -914,7 +914,7 @@ async function handleApi(req, res, url) {
     if (!target.varianten.some((v) => v.key === variant)) return sendError(res, 404, 'Variante nicht gefunden');
     const src = library.find((c) => c.name === name);
     const missing = src.slots.filter((s) => !target.slots.some((t) => t.key === s.key)).map((s) => s.key);
-    if (missing.length) return sendError(res, 400, `mx-${into} hat diese Inhalte von mx-${name} nicht: ${missing.join(', ')}. Erst in mx-${into} ergänzen (Ändern …).`);
+    if (missing.length) return sendError(res, 400, `mx-${into} hat diese Inhalte von mx-${name} nicht: ${missing.join(', ')}. Erst in mx-${into} ergänzen („Ändern“).`);
     if (await busyCheck(res, slug, 'Das Zusammenführen')) return;
     return send(res, 202, { job: await createJob('component-merge', slug, { name, into, variant }) });
   }

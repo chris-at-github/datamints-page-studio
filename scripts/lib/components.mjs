@@ -568,7 +568,7 @@ export async function mergeLibrary(siteDir, source, target, variant) {
   if (!tgt) throw new Error(`Komponente nicht in der Bibliothek: mx-${target}`);
   if (!tgt.varianten.some((v) => v.key === variant)) throw new Error(`mx-${target} hat keine Variante „${variant}“`);
   const missing = src.slots.filter((s) => !tgt.slots.some((t) => t.key === s.key)).map((s) => s.key);
-  if (missing.length) throw new Error(`mx-${target} hat diese Slots von mx-${source} nicht: ${missing.join(', ')}. Erst in mx-${target} ergänzen (Ändern …)`);
+  if (missing.length) throw new Error(`mx-${target} hat diese Slots von mx-${source} nicht: ${missing.join(', ')}. Erst in mx-${target} ergänzen („Ändern“)`);
   const libNames = new Set(library.map((c) => c.name));
   const st = cheerio.load(src.template, null, false);
   const fromClasses = classesOf(rootOf(st)).filter((k) => k !== `mx-${source}` && !k.startsWith(`mx-${source}--`));
@@ -709,30 +709,30 @@ ${c.varianten.map((v) => `<div class="kb-var" data-kb-variant="${esc(v.key)}" da
 <base href="${b}${baseDir}/">
 ${pageStyles(siteDir, herkunft)}
 <style>
-.kb-head,.kb-desc,.kb-meta,.kb-vlabel,.kb-comp>h2{font-family:system-ui,sans-serif}
-body{margin:0;background:#f6f7f9;color:#1d2330}
-.kb-head{padding:24px 32px;background:#fff;border-bottom:1px solid #e5e7eb}
-.kb-head h1{margin:0 0 4px;font-size:22px}
-.kb-head p{margin:0;color:#667085;font-size:14px}
-.kb-comp{margin:24px 32px;padding:20px 24px;background:#fff;border:1px solid #e5e7eb;border-radius:10px}
-.kb-comp>h2{margin:0 0 6px;font-size:18px}
-.kb-comp>h2 code,.kb-meta code,.kb-vlabel code{font-size:12px;color:#5b21b6;background:#f3f0ff;padding:1px 5px;border-radius:4px}
+.kb-head,.kb-desc,.kb-meta,.kb-vlabel,.kb-comp>h2{font-family:"dps-sora",system-ui,sans-serif}
+body{margin:0;background:#f2f1ed;color:#252624}
+.kb-head{padding:24px 32px;background:#fff;border-bottom:1px solid #e1ded8}
+.kb-head h1{margin:0 0 4px;font-size:22px;font-weight:600}
+.kb-head p{margin:0;color:#5b5b56;font-size:14px}
+.kb-comp{margin:24px 32px;padding:20px 24px;background:#fff;border:1px solid #e1ded8;border-radius:16px 0 16px 16px}
+.kb-comp>h2{margin:0 0 6px;font-size:18px;font-weight:600;line-height:1.6;display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.kb-comp>h2 code,.kb-meta code,.kb-vlabel code{font-size:12px;color:#1a6e40;background:#eaf5ec;padding:1px 5px;border-radius:4px}
 .kb-desc{margin:0 0 6px;font-size:14px}
-.kb-meta{margin:0 0 14px;font-size:13px;color:#667085}
+.kb-meta{margin:0 0 14px;font-size:13px;color:#5b5b56}
 .kb-vars{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 24px}
-.kb-var{flex:1 1 100%;min-width:0;border-top:1px dashed #e5e7eb;padding-top:12px}
-.kb-schmal .kb-vars{border-top:1px dashed #e5e7eb;padding-top:12px}
+.kb-var{flex:1 1 100%;min-width:0;border-top:1px dashed #e1ded8;padding-top:12px}
+.kb-schmal .kb-vars{border-top:1px dashed #e1ded8;padding-top:12px}
 .kb-schmal .kb-var{flex:none;width:min-content;min-width:280px;max-width:100%;border-top:0;padding-top:0}
 .kb-schmal .kb-vname{flex:1 0 100%;width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .kb-schmal .kb-vlabel{row-gap:2px}
 .kb-schmal .kb-uses{margin-right:auto}
 .kb-vlabel{margin:0 0 8px;font-size:13px;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
-.kb-uses{font-weight:400;color:#667085}
+.kb-uses{font-weight:400;color:#5b5b56}
 .kb-spalten .kb-vars{display:grid;grid-template-columns:repeat(var(--kb-cols),minmax(0,1fr))}
 .kb-schmal.kb-spalten .kb-vars{grid-template-columns:repeat(var(--kb-cols),max-content)}
 .kb-spalten .kb-var{width:auto}
 .kb-stage{box-sizing:border-box}
-.kb-stage:hover,.kb-stage.kb-drag{outline:1px dashed #98a2b3;outline-offset:3px}
+.kb-stage:hover,.kb-stage.kb-drag{outline:1px dashed #9b9890;outline-offset:3px}
 .kb-schmal .kb-stage{width:calc(var(--kb-w) + 16px);padding-right:16px;min-width:40px;max-width:calc(100vw - 112px);overflow:auto;resize:horizontal}
 </style>
 </head>
