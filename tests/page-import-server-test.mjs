@@ -9,14 +9,14 @@ let fail = 0;
 const check = (name, cond, extra = '') => {
   if (!cond) { fail++; console.error(`  ✗ ${name} ${extra}`); }
 };
-const auth = { 'X-Modio-Token': TOKEN, 'Content-Type': 'application/json' };
+const auth = { 'X-DPS-Token': TOKEN, 'Content-Type': 'application/json' };
 const post = (slug, body) => fetch(`${BASE}/api/sites/${slug}/pages/import`, { method: 'POST', headers: auth, body: JSON.stringify(body) });
 const html = '<!doctype html><html><head><title>Über uns</title></head><body><h1>Über uns</h1></body></html>';
 
 // Projekt ohne Seiten: Platzhalter mit Overlay statt 404
 let r = await fetch(`${BASE}/s/${LEER}/`, { redirect: 'manual' });
 let text = await r.text();
-check('Platzhalter ohne Seiten', r.status === 200 && text.includes('data-modio-empty') && text.includes('"empty":true') && text.includes('/__modio/overlay.js'), r.status);
+check('Platzhalter ohne Seiten', r.status === 200 && text.includes('data-dps-empty') && text.includes('"empty":true') && text.includes('/__dps/overlay.js'), r.status);
 r = await fetch(`${BASE}/api/sites/${LEER}/pages`, { headers: auth });
 let d = await r.json();
 check('Seitenliste leer, kind neu, Ordner seiten (veralteter entry übergangen)', d.kind === 'neu' && d.pages.length === 0 && d.entry === null && d.importDir === 'seiten', JSON.stringify(d));
@@ -80,11 +80,11 @@ d = await r.json();
 check('Bibliothek: Liste mit Varianten und Slots', r.status === 200 && d.components?.[0]?.name === 'held' && d.components[0].varianten.length === 2 && d.url === `/s/${NEU}/__komponenten`, JSON.stringify(d));
 r = await fetch(`${BASE}/s/${NEU}/__komponenten`);
 text = await r.text();
-check('Bibliothek: Komponentenseite mit allen Varianten', r.status === 200 && text.includes('id="mx-held"') && text.includes('Hervorgehoben mit Icon') && text.includes('mx-held--hervorgehoben') && text.includes(`<base href="/s/${NEU}/seiten/">`) && text.includes('__components.css') && text.includes('"library":true') && text.includes('/__modio/overlay.js') && text.includes('@layer legacy{'), r.status);
+check('Bibliothek: Komponentenseite mit allen Varianten', r.status === 200 && text.includes('id="mx-held"') && text.includes('Hervorgehoben mit Icon') && text.includes('mx-held--hervorgehoben') && text.includes(`<base href="/s/${NEU}/seiten/">`) && text.includes('__components.css') && text.includes('"library":true') && text.includes('/__dps/overlay.js') && text.includes('@layer legacy{'), r.status);
 r = await fetch(`${BASE}/s/${NEU}/seiten/startseite.html`);
 text = await r.text();
 check('Overlay kennt die Projektart', text.includes('"kind":"neu"'));
-const draftPost = (slug, annotation) => { const fd = new FormData(); fd.append('annotation', JSON.stringify(annotation)); return fetch(`${BASE}/api/sites/${slug}/drafts`, { method: 'POST', headers: { 'X-Modio-Token': TOKEN }, body: fd }); };
+const draftPost = (slug, annotation) => { const fd = new FormData(); fd.append('annotation', JSON.stringify(annotation)); return fetch(`${BASE}/api/sites/${slug}/drafts`, { method: 'POST', headers: { 'X-DPS-Token': TOKEN }, body: fd }); };
 const compAnn = { page: '/seiten/startseite.html', selector: '#hero', html: '', text: '', prompt: '', mode: 'component', componentName: 'kachel-zwei', viewport: { width: 1440, height: 900 } };
 r = await draftPost(ABZUG, { ...compAnn, page: abzugEntry });
 check('Als Komponente: bei Abzügen 400', r.status === 400, String(r.status));
@@ -137,7 +137,7 @@ if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: tr
 r = await fetch(`${BASE}/s/${NEU}/__komponenten`);
 text = await r.text();
 check('Komponentenseite: Abweichungen je Komponente', /data-kb-name="held"[^>]*data-kb-off="\d+"/.test(text));
-r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=D-999&__modio_v=1`, { redirect: 'manual' });
+r = await fetch(`${BASE}/s/${NEU}/__komponenten?__dps_draft=D-999&__dps_v=1`, { redirect: 'manual' });
 check('Komponentenseite: Vorschau eines fehlenden Entwurfs leitet zurück', r.status === 302 && r.headers.get('location') === `/s/${NEU}/__komponenten`, String(r.status));
 // Offener Bibliotheks-Entwurf aus tests/run.sh (Vorlage mit Kopf, nach dem Rücksprung wieder offen)
 r = await fetch(`${BASE}/api/sites/${NEU}/drafts`, { headers: auth });
@@ -146,14 +146,14 @@ const libDraft = (d.drafts || []).find((x) => x.target === 'library' && x.status
 const pageDraft = (d.drafts || []).find((x) => !x.target && x.status === 'open');
 check('Entwürfe: Ziel Bibliothek in der Liste', !!libDraft && libDraft.page === '/__komponenten' && libDraft.component === 'held', JSON.stringify((d.drafts || []).map((x) => [x.id, x.target, x.status])));
 if (libDraft) {
-  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=${libDraft.id}&__modio_v=2`);
+  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__dps_draft=${libDraft.id}&__dps_v=2`);
   text = await r.text();
   check('Komponentenseite: Vorschau mit der Entwurfsversion', r.status === 200 && text.includes('<header class="kopf">') && text.includes(`"preview":{"draft":"${libDraft.id}","version":2,"name":"held"}`) && text.includes(`__draft.css?d=${libDraft.id}&amp;v=2`) && /data-kb-name="held"[^>]*data-kb-off="[1-9]\d*"/.test(text) && text.includes('Kopie(n) weichen ab'), r.status);
-  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=${libDraft.id}&__modio_v=9`);
+  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__dps_draft=${libDraft.id}&__dps_v=9`);
   check('Komponentenseite: Vorschau einer fehlenden Version 409', r.status === 409, String(r.status));
 }
 if (pageDraft) {
-  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=${pageDraft.id}`, { redirect: 'manual' });
+  r = await fetch(`${BASE}/s/${NEU}/__komponenten?__dps_draft=${pageDraft.id}`, { redirect: 'manual' });
   check('Komponentenseite: Entwurf für eine Seite leitet zurück', r.status === 302, String(r.status));
 }
 

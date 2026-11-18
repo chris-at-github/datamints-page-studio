@@ -1,16 +1,16 @@
 /*
- * Modio Overlay
+ * Page Studio Overlay
  * Wird vom Bridge-Server in jede ausgelieferte HTML-Seite eingeschleust.
- * Konfiguration: window.__MODIO__ = { slug, token, base, imageMaxCount, imageMaxMb, preview: { draft, version } | null }
+ * Konfiguration: window.__DPS__ = { slug, token, base, imageMaxCount, imageMaxMb, preview: { draft, version } | null }
  * Schnittstellen: siehe docs/api.md
  */
 (function () {
   'use strict';
 
-  var CFG = window.__MODIO__;
+  var CFG = window.__DPS__;
   if (!CFG || !CFG.slug || !CFG.token) return;
-  if (window.__MODIO_LOADED__) return;
-  window.__MODIO_LOADED__ = true;
+  if (window.__DPS_LOADED__) return;
+  window.__DPS_LOADED__ = true;
 
   var SLUG = String(CFG.slug);
   var TOKEN = String(CFG.token);
@@ -28,8 +28,8 @@
   var STATE_TYPES = { annotate: 1, 'page-import': 1, 'page-delete': 1, 'component-delete': 1, 'component-sync': 1, 'component-rename': 1, 'component-merge': 1, rollback: 1, decision: 1, 'site-recrawl': 1, 'design-save': 1, 'tokens-propose': 1, 'pages-add': 1, 'areas-sync': 1, 'local-commit': 1, 'inspect-apply': 1, 'draft-apply': 1 };
   var MAX_HTML = 20000;
   var MAX_TEXT = 2000;
-  var FLASH_KEY = 'modio-flash-' + SLUG;
-  var DRAFT_OPEN_KEY = 'modio-draft-open-' + SLUG;
+  var FLASH_KEY = 'dps-flash-' + SLUG;
+  var DRAFT_OPEN_KEY = 'dps-draft-open-' + SLUG;
 
   // ---------------------------------------------------------------- Hilfen
 
@@ -117,7 +117,7 @@
     return svg;
   }
 
-  // Knopf mit Icon und (optional sichtbarem) Text; Text austauschbar über .modioLabel
+  // Knopf mit Icon und (optional sichtbarem) Text; Text austauschbar über .dpsLabel
   function iconButton(name, text, attrs, iconOnly) {
     var label = el('span', { class: iconOnly ? 'sr' : 'lbl', text: text });
     attrs = attrs || {};
@@ -125,7 +125,7 @@
     if (iconOnly && !attrs.title) attrs.title = text;
     var b = el('button', attrs, [icon(name), label]);
     b.classList.add(iconOnly ? 'icon-only' : 'has-icon');
-    b.modioLabel = label;
+    b.dpsLabel = label;
     return b;
   }
 
@@ -142,7 +142,7 @@
   }
 
   function api(method, path, body) {
-    var opts = { method: method, headers: { 'X-Modio-Token': TOKEN }, credentials: 'same-origin' };
+    var opts = { method: method, headers: { 'X-DPS-Token': TOKEN }, credentials: 'same-origin' };
     if (body instanceof FormData) {
       opts.body = body;
     } else if (body !== undefined) {
@@ -198,7 +198,7 @@
     var tag = node.tagName.toLowerCase();
     var seg = tag;
     var classes = Array.prototype.filter.call(node.classList || [], function (c) {
-      return !looksGenerated(c) && c.indexOf('modio') !== 0;
+      return !looksGenerated(c) && c.indexOf('dps') !== 0;
     }).slice(0, 3);
     if (classes.length) seg += '.' + classes.map(esc).join('.');
     var parent = node.parentElement;
@@ -223,7 +223,7 @@
       if (node.id && !looksGenerated(node.id)) return '#' + esc(node.id);
       var tag = node.tagName.toLowerCase();
       var classes = Array.prototype.filter.call(node.classList || [], function (c) {
-        return !looksGenerated(c) && c.indexOf('modio') !== 0;
+        return !looksGenerated(c) && c.indexOf('dps') !== 0;
       }).slice(0, 2);
       return classes.length ? tag + '.' + classes.map(esc).join('.') : tag;
     }
@@ -276,8 +276,8 @@
   // ----------------------------------------------------------- Oberfläche
 
   var host = document.createElement('div');
-  host.id = 'modio-overlay-host';
-  host.setAttribute('data-modio', '');
+  host.id = 'dps-overlay-host';
+  host.setAttribute('data-dps', '');
   host.setAttribute(
     'style',
     'all:initial !important;position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;' +
@@ -525,7 +525,7 @@
     '.ui.sb-open .logpop{right:416px}' +
     '.ui.sb-design .logpop{right:476px}' +
     '.sidebar.drafts{width:500px}' +
-    '.ui.sb-drafts .bar,.ui.sb-drafts .toast,.ui.sb-drafts .logpop,.ui.sb-drafts .panel{right:var(--modio-sbr,516px)}' +
+    '.ui.sb-drafts .bar,.ui.sb-drafts .toast,.ui.sb-drafts .logpop,.ui.sb-drafts .panel{right:var(--dps-sbr,516px)}' +
     '@media (max-width:980px){.ui.sb-drafts .bar{right:16px;bottom:auto;top:16px;left:16px;right:auto}}' +
     '.drafts .sb-body .dsec{border-top:1px solid #9ca3af;padding-top:14px;margin-top:14px;margin-bottom:0}' +
     '.drafts .dhead{margin-bottom:4px}' +
@@ -636,12 +636,12 @@
   // Leiste
   var btnSelect = iconButton('click', 'Auswählen', { title: 'Element auswählen (Alt+A)', 'aria-pressed': 'false' });
   // Außer „Auswählen“ nur Icons; das Label erscheint als Tooltip (title) und für Screenreader
-  var btnHistory = iconButton('history', 'Verlauf', { 'aria-expanded': 'false', 'aria-controls': 'modio-history' }, true);
-  var btnPages = iconButton('files', 'Seiten', { 'aria-expanded': 'false', 'aria-controls': 'modio-pages' }, true);
-  var btnDesign = iconButton('palette', 'Design', { 'aria-expanded': 'false', 'aria-controls': 'modio-design' }, true);
+  var btnHistory = iconButton('history', 'Verlauf', { 'aria-expanded': 'false', 'aria-controls': 'dps-history' }, true);
+  var btnPages = iconButton('files', 'Seiten', { 'aria-expanded': 'false', 'aria-controls': 'dps-pages' }, true);
+  var btnDesign = iconButton('palette', 'Design', { 'aria-expanded': 'false', 'aria-controls': 'dps-design' }, true);
   var btnChanges = iconButton('check', 'Änderungen übernehmen', { class: 'changes' }, true);
-  btnChanges.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
-  btnChanges.appendChild(btnChanges.modioCount);
+  btnChanges.dpsCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
+  btnChanges.appendChild(btnChanges.dpsCount);
   btnChanges.style.display = 'none';
   var btnFollowup = iconButton('refresh', 'Nachbessern', {}, true);
   btnFollowup.style.display = 'none';
@@ -652,8 +652,8 @@
   var cancelling = {}; // id -> true, solange der Abbruch angefordert ist
   var btnCancel = iconButton('x', 'Abbrechen', { class: 'cancel-job', title: 'Entwurf abbrechen' });
   btnCancel.style.display = 'none';
-  var bar = el('div', { class: 'bar', role: 'toolbar', 'aria-label': 'Modio' }, [
-    el('span', { class: 'brand' }, [icon('sparkles'), 'Modio']),
+  var bar = el('div', { class: 'bar', role: 'toolbar', 'aria-label': 'Page Studio' }, [
+    el('span', { class: 'brand' }, [icon('sparkles'), 'Page Studio']),
     lnkHome,
     el('span', { class: 'sep', 'aria-hidden': 'true' }),
     btnSelect,
@@ -667,7 +667,7 @@
   ]);
   ui.appendChild(bar);
   btnCancel.addEventListener('click', function () {
-    var job = btnCancel.modioJob;
+    var job = btnCancel.dpsJob;
     if (!job || cancelling[job.id]) return;
     var q = job.status === 'pending'
       ? 'Wartenden Entwurf abbrechen? Er wird nicht gestartet.'
@@ -703,7 +703,7 @@
   // ---------------------------------------------------- Prompt-Dialog
 
   var pMeta = el('div', { class: 'meta' });
-  var pText = el('textarea', { id: 'modio-prompt', placeholder: 'Was soll an diesem Element geändert werden?' });
+  var pText = el('textarea', { id: 'dps-prompt', placeholder: 'Was soll an diesem Element geändert werden?' });
   var pFile = el('input', { type: 'file', accept: IMAGE_TYPES.join(','), multiple: true, class: 'sr', tabindex: '-1' });
   var pDrop = el('div', { class: 'drop', tabindex: '0', role: 'button' }, [
     icon('imagePlus', 20),
@@ -715,17 +715,17 @@
   var pThumbs = el('div', { class: 'thumbs' });
   var pThorough = el('input', { type: 'checkbox' });
   pThorough.checked = true; // Standard: stärkeres Modell
-  var pTitle = el('h2', { id: 'modio-ph', text: 'Annotation' });
+  var pTitle = el('h2', { id: 'dps-ph', text: 'Annotation' });
   var pErr = el('div', { class: 'err', role: 'alert' });
   var pClose = iconButton('x', 'Schließen', { class: 'ghost', title: 'Schließen (Esc)' }, true);
   var pHead = el('div', { class: 'phead', title: 'Zum Verschieben ziehen' }, [pTitle, pClose]);
   // Split-Button: „In die Queue“ (Strg+Enter), im Menü „Direkt umsetzen“ (Strg+Umschalt+Enter). Beim Nachbessern nur „Direkt umsetzen“.
   var pQueue = el('button', { type: 'button', class: 'primary', text: 'In die Queue', title: 'Sammeln und später zusammen mit weiteren Annotationen in einem Schritt umsetzen (Strg+Enter)' });
-  var pQueueMore = iconButton('chevronDown', 'Weitere Optionen', { class: 'primary', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'modio-qmenu' }, true);
+  var pQueueMore = iconButton('chevronDown', 'Weitere Optionen', { class: 'primary', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'dps-qmenu' }, true);
   var pSend = el('button', { type: 'button', role: 'menuitem', title: 'Sofort als eigenen Schritt mit Claude umsetzen' }, [
     el('span', { text: 'Direkt umsetzen' }), el('span', { class: 'hint', text: 'Strg+Umschalt+Enter' }),
   ]);
-  var pQMenu = el('div', { id: 'modio-qmenu', class: 'qmenu', role: 'menu', hidden: '' }, [pSend]);
+  var pQMenu = el('div', { id: 'dps-qmenu', class: 'qmenu', role: 'menu', hidden: '' }, [pSend]);
   var pSplit = el('div', { class: 'split' }, [pQueue, pQueueMore, pQMenu]);
   var pDraft = iconButton('pencilSparkles', 'Entwurf', { title: 'Claude gestaltet das Element ohne Altlasten als eigene Komponente neu. Erst „Übernehmen“ ändert die Website. (Strg+Alt+Enter)' });
   // Neue Projekte: Element als Komponente für die Bibliothek anlegen (Name, Hinweise zu Varianten im Prompt optional)
@@ -738,15 +738,15 @@
   var pCompRow = el('div', { class: 'pcomp' }, [pComp, pCompName, pCompGo]);
   var pKeysQueue = el('span', { text: 'In die Queue' });
   var pKeys = el('div', { class: 'pkeys' }, [el('kbd', { text: 'Strg' }), '+', el('kbd', { text: 'Enter' }), ' ', pKeysQueue, ' · ', el('kbd', { text: 'Esc' }), ' Schließen']);
-  var pTokBtn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: 'Design-Token oder Komponente aus der Bibliothek in den Prompt einfügen (Strg+Leertaste)' });
+  var pTokBtn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'dps-tokpop', title: 'Design-Token oder Komponente aus der Bibliothek in den Prompt einfügen (Strg+Leertaste)' });
   var pTokFilter = el('input', { type: 'text', placeholder: 'Token oder Komponente suchen …', 'aria-label': 'Token oder Komponente suchen', spellcheck: 'false' });
   var pTokList = el('ul', { role: 'listbox', 'aria-label': 'Design-Tokens und Komponenten' });
-  var pTokPop = el('div', { id: 'modio-tokpop', class: 'tokpop', hidden: '' }, [pTokFilter, pTokList]);
+  var pTokPop = el('div', { id: 'dps-tokpop', class: 'tokpop', hidden: '' }, [pTokFilter, pTokList]);
   var pTokRow = el('div', { class: 'row tokrow' }, [pTokBtn]);
-  var promptPanel = el('div', { class: 'panel prompt', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ph' }, [
+  var promptPanel = el('div', { class: 'panel prompt', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'dps-ph' }, [
     pHead,
     pMeta,
-    el('label', { for: 'modio-prompt', class: 'sr', text: 'Prompt' }),
+    el('label', { for: 'dps-prompt', class: 'sr', text: 'Prompt' }),
     pText,
     pTokRow,
     pTokPop,
@@ -763,16 +763,16 @@
   // ---------------------------------------------------- Bereichsdialog (gleicher Bereich)
 
   var aMeta = el('div', { class: 'meta' });
-  var aName = el('input', { id: 'modio-area-name', type: 'text', class: 'textin', spellcheck: 'false', maxlength: '60' });
+  var aName = el('input', { id: 'dps-area-name', type: 'text', class: 'textin', spellcheck: 'false', maxlength: '60' });
   var aErr = el('div', { class: 'err', role: 'alert' });
   var aCancel = el('button', { type: 'button', text: 'Abbrechen' });
   var aSave = el('button', { type: 'button', class: 'primary', text: 'Übernehmen' });
-  var areaPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'modio-ah' }, [
-    el('h2', { id: 'modio-ah', text: 'Gleichen Bereich festlegen' }),
+  var areaPanel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'dps-ah' }, [
+    el('h2', { id: 'dps-ah', text: 'Gleichen Bereich festlegen' }),
     aMeta,
-    el('label', { for: 'modio-area-name', class: 'fl', text: 'Name des Bereichs' }),
+    el('label', { for: 'dps-area-name', class: 'fl', text: 'Name des Bereichs' }),
     aName,
-    el('div', { class: 'hint', text: 'Der Bereich wird in die Liste aufgenommen, die Seiten bleiben unverändert. Angleichen mit „Für alle Seiten übernehmen“; spätere Änderungen daran überträgt Modio automatisch.' }),
+    el('div', { class: 'hint', text: 'Der Bereich wird in die Liste aufgenommen, die Seiten bleiben unverändert. Angleichen mit „Für alle Seiten übernehmen“; spätere Änderungen daran überträgt Page Studio automatisch.' }),
     aErr,
     el('div', { class: 'row end' }, [aCancel, aSave]),
   ]);
@@ -787,8 +787,8 @@
   var rClose = el('button', { type: 'button', text: 'Später' });
   var rDiscard = el('button', { type: 'button', class: 'danger', text: 'verwerfen' });
   var rAccept = el('button', { type: 'button', class: 'primary', text: 'übernehmen' });
-  var reviewPanel = el('div', { class: 'panel wide', role: 'dialog', 'aria-labelledby': 'modio-rh' }, [
-    el('h2', { id: 'modio-rh', text: 'Prüfung nötig' }),
+  var reviewPanel = el('div', { class: 'panel wide', role: 'dialog', 'aria-labelledby': 'dps-rh' }, [
+    el('h2', { id: 'dps-rh', text: 'Prüfung nötig' }),
     rInfo,
     rHits,
     rDiff,
@@ -803,9 +803,9 @@
   var hErr = el('div', { class: 'err', role: 'alert' });
   var hClose = iconButton('x', 'Verlauf schließen', { class: 'ghost' }, true);
   var hReload = iconButton('refresh', 'Verlauf aktualisieren', { class: 'ghost' }, true);
-  var historyPanel = el('aside', { id: 'modio-history', class: 'sidebar', role: 'complementary', 'aria-labelledby': 'modio-hh' }, [
+  var historyPanel = el('aside', { id: 'dps-history', class: 'sidebar', role: 'complementary', 'aria-labelledby': 'dps-hh' }, [
     el('div', { class: 'sb-head' }, [
-      el('h2', { id: 'modio-hh' }, [icon('history', 18), 'Verlauf']),
+      el('h2', { id: 'dps-hh' }, [icon('history', 18), 'Verlauf']),
       el('span', { class: 'spacer' }),
       hReload,
       hClose,
@@ -838,15 +838,15 @@
   var dAreaPick = iconButton('click', 'Auswählen', { title: 'Element auf der Seite anklicken (Pfeil hoch wählt das Elternelement); es wird als gleicher Bereich gemerkt und auf alle Seiten übertragen', 'aria-pressed': 'false' });
   var dAreasSync = el('button', { type: 'button', text: 'Für alle Seiten übernehmen', title: 'Kopiert alle gleichen Bereiche von der aktuell geöffneten Seite auf alle anderen Seiten (ohne Claude)' });
   var dScan = el('div');
-  var dNotes = el('textarea', { id: 'modio-notes', class: 'notes', spellcheck: 'true' });
+  var dNotes = el('textarea', { id: 'dps-notes', class: 'notes', spellcheck: 'true' });
   var dDirty = el('span', { class: 'dirty', 'aria-live': 'polite' });
   var dReset = el('button', { type: 'button', text: 'Zurücksetzen' });
   var dSave = el('button', { type: 'button', class: 'primary', text: 'Speichern' });
   var dClose = iconButton('x', 'Design schließen', { class: 'ghost' }, true);
   var dReload = iconButton('refresh', 'Neu laden', { class: 'ghost' }, true);
-  var designPanel = el('aside', { id: 'modio-design', class: 'sidebar design', role: 'complementary', 'aria-labelledby': 'modio-dh' }, [
+  var designPanel = el('aside', { id: 'dps-design', class: 'sidebar design', role: 'complementary', 'aria-labelledby': 'dps-dh' }, [
     el('div', { class: 'sb-head' }, [
-      el('h2', { id: 'modio-dh' }, [icon('palette', 18), 'Design-Vorgaben']),
+      el('h2', { id: 'dps-dh' }, [icon('palette', 18), 'Design-Vorgaben']),
       el('span', { class: 'spacer' }),
       dReload,
       dClose,
@@ -856,22 +856,22 @@
       dErr,
       dInfo,
       dWarn,
-      el('section', { class: 'dsec', 'aria-labelledby': 'modio-dt' }, [
-        el('h3', { id: 'modio-dt', text: 'Tokens' }),
+      el('section', { class: 'dsec', 'aria-labelledby': 'dps-dt' }, [
+        el('h3', { id: 'dps-dt', text: 'Tokens' }),
         dTable,
         el('div', { class: 'addrow' }, [dAddCat, dAddName, dAddVal, dAddBtn]),
         el('div', { class: 'row' }, [dPick, dPropose]),
         dPickBox,
         dScan,
       ]),
-      el('section', { class: 'dsec', 'aria-labelledby': 'modio-da' }, [
-        el('h3', { id: 'modio-da', text: 'Gleiche Bereiche' }),
+      el('section', { class: 'dsec', 'aria-labelledby': 'dps-da' }, [
+        el('h3', { id: 'dps-da', text: 'Gleiche Bereiche' }),
         dAreas,
         el('div', { class: 'row' }, [dAreaPick, dAreasSync]),
-        el('div', { class: 'hint', text: 'Bereiche, die auf allen Seiten gleich sein müssen. Ändert ein Schritt einen davon, überträgt Modio die Änderung automatisch auf alle Seiten.' }),
+        el('div', { class: 'hint', text: 'Bereiche, die auf allen Seiten gleich sein müssen. Ändert ein Schritt einen davon, überträgt Page Studio die Änderung automatisch auf alle Seiten.' }),
       ]),
       el('section', { class: 'dsec' }, [
-        el('h3', {}, [el('label', { for: 'modio-notes', text: 'Regeln (notes.md)' })]),
+        el('h3', {}, [el('label', { for: 'dps-notes', text: 'Regeln (notes.md)' })]),
         dNotes,
         el('div', { class: 'hint', text: 'Regeln in Prosa, keine URLs, kein HTML, kein Code. Claude hält sich bei jedem Schritt daran.' }),
       ]),
@@ -1003,7 +1003,7 @@
     var canCancel = !!job && !!CANCELABLE[job.type] && (job.status === 'running' || job.status === 'pending');
     btnCancel.style.display = canCancel ? '' : 'none';
     btnCancel.disabled = !!(job && cancelling[job.id]);
-    btnCancel.modioJob = canCancel ? job : null;
+    btnCancel.dpsJob = canCancel ? job : null;
     var busy = !!job;
     btnSelect.disabled = false; // auch während eines Schritts: Annotationen können in die Queue
     btnSelect.title = busy ? 'Element auswählen (Alt+A) – während der Schritt läuft nur in die Queue' : 'Element auswählen (Alt+A)';
@@ -1023,7 +1023,7 @@
     var fj = followupCandidate();
     btnFollowup.style.display = fj ? '' : 'none';
     btnFollowup.disabled = busy;
-    if (fj) btnFollowup.title = btnFollowup.modioLabel.textContent = 'Nachbessern (' + fj.result.annotationId + ')';
+    if (fj) btnFollowup.title = btnFollowup.dpsLabel.textContent = 'Nachbessern (' + fj.result.annotationId + ')';
     renderHistoryButtons();
     renderDesignButtons();
     if (typeof renderChangesButton === 'function' && btnChanges) renderChangesButton();
@@ -1140,12 +1140,12 @@
       closePanels();
       btnSelect.classList.add('on');
       btnSelect.setAttribute('aria-pressed', 'true');
-      btnSelect.modioLabel.textContent = 'Auswahl beenden';
+      btnSelect.dpsLabel.textContent = 'Auswahl beenden';
     } else {
       var pb = selectMode === 'token' ? dPick : dAreaPick;
       pb.classList.add('on');
       pb.setAttribute('aria-pressed', 'true');
-      pb.modioLabel.textContent = selectMode === 'token' ? 'Element anklicken … (Esc)' : 'Bereich anklicken, ↑ = Elternelement (Esc)';
+      pb.dpsLabel.textContent = selectMode === 'token' ? 'Element anklicken … (Esc)' : 'Bereich anklicken, ↑ = Elternelement (Esc)';
     }
     selecting = true;
     hovered = null;
@@ -1159,13 +1159,13 @@
     childStack = [];
     btnSelect.classList.remove('on');
     btnSelect.setAttribute('aria-pressed', 'false');
-    btnSelect.modioLabel.textContent = 'Auswählen';
+    btnSelect.dpsLabel.textContent = 'Auswählen';
     dPick.classList.remove('on');
     dPick.setAttribute('aria-pressed', 'false');
-    dPick.modioLabel.textContent = 'Aus Element übernehmen';
+    dPick.dpsLabel.textContent = 'Aus Element übernehmen';
     dAreaPick.classList.remove('on');
     dAreaPick.setAttribute('aria-pressed', 'false');
-    dAreaPick.modioLabel.textContent = 'Auswählen';
+    dAreaPick.dpsLabel.textContent = 'Auswählen';
     hl.classList.remove('pick');
     selectMode = 'annotate';
     document.documentElement.style.cursor = '';
@@ -1285,7 +1285,7 @@
     var s = node.tagName.toLowerCase();
     if (node.id && !looksGenerated(node.id)) return s + '#' + truncate(node.id, 24);
     var cls = Array.prototype.filter.call(node.classList || [], function (c) {
-      return !looksGenerated(c) && c.indexOf('modio') !== 0;
+      return !looksGenerated(c) && c.indexOf('dps') !== 0;
     })[0];
     return cls ? s + '.' + truncate(cls, 24) : s;
   }
@@ -1341,7 +1341,7 @@
     for (var n = node; n && n.nodeType === 1 && n !== document.body && n !== document.documentElement; n = n.parentElement) {
       var s = n.tagName.toLowerCase();
       if (n.id && !looksGenerated(n.id)) s += '#' + esc(n.id);
-      var cls = Array.prototype.filter.call(n.classList || [], function (c) { return !looksGenerated(c) && c.indexOf('modio') !== 0; }).slice(0, 3);
+      var cls = Array.prototype.filter.call(n.classList || [], function (c) { return !looksGenerated(c) && c.indexOf('dps') !== 0; }).slice(0, 3);
       if (cls.length) s += '.' + cls.map(esc).join('.');
       segs.unshift(s);
     }
@@ -1434,7 +1434,7 @@
 
   function renderCrumbs(box, leaf, current, onSelect, panel, selFn, stop) {
     var old = box.querySelector('.crumbs');
-    var oldScroll = old && old.modioLeaf === leaf ? old.scrollLeft : null;
+    var oldScroll = old && old.dpsLeaf === leaf ? old.scrollLeft : null;
     clear(box);
     var chain = [];
     for (var n = leaf; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) {
@@ -1442,7 +1442,7 @@
       if (n === stop) break; // nicht über dieses Element hinaus (z. B. Wurzel der Komponente)
     }
     var nav = el('div', { class: 'crumbs', role: 'group', 'aria-label': 'Element-Pfad' });
-    nav.modioLeaf = leaf;
+    nav.dpsLeaf = leaf;
     chain.forEach(function (node, i) {
       if (i) nav.appendChild(el('span', { class: 'csep', 'aria-hidden': 'true', text: '›' }));
       var b = el('button', { type: 'button', text: crumbLabel(node), title: describe(node) });
@@ -1846,7 +1846,7 @@
   }
   // Knopf und Strg+Leertaste für ein weiteres Textfeld; liefert die Zeile mit dem Knopf
   function tokPicker(ta, title) {
-    var btn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'modio-tokpop', title: title });
+    var btn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'dps-tokpop', title: title });
     var row = el('div', { class: 'row tokrow' }, [btn]);
     btn.addEventListener('click', function () { if (pTokPop.hidden || tokOwner !== btn) openTokPop(ta, btn, row); else closeTokPop(true); });
     ta.addEventListener('keydown', function (e) { if (e.key === ' ' && e.ctrlKey) { e.preventDefault(); openTokPop(ta, btn, row); } });
@@ -1952,7 +1952,7 @@
   var pgFilter = el('input', { type: 'text', class: 'textin', placeholder: 'Seiten filtern …', 'aria-label': 'Seiten filtern', spellcheck: 'false' });
   var pgList = el('ul', { class: 'pglist' });
   var pgInfo = el('div', { class: 'hint' });
-  var pgTitle = el('h2', { id: 'modio-pgh', text: CFG.kind === 'neu' ? 'Seiten' : 'Seiten im Abzug' });
+  var pgTitle = el('h2', { id: 'dps-pgh', text: CFG.kind === 'neu' ? 'Seiten' : 'Seiten im Abzug' });
   var pgErr = el('div', { class: 'err', role: 'alert' });
   // Neue Projekte: Seite importieren (HTML-Datei aus Claude Chat, unverändert übernommen)
   var pgImpFile = el('input', { type: 'file', accept: '.html,.htm,text/html', hidden: '' });
@@ -1966,7 +1966,7 @@
   ]);
   var pgImpErr = el('div', { class: 'err', role: 'alert' });
   var pgImport = el('div', { class: 'pgimp', hidden: '' }, [el('div', { class: 'row' }, [pgImpBtn, pgImpFile]), pgImpForm, pgImpErr]);
-  var pagesPanel = el('div', { id: 'modio-pages', class: 'panel', role: 'dialog', 'aria-labelledby': 'modio-pgh' }, [
+  var pagesPanel = el('div', { id: 'dps-pages', class: 'panel', role: 'dialog', 'aria-labelledby': 'dps-pgh' }, [
     pgTitle,
     pgFilter,
     pgList,
@@ -2118,7 +2118,7 @@
     if (!LIBRARY || PREVIEW) return;
     function delButton(label, body, question) {
       // liegt im DOM der Seite (nicht im Overlay): eigene Inline-Styles statt Overlay-Klassen
-      var b = el('button', { type: 'button', title: label, 'aria-label': label, 'data-modio': 'kb-del' }, [icon('trash', 16)]);
+      var b = el('button', { type: 'button', title: label, 'aria-label': label, 'data-dps': 'kb-del' }, [icon('trash', 16)]);
       b.style.cssText = 'cursor:pointer;background:none;border:0;padding:2px 4px;margin-left:4px;color:#9ca3af;vertical-align:middle;line-height:0';
       b.addEventListener('click', function () {
         if (isBusy()) { showToast('Es läuft noch ein Schritt. Bitte warten.', true); return; }
@@ -2131,11 +2131,11 @@
       return b;
     }
     var BTN = 'cursor:pointer;background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:3px 8px;margin-left:6px;font:12px system-ui,sans-serif;color:#344054;vertical-align:middle';
-    function textBtn(label, title) { var b = el('button', { type: 'button', title: title || label, 'data-modio': 'kb-btn', text: label }); b.style.cssText = BTN; return b; }
+    function textBtn(label, title) { var b = el('button', { type: 'button', title: title || label, 'data-dps': 'kb-btn', text: label }); b.style.cssText = BTN; return b; }
     // Formular unter der Überschrift bzw. der Variante: Auftrag (und für neue Varianten Name und Bezeichnung)
     function openForm(sec, opts) {
-      var old = sec.querySelector('[data-modio="kb-form"]'); if (old) old.remove();
-      var f = el('div', { 'data-modio': 'kb-form' });
+      var old = sec.querySelector('[data-dps="kb-form"]'); if (old) old.remove();
+      var f = el('div', { 'data-dps': 'kb-form' });
       f.style.cssText = 'margin:8px 0 12px;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;font:13px system-ui,sans-serif;display:grid;gap:6px';
       var key = null, lab = null;
       if (opts.newVariant) {
@@ -2171,8 +2171,8 @@
     }
     // Umbenennen bzw. Zusammenführen: kleines Formular unter der Überschrift, regelbasiert (kein Entwurf)
     function smallForm(sec, children, goLabel, onGo) {
-      var old = sec.querySelector('[data-modio="kb-form"]'); if (old) old.remove();
-      var f = el('div', { 'data-modio': 'kb-form' });
+      var old = sec.querySelector('[data-dps="kb-form"]'); if (old) old.remove();
+      var f = el('div', { 'data-dps': 'kb-form' });
       f.style.cssText = 'margin:8px 0 12px;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;font:13px system-ui,sans-serif;display:grid;gap:6px';
       var err = el('div', { role: 'alert' }); err.style.color = '#b42318';
       var go = textBtn(goLabel), cancel = textBtn('Abbrechen');
@@ -2345,8 +2345,8 @@
 
   var queueItems = [];
   var btnQueue = iconButton('layers', 'Queue umsetzen', { class: 'queue' }, true);
-  btnQueue.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
-  btnQueue.appendChild(btnQueue.modioCount);
+  btnQueue.dpsCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
+  btnQueue.appendChild(btnQueue.dpsCount);
   btnQueue.style.display = 'none';
   bar.insertBefore(btnQueue, statusEl);
   var qList = el('ul', { class: 'qlist' });
@@ -2355,8 +2355,8 @@
   var qErr = el('div', { class: 'err', role: 'alert' });
   var qClose = el('button', { type: 'button', text: 'Schließen' });
   var qRun = el('button', { type: 'button', class: 'primary', text: 'Alle in einem Schritt umsetzen' });
-  var queuePanel = el('div', { class: 'panel', role: 'dialog', 'aria-labelledby': 'modio-qh' }, [
-    el('h2', { id: 'modio-qh', text: 'Queue' }),
+  var queuePanel = el('div', { class: 'panel', role: 'dialog', 'aria-labelledby': 'dps-qh' }, [
+    el('h2', { id: 'dps-qh', text: 'Queue' }),
     qList,
     qErr,
     el('div', { class: 'row end' }, [qClose, qRun]),
@@ -2366,8 +2366,8 @@
   function renderQueueButton() {
     var n = queueItems.length;
     btnQueue.style.display = n ? '' : 'none';
-    btnQueue.title = btnQueue.modioLabel.textContent = 'Queue umsetzen (' + n + ')';
-    btnQueue.modioCount.textContent = String(n);
+    btnQueue.title = btnQueue.dpsLabel.textContent = 'Queue umsetzen (' + n + ')';
+    btnQueue.dpsCount.textContent = String(n);
     btnQueue.disabled = false;
     qRun.disabled = isBusy() || !n;
     qRun.title = isBusy() ? 'Es läuft noch ein Schritt – danach umsetzen' : '';
@@ -2817,7 +2817,7 @@
 
   // ------------------------------------------------------- Design-Vorgaben
 
-  var DESIGN_OPEN_KEY = 'modio-design-open-' + SLUG;
+  var DESIGN_OPEN_KEY = 'dps-design-open-' + SLUG;
   var NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
   var FORBIDDEN = ['url(', '@', ';', '{', '}', '<', '>', '\\', '/*', '*/', '\n', '\r'];
   var design = null; // Stand vom Server
@@ -3379,8 +3379,8 @@
   var chSettleUntil = 0; // bis dahin gehört alles, was sich ändert, zum Ausgangszustand (späte Scripts, Stylesheets)
   var STABLE_MS = 1500; // eine Änderung zählt erst, wenn sie so lange unverändert bleibt
 
-  function isModio(n) { return n === host || (n.nodeType === 1 && (n.hasAttribute('data-modio') || n.id === 'modio-overlay-host')); }
-  function kids(n) { return Array.prototype.filter.call(n.children, function (c) { return !isModio(c); }); }
+  function isDps(n) { return n === host || (n.nodeType === 1 && (n.hasAttribute('data-dps') || n.id === 'dps-overlay-host')); }
+  function kids(n) { return Array.prototype.filter.call(n.children, function (c) { return !isDps(c); }); }
   function sameAttrs(a, b) {
     if (a.attributes.length !== b.attributes.length) return false;
     for (var i = 0; i < a.attributes.length; i++) if (b.getAttribute(a.attributes[i].name) !== a.attributes[i].value) return false;
@@ -3436,7 +3436,7 @@
     var snap = new Map();
     Array.prototype.forEach.call(document.styleSheets, function (sheet, si) {
       var owner = sheet.ownerNode;
-      var om = owner && owner.getAttribute ? owner.getAttribute('data-modio') : null;
+      var om = owner && owner.getAttribute ? owner.getAttribute('data-dps') : null;
       if (om === 'tokens' || om === 'components' || om === 'draft') return;
       var rules;
       try { rules = sheet.cssRules; } catch (e) { return; }
@@ -3506,8 +3506,8 @@
   function renderChangesButton() {
     var n = chDom.length + chCss.length + chFiles.changed;
     btnChanges.style.display = n && !isBusy() && !reloading ? '' : 'none';
-    btnChanges.title = btnChanges.modioLabel.textContent = 'Änderungen übernehmen (' + n + ')';
-    btnChanges.modioCount.textContent = String(n);
+    btnChanges.title = btnChanges.dpsLabel.textContent = 'Änderungen übernehmen (' + n + ')';
+    btnChanges.dpsCount.textContent = String(n);
   }
 
   // Grundzustand: Datei laden, Unterschiede und CSS kurz nach dem Laden als „Scripts der Website“ merken
@@ -3528,7 +3528,7 @@
           new MutationObserver(function (list) {
             for (var i = 0; i < list.length; i++) {
               var t = list[i].target;
-              if (t === document.documentElement || t === host || (t.nodeType === 1 && isModio(t))) continue;
+              if (t === document.documentElement || t === host || (t.nodeType === 1 && isDps(t))) continue;
               scheduleCheck();
               return;
             }
@@ -3548,8 +3548,8 @@
   var cCssRow = el('label', { class: 'switch', title: 'Geänderte Inline-Styles (style="…") nicht ins HTML schreiben, sondern als Regel mit !important in overrides.css' }, [cCss, 'Inline-Styles als Regel in overrides.css übernehmen']);
   var cClose = el('button', { type: 'button', text: 'Schließen' });
   var cApply = el('button', { type: 'button', class: 'primary', text: 'Ausgewählte übernehmen' });
-  var changesPanel = el('div', { class: 'panel wide', role: 'dialog', 'aria-labelledby': 'modio-ch' }, [
-    el('h2', { id: 'modio-ch', text: 'Änderungen übernehmen' }),
+  var changesPanel = el('div', { class: 'panel wide', role: 'dialog', 'aria-labelledby': 'dps-ch' }, [
+    el('h2', { id: 'dps-ch', text: 'Änderungen übernehmen' }),
     cBody,
     el('div', { class: 'checks' }, [cCssRow]),
     cErr,
@@ -3684,9 +3684,9 @@
   // Komponentenseite: die Komponente steht dort mehrfach (je Variante), deshalb kein Live-Umschalten; Versionen laden die Vorschau neu
   if (PREVIEW && PREVIEW.name && !LIBRARY) pvLive.node = document.querySelector('.mx-' + PREVIEW.name);
 
-  var btnDrafts = iconButton('pencilSparkles', 'Entwürfe', { 'aria-expanded': 'false', 'aria-controls': 'modio-drafts' }, true);
-  btnDrafts.modioCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
-  btnDrafts.appendChild(btnDrafts.modioCount);
+  var btnDrafts = iconButton('pencilSparkles', 'Entwürfe', { 'aria-expanded': 'false', 'aria-controls': 'dps-drafts' }, true);
+  btnDrafts.dpsCount = el('span', { class: 'cnt', 'aria-hidden': 'true' });
+  btnDrafts.appendChild(btnDrafts.dpsCount);
   bar.insertBefore(btnDrafts, btnFollowup);
   var dBody = el('div');
   var dErr = el('div', { class: 'err', role: 'alert' });
@@ -3694,15 +3694,15 @@
   var dBack = iconButton('undo', 'Zur Liste', { class: 'ghost' }, true);
   var dTitle = el('span', { text: 'Entwürfe' });
   var dScroll = el('div', { class: 'sb-body' }, [dErr, dBody]);
-  var dHead = el('div', { class: 'sb-head', title: 'Zum Verschieben waagerecht ziehen (Doppelklick: zurück an den rechten Rand)' }, [dBack, el('h2', { id: 'modio-dh' }, [icon('pencilSparkles', 18), dTitle]), el('span', { class: 'spacer' }), dClose]);
-  var draftsPanel = el('aside', { id: 'modio-drafts', class: 'sidebar drafts', role: 'complementary', 'aria-labelledby': 'modio-dh' }, [
+  var dHead = el('div', { class: 'sb-head', title: 'Zum Verschieben waagerecht ziehen (Doppelklick: zurück an den rechten Rand)' }, [dBack, el('h2', { id: 'dps-dh' }, [icon('pencilSparkles', 18), dTitle]), el('span', { class: 'spacer' }), dClose]);
+  var draftsPanel = el('aside', { id: 'dps-drafts', class: 'sidebar drafts', role: 'complementary', 'aria-labelledby': 'dps-dh' }, [
     dHead,
     dScroll,
   ]);
   ui.appendChild(draftsPanel);
 
   // Entwurfsleiste waagerecht verschieben: Abstand zum rechten Rand, gilt für die Sitzung (auch beim Wechsel der Vorschau)
-  var DRAFTS_POS_KEY = 'modio-drafts-right:' + SLUG;
+  var DRAFTS_POS_KEY = 'dps-drafts-right:' + SLUG;
   var draftsRight = 0;
   function placeDraftsPanel(r) {
     var w = draftsPanel.offsetWidth || 500;
@@ -3710,8 +3710,8 @@
     draftsPanel.style.right = draftsRight ? draftsRight + 'px' : '';
     // Leiste, Hinweise und Dialog auf die Seite mit mehr Platz neben der Entwurfsleiste
     var leftSpace = window.innerWidth - draftsRight - w;
-    if (!draftsRight) ui.style.removeProperty('--modio-sbr');
-    else ui.style.setProperty('--modio-sbr', (draftsRight >= leftSpace ? 16 : draftsRight + w + 16) + 'px');
+    if (!draftsRight) ui.style.removeProperty('--dps-sbr');
+    else ui.style.setProperty('--dps-sbr', (draftsRight >= leftSpace ? 16 : draftsRight + w + 16) + 'px');
   }
   function saveDraftsPos() { try { if (draftsRight) sessionStorage.setItem(DRAFTS_POS_KEY, String(draftsRight)); else sessionStorage.removeItem(DRAFTS_POS_KEY); } catch (e) { /* ignorieren */ } }
   try { draftsRight = Number(sessionStorage.getItem(DRAFTS_POS_KEY)) || 0; } catch (e) { draftsRight = 0; }
@@ -3737,7 +3737,7 @@
   window.addEventListener('resize', function () { if (draftsRight) placeDraftsPanel(draftsRight); });
 
 
-  var DRAFT_PARAM = '__modio_draft', DRAFT_V_PARAM = '__modio_v';
+  var DRAFT_PARAM = '__dps_draft', DRAFT_V_PARAM = '__dps_v';
   function cleanSearch() {
     var sp = new URLSearchParams(location.search);
     sp.delete(DRAFT_PARAM); sp.delete(DRAFT_V_PARAM);
@@ -3783,9 +3783,9 @@
 
   function renderDraftsButton() {
     var open = drafts.filter(function (d) { return d.status === 'open'; }).length;
-    btnDrafts.modioCount.textContent = String(open);
-    btnDrafts.modioCount.style.display = open ? '' : 'none';
-    btnDrafts.title = btnDrafts.modioLabel.textContent = 'Entwürfe' + (open ? ' (' + open + ' offen)' : '');
+    btnDrafts.dpsCount.textContent = String(open);
+    btnDrafts.dpsCount.style.display = open ? '' : 'none';
+    btnDrafts.title = btnDrafts.dpsLabel.textContent = 'Entwürfe' + (open ? ' (' + open + ' offen)' : '');
   }
 
   // Komponenten-Bibliothek (neue Projekte), für die Übersicht im Entwürfe-Panel
@@ -3866,8 +3866,8 @@
       if (!n) throw new Error('Leeres Markup');
       pvLive.node.replaceWith(n);
       pvLive.node = n;
-      var draftLink = document.querySelector('link[data-modio="draft"]');
-      var compLink = document.querySelector('link[data-modio="components"]');
+      var draftLink = document.querySelector('link[data-dps="draft"]');
+      var compLink = document.querySelector('link[data-dps="components"]');
       if (v) {
         if (draftLink) { draftLink.disabled = false; draftLink.href = BASE + '/__draft.css?d=' + encodeURIComponent(d.id) + '&v=' + v; }
         if (compLink && PREVIEW.name) compLink.href = BASE + '/__components.css?exclude=' + encodeURIComponent(PREVIEW.name);
@@ -3881,7 +3881,7 @@
       }
       pvLive.shown = v;
       applyToggles();
-      markPlaceholders(!!document.querySelector('style[data-modio="platzhalter"]'));
+      markPlaceholders(!!document.querySelector('style[data-dps="platzhalter"]'));
       renderPreviewBand();
       if (draftsPanel.classList.contains('open')) renderDrafts();
     }).catch(function (e) { showToast('Umschalten fehlgeschlagen: ' + e.message, true); });
@@ -3911,8 +3911,8 @@
   function canLiveToggle(b) { var k = b.klassen || {}; return splitCls(k.neu).length > 0 && splitCls(k.bestand).length > 0; }
 
   function markPlaceholders(on) {
-    var st = document.querySelector('style[data-modio="platzhalter"]');
-    if (on && !st) document.head.appendChild(el('style', { 'data-modio': 'platzhalter', text: '[data-mx-platzhalter]{outline:2px dashed #7c3aed !important;outline-offset:2px !important;cursor:help}' }));
+    var st = document.querySelector('style[data-dps="platzhalter"]');
+    if (on && !st) document.head.appendChild(el('style', { 'data-dps': 'platzhalter', text: '[data-mx-platzhalter]{outline:2px dashed #7c3aed !important;outline-offset:2px !important;cursor:help}' }));
     if (!on && st) st.remove();
     Array.prototype.forEach.call(document.querySelectorAll('[data-mx-platzhalter]'), function (n) {
       if (on) { if (!n.hasAttribute('data-mx-title')) n.setAttribute('data-mx-title', n.getAttribute('title') || ''); n.setAttribute('title', 'Platzhalter: ' + n.getAttribute('data-mx-platzhalter')); }
@@ -4081,7 +4081,7 @@
     if (live) {
       var phs = document.querySelectorAll('[data-mx-platzhalter]');
       if (phs.length) {
-        var phOn = !!document.querySelector('style[data-modio="platzhalter"]');
+        var phOn = !!document.querySelector('style[data-dps="platzhalter"]');
         var bPh = el('button', { type: 'button', class: 'phbtn', text: 'Platzhalter (' + phs.length + ')', 'data-fk': 'ph', 'aria-pressed': String(phOn), title: 'Ergänzte Funktionen markieren, die im echten Projekt anzubinden sind' });
         bPh.addEventListener('click', function () { markPlaceholders(!phOn); renderDrafts(); });
         vright.appendChild(bPh);
@@ -4224,7 +4224,7 @@
     function noteCount() { return notes.filter(function (n) { return n.desc.trim(); }).length; }
     function updateNewLabel() {
       var nChanged = Object.keys(draftToggles).length + Object.keys(draftBefund).length + noteCount();
-      bNew.modioLabel.textContent = nChanged ? 'Neue Version (' + nChanged + ' Änderung(en) gewählt)' : 'Neue Version';
+      bNew.dpsLabel.textContent = nChanged ? 'Neue Version (' + nChanged + ' Änderung(en) gewählt)' : 'Neue Version';
     }
     updateNewLabel();
     ta.addEventListener('input', function () { draftText[d.id] = ta.value; });
@@ -4294,7 +4294,7 @@
   function briefUrl(d, file) { return '/api/sites/' + encodeURIComponent(SLUG) + '/drafts/' + d.id + '/brief' + (file ? '/' + encodeURIComponent(file) : ''); }
   function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
   function downloadBrief(d, file) {
-    return fetch(briefUrl(d, file), { headers: { 'X-Modio-Token': TOKEN }, credentials: 'same-origin' })
+    return fetch(briefUrl(d, file), { headers: { 'X-DPS-Token': TOKEN }, credentials: 'same-origin' })
       .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.blob(); })
       .then(function (blob) {
         var a = document.createElement('a');
@@ -4314,11 +4314,11 @@
     return ok ? Promise.resolve() : Promise.reject(new Error('Kopieren nicht möglich – Text markieren und mit Strg+C kopieren.'));
   }
   // Angepasster Briefing-Text: im Browser gemerkt, bis das Briefing neu erzeugt wird (Schlüssel enthält den Zeitstempel)
-  function briefEditKey(d, b) { return 'modio-brief:' + SLUG + ':' + d.id + ':' + (b.created || ''); }
+  function briefEditKey(d, b) { return 'dps-brief:' + SLUG + ':' + d.id + ':' + (b.created || ''); }
   function briefEdited(d, b) { try { return localStorage.getItem(briefEditKey(d, b)); } catch (e) { return null; } }
   function setBriefEdited(d, b, text) {
     try {
-      Object.keys(localStorage).forEach(function (k) { if (k.indexOf('modio-brief:' + SLUG + ':' + d.id + ':') === 0) localStorage.removeItem(k); });
+      Object.keys(localStorage).forEach(function (k) { if (k.indexOf('dps-brief:' + SLUG + ':' + d.id + ':') === 0) localStorage.removeItem(k); });
       if (text !== null && text !== (b.text || '')) localStorage.setItem(briefEditKey(d, b), text);
     } catch (e) { /* ohne Speicher nur für diese Ansicht */ }
   }
@@ -4451,7 +4451,7 @@
   function closeDrafts() {
     draftsPanel.classList.remove('open');
     ui.classList.remove('sb-open', 'sb-drafts');
-    ui.style.removeProperty('--modio-sbr');
+    ui.style.removeProperty('--dps-sbr');
     btnDrafts.classList.remove('on');
     btnDrafts.setAttribute('aria-expanded', 'false');
   }
@@ -4476,7 +4476,7 @@
     var PROPS = ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'text-transform', 'color', 'background-color', 'border', 'border-radius', 'padding', 'box-shadow', 'text-decoration-line'];
     for (var i = 0; i < nodes.length && i < 4000; i++) {
       var n = nodes[i];
-      if (host.contains(n) || n.closest('[data-modio]')) continue;
+      if (host.contains(n) || n.closest('[data-dps]')) continue;
       var r = n.getBoundingClientRect();
       if (!r.width || !r.height) continue;
       var tag = n.tagName.toLowerCase();
@@ -4513,13 +4513,13 @@
     }
   } catch (e) { /* ignorieren */ }
 
-  // Modio-Favicon und Titel mit Präfix, damit Tabs mit dem Abzug erkennbar sind
+  // Page-Studio-Favicon und Titel mit Präfix, damit Tabs mit dem Abzug erkennbar sind
   (function brandTab() {
-    var PREFIX = 'Modio · ';
+    var PREFIX = 'Page Studio · ';
     var fixIcons = function () {
-      Array.prototype.forEach.call(document.querySelectorAll('link[rel~="icon"]:not([data-modio]), link[rel="shortcut icon"]:not([data-modio]), link[rel="apple-touch-icon"]:not([data-modio])'), function (l) { l.remove(); });
-      if (!document.querySelector('link[data-modio="favicon"]') && document.head) {
-        document.head.appendChild(el('link', { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml', 'data-modio': 'favicon' }));
+      Array.prototype.forEach.call(document.querySelectorAll('link[rel~="icon"]:not([data-dps]), link[rel="shortcut icon"]:not([data-dps]), link[rel="apple-touch-icon"]:not([data-dps])'), function (l) { l.remove(); });
+      if (!document.querySelector('link[data-dps="favicon"]') && document.head) {
+        document.head.appendChild(el('link', { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml', 'data-dps': 'favicon' }));
       }
     };
     var fixTitle = function () {

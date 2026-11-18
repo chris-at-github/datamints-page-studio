@@ -22,7 +22,7 @@ CREATED=()
 mkdir -p "$SITE/design"
 for f in tokens.json notes.md consistency.json; do
   if [[ ! -f "$SITE/design/$f" ]]; then
-    cp "$MODIO_ROOT/templates/design/$f" "$SITE/design/$f"
+    cp "$DPS_ROOT/templates/design/$f" "$SITE/design/$f"
     CREATED+=("design/$f")
   fi
 done

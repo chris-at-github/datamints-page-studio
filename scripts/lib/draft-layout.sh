@@ -30,8 +30,8 @@ draft_layout_text() {
     def ref($key; $measured; $label):
       ($t[$key].value // null) as $v | ($v | px) as $vp
       | if $v == null then "\($measured) px"
-        elif $vp != null and (($vp - $measured) | fabs) > 2 then "var(--modio-\($key | gsub("\\."; "-"))) (\($v); gemessen \($measured) px)"
-        else "var(--modio-\($key | gsub("\\."; "-"))) (\($v))" end;
+        elif $vp != null and (($vp - $measured) | fabs) > 2 then "var(--dps-\($key | gsub("\\."; "-"))) (\($v); gemessen \($measured) px)"
+        else "var(--dps-\($key | gsub("\\."; "-"))) (\($v))" end;
     [.ansichten[] | select(.error | not)] | sort_by(-.width) as $v
     | if ($v | length) == 0 then empty else
       $v[0] as $big | $v[-1] as $small

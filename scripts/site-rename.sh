@@ -54,4 +54,4 @@ fi
 "$SCRIPTS_DIR/site-list.sh" >/dev/null
 
 log "$OLD: umbenannt in $NEW"
-emit status ok slug "$NEW" from "$OLD" site "${SITE#$MODIO_ROOT/}" commit "$(git_site rev-parse --short HEAD)"
+emit status ok slug "$NEW" from "$OLD" site "${SITE#$DPS_ROOT/}" commit "$(git_site rev-parse --short HEAD)"

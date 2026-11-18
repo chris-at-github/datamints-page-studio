@@ -46,7 +46,7 @@ const isRelative = (v) => v && !/^([a-z][a-z0-9+.-]*:|#|\/)/i.test(v);
 function rebase(v, from, to) {
   if (!isRelative(v)) return v;
   try {
-    const u = new URL(v, 'http://modio.local/' + from);
+    const u = new URL(v, 'http://dps.local/' + from);
     let rel = path.posix.relative(path.posix.dirname('/' + to), decodeURIComponent(u.pathname));
     if (!rel) rel = path.posix.basename(u.pathname);
     if (u.pathname.endsWith('/') && !rel.endsWith('/')) rel += '/';

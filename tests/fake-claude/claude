@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Simuliertes Claude Code für Tests von draft-create.sh: schreibt eine gültige Komponente in den Versionsordner.
 # Kosten wie beim echten Claude: total_cost_usd ist über die Session kumuliert (--resume setzt fort)
-FAKE_COST_DIR="${TMPDIR:-/tmp}/modio-fake-claude-$(id -u)"; mkdir -p "$FAKE_COST_DIR"
+FAKE_COST_DIR="${TMPDIR:-/tmp}/dps-fake-claude-$(id -u)"; mkdir -p "$FAKE_COST_DIR"
 fake_total() { # fake_total <kosten dieses aufrufs> -> neuer Gesamtstand der Session fake-session
   local prev=0 f="$FAKE_COST_DIR/fake-session"
   [[ "$RESUMED" == 1 && -f "$f" ]] && prev="$(cat "$f")"

@@ -308,14 +308,14 @@ In `tests/run.sh` direkt nach den Checks aus Task 1 (vor dem `reset --hard "$SYN
 
 ```bash
 node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("<h3 data-mx-slot=\"titel\">Beispiel</h3>","<header class=\"kopf\"><h3 data-mx-slot=\"titel\">Beispiel</h3></header>"))' "$NS/components/mx-held.html"
-OUT="$(./scripts/local-commit.sh modio-test-neu "Vorlage mit Kopf" 2>/dev/null)" || true
-OUT="$(./scripts/component-sync.sh modio-test-neu held 2>/dev/null)" || true
+OUT="$(./scripts/local-commit.sh dps-test-neu "Vorlage mit Kopf" 2>/dev/null)" || true
+OUT="$(./scripts/component-sync.sh dps-test-neu held 2>/dev/null)" || true
 check "component-sync.sh: Schritt mit angeglichenen Kopien" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && (( $(jq -r .synced <<<"$OUT") >= 3 )) && [[ "$(git -C "$NS" log -1 --format=%s)" == *"Kopien von mx-held angeglichen"* ]] && ! jq -e ".warnings | map(.rule) | index(\"component-structure\")" <<<"$OUT" >/dev/null'
-OUT="$(./scripts/component-sync.sh modio-test-neu held 2>/dev/null)" || true
+OUT="$(./scripts/component-sync.sh dps-test-neu held 2>/dev/null)" || true
 check "component-sync.sh: nichts abweichend -> nochange" '[[ "$(jq -r .status <<<"$OUT")" == nochange ]]'
-set +e; OUT="$(./scripts/component-sync.sh modio-test-neu gibt-es-nicht 2>/dev/null)"; rc=$?; set -e
+set +e; OUT="$(./scripts/component-sync.sh dps-test-neu gibt-es-nicht 2>/dev/null)"; rc=$?; set -e
 check "component-sync.sh: unbekannte Komponente Exit 4" '(( rc == 4 ))'
-./scripts/rollback.sh modio-test-neu "$SYNC_BEFORE" >/dev/null 2>&1 || true
+./scripts/rollback.sh dps-test-neu "$SYNC_BEFORE" >/dev/null 2>&1 || true
 ```
 
 In `tests/page-import-server-test.mjs` vor `process.exit(...)`:
@@ -476,21 +476,21 @@ In `tests/run.sh` nach dem Task-2-Block:
 # Komponente auf der Komponentenseite ändern bzw. Variante hinzufügen (Entwurf ohne Kopie auf einer Seite)
 LIBD_BEFORE="$(git -C "$NS" rev-parse HEAD)"
 jq -n '{id:"job-test-neu-lib1", params:{mode:"library", component:"held", variant:"", newVariant:null, prompt:"Ruhiger", viewport:{width:1440,height:900}}}' >"$JOBN.2"
-OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_LIB_WRAP=1 FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_LIB_WRAP=1 FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh dps-test-neu "$JOBN.2" 2>/dev/null)" || true
 LD="$(jq -r .draft <<<"$OUT")"
 check "Bibliothek ändern: Entwurf mit Vorlage als Material" '[[ "$(jq -r .page <<<"$OUT")" == /__komponenten ]] && jq -e ".target == \"library\" and .component.name == \"held\" and .revises == \"held\"" "$NS/drafts/$LD/draft.json" >/dev/null && cmp -s "$NS/components/mx-held.html" "$NS/drafts/$LD/source.html" && [[ -f "$NS/drafts/$LD/bestand-komponente.json" ]] && grep -q "Vorlage der Komponente" "$JOBN.args"'
-OUT="$(./scripts/draft-apply.sh modio-test-neu "$LD" 2>/dev/null)" || true
+OUT="$(./scripts/draft-apply.sh dps-test-neu "$LD" 2>/dev/null)" || true
 check "Bibliothek ändern: Übernahme ändert nur components/, Herkunft bleibt" '[[ "$(jq -r .status <<<"$OUT")" == committed ]] && grep -q "class=\"kopf\"" "$NS/components/mx-held.html" && jq -e ".herkunft == \"/seiten/startseite.html\"" "$NS/components/mx-held.json" >/dev/null && [[ -z "$(git -C "$NS" diff --name-only HEAD~1 -- www)" ]]'
 jq -n '{id:"job-test-neu-lib2", params:{mode:"library", component:"held", variant:"", newVariant:{key:"kompakt", label:"Kompakt"}, prompt:"Weniger Abstand", viewport:{width:1440,height:900}}}' >"$JOBN.2"
-OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)" || true
+OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_ARGS="$JOBN.args" ./scripts/draft-create.sh dps-test-neu "$JOBN.2" 2>/dev/null)" || true
 check "Variante hinzufügen: Auftrag nennt die Variante, Entwurf enthält sie" 'grep -q "Neue Variante \"kompakt\"" "$JOBN.args" && jq -e "[.varianten[].key] | index(\"kompakt\")" "$NS/drafts/$(jq -r .draft <<<"$OUT")/v1/component.json" >/dev/null'
-./scripts/draft-discard.sh modio-test-neu "$(jq -r .draft <<<"$OUT")" >/dev/null 2>&1 || true
-set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_DROP_VARIANT=1 ./scripts/draft-create.sh modio-test-neu "$JOBN.2" 2>/dev/null)"; rc=$?; set -e
+./scripts/draft-discard.sh dps-test-neu "$(jq -r .draft <<<"$OUT")" >/dev/null 2>&1 || true
+set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" FAKE_CLAUDE_DROP_VARIANT=1 ./scripts/draft-create.sh dps-test-neu "$JOBN.2" 2>/dev/null)"; rc=$?; set -e
 check "Verwendete Variante darf nicht wegfallen" '(( rc != 0 )) && grep -q "Variante „hervorgehoben“" <<<"$OUT"'
 jq '.id = "job-test-neu-lib3" | .params.component = "gibt-es-nicht"' "$JOBN.2" >"$JOBN.3"
-set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh modio-test-neu "$JOBN.3" 2>/dev/null)"; rc=$?; set -e
+set +e; OUT="$(PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh dps-test-neu "$JOBN.3" 2>/dev/null)"; rc=$?; set -e
 check "Bibliothek ändern: unbekannte Komponente abgewiesen" '(( rc != 0 ))'
-./scripts/rollback.sh modio-test-neu "$LIBD_BEFORE" >/dev/null 2>&1 || true
+./scripts/rollback.sh dps-test-neu "$LIBD_BEFORE" >/dev/null 2>&1 || true
 rm -f "$JOBN.3"
 ```
 
@@ -685,7 +685,7 @@ git commit -m "Komponenten: Entwurf auf der Komponentenseite (ändern, Variante 
 - Consumes: Job-Parameter aus Task 3, `deviations` aus Task 1, `loadVersion`/`instanceHtml` aus `draft.mjs`
 - Produces:
   - `POST /api/sites/<slug>/components/draft` `{ name, prompt, variant?, newVariant?: {key,label} }` → 202 `{job}` (Typ `draft`, `params.mode:"library"`) | 400 | 404 | 409
-  - `GET /s/<slug>/__komponenten?__modio_draft=D-xxx&__modio_v=n` → Komponentenseite mit Entwurfsversion statt der gespeicherten Komponente; Overlay-Config `preview`
+  - `GET /s/<slug>/__komponenten?__dps_draft=D-xxx&__dps_v=n` → Komponentenseite mit Entwurfsversion statt der gespeicherten Komponente; Overlay-Config `preview`
   - `readDraft(...).target`
   - `libraryPage(siteDir, { slug, title, override })`, `override = { name, template, spec }`; Abschnitt trägt `data-kb-off="<n>"`
 
@@ -706,7 +706,7 @@ if (d.job) fs.rmSync(path.join(JOBS, 'pending', `${d.job.id}.json`), { force: tr
 r = await fetch(`${BASE}/s/${NEU}/__komponenten`);
 text = await r.text();
 check('Komponentenseite: Abweichungen je Komponente', /data-kb-name="held"[^>]*data-kb-off="\d+"/.test(text));
-r = await fetch(`${BASE}/s/${NEU}/__komponenten?__modio_draft=D-999&__modio_v=1`, { redirect: 'manual' });
+r = await fetch(`${BASE}/s/${NEU}/__komponenten?__dps_draft=D-999&__dps_v=1`, { redirect: 'manual' });
 check('Komponentenseite: Vorschau eines fehlenden Entwurfs leitet zurück', r.status === 302);
 ```
 
@@ -736,17 +736,17 @@ Route `/__komponenten` ersetzen:
 
 ```js
   if (rest === '/__komponenten' || rest === '/__komponenten/') {
-    // Komponenten-Bibliothek: alle Komponenten mit ihren Varianten (nicht Teil des Abzugs); ?__modio_draft: Entwurfsvorschau
+    // Komponenten-Bibliothek: alle Komponenten mit ihren Varianten (nicht Teil des Abzugs); ?__dps_draft: Entwurfsvorschau
     const site = await readJson(path.join(dir, 'site.json'), {});
     let override = null, preview = null;
-    const did = sp.get('__modio_draft');
+    const did = sp.get('__dps_draft');
     if (did !== null) {
       const d = validDraftId(did) ? await readDraft(slug, did) : null;
       if (!d || d.status !== 'open' || d.target !== 'library') {
         res.writeHead(302, { Location: `/s/${slug}/__komponenten`, 'Cache-Control': 'no-store' });
         return res.end();
       }
-      const version = Number(sp.get('__modio_v')) || Math.max(0, ...d.versions.map((v) => v.v));
+      const version = Number(sp.get('__dps_v')) || Math.max(0, ...d.versions.map((v) => v.v));
       const v = await loadVersion(dir, path.join(dir, 'drafts', did), version).catch(() => null);
       if (!v || v.errors.length || !v.library) return sendError(res, 409, 'Vorschau nicht möglich: Entwurf ungültig');
       override = { name: v.name, template: v.html, spec: v.library };
@@ -816,15 +816,15 @@ git commit -m "Server: Entwurf für Bibliotheks-Komponenten, Vorschau auf der Ko
 
 - [ ] **Step 1: Knöpfe und Formulare in `libraryControls`**
 
-`delButton` bleibt. Neue Helfer im selben Stil (Inline-Styles, `data-modio`-Attribute, weil sie im DOM der Seite liegen):
+`delButton` bleibt. Neue Helfer im selben Stil (Inline-Styles, `data-dps`-Attribute, weil sie im DOM der Seite liegen):
 
 ```js
     var BTN = 'cursor:pointer;background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:3px 8px;margin-left:6px;font:12px system-ui,sans-serif;color:#344054;vertical-align:middle';
-    function textBtn(label, title) { var b = el('button', { type: 'button', title: title || label, 'data-modio': 'kb-btn', text: label }); b.style.cssText = BTN; return b; }
+    function textBtn(label, title) { var b = el('button', { type: 'button', title: title || label, 'data-dps': 'kb-btn', text: label }); b.style.cssText = BTN; return b; }
     // Formular unter der Überschrift: Prompt (und für neue Varianten Name und Bezeichnung)
     function openForm(sec, opts) {
-      var old = sec.querySelector('[data-modio="kb-form"]'); if (old) old.remove();
-      var f = el('div', { 'data-modio': 'kb-form' });
+      var old = sec.querySelector('[data-dps="kb-form"]'); if (old) old.remove();
+      var f = el('div', { 'data-dps': 'kb-form' });
       f.style.cssText = 'margin:8px 0 12px;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;font:13px system-ui,sans-serif;display:grid;gap:6px';
       var key = null, lab = null;
       if (opts.newVariant) {
@@ -922,12 +922,12 @@ Expected: keine Ausgabe von `node --check`, `0 fehlgeschlagen`
 
 - [ ] **Step 4: Browser-Prüfung**
 
-Testprojekt wie in Stufe 1 (`modio-ui-test`, neues Projekt mit Seite und Komponente über Fake-Claude), Server mit `MODIO_API_TOKEN="$(openssl rand -hex 32)"`, Worker mit `PATH=tests/fake-claude:$PATH`. Playwright-Skript im Scratchpad (`p.on('dialog', d => d.accept())`):
-1. `/s/modio-ui-test/__komponenten` öffnen → Knöpfe „Ändern …“, „Variante hinzufügen …“ sichtbar.
-2. „Variante hinzufügen …“ → Name `kompakt`, Text → „Entwurf erstellen“ → nach Jobende Vorschau-URL `__komponenten?__modio_draft=…` mit Variante `kompakt` im Seiteninhalt.
+Testprojekt wie in Stufe 1 (`dps-ui-test`, neues Projekt mit Seite und Komponente über Fake-Claude), Server mit `DPS_API_TOKEN="$(openssl rand -hex 32)"`, Worker mit `PATH=tests/fake-claude:$PATH`. Playwright-Skript im Scratchpad (`p.on('dialog', d => d.accept())`):
+1. `/s/dps-ui-test/__komponenten` öffnen → Knöpfe „Ändern …“, „Variante hinzufügen …“ sichtbar.
+2. „Variante hinzufügen …“ → Name `kompakt`, Text → „Entwurf erstellen“ → nach Jobende Vorschau-URL `__komponenten?__dps_draft=…` mit Variante `kompakt` im Seiteninhalt.
 3. Im Entwürfe-Panel übernehmen → Seite lädt neu, Variante `kompakt` sichtbar, Verlauf A-xxx.
 4. Mit `FAKE_CLAUDE_LIB_WRAP=1` im Worker „Ändern …“ → übernehmen → Toast „N Kopie(n) weichen jetzt ab“, Knopf „N Kopie(n) angleichen“ → bestätigen → Toast mit Anzahl, Knopf verschwindet nach Reload.
-Testprojekt danach löschen (`rm -rf sites/modio-ui-test`), nur `schreiner-de-shop` und `schreiner-de-shop-relaunch` bleiben.
+Testprojekt danach löschen (`rm -rf sites/dps-ui-test`), nur `schreiner-de-shop` und `schreiner-de-shop-relaunch` bleiben.
 
 - [ ] **Step 5: Commit**
 
@@ -948,7 +948,7 @@ git commit -m "Overlay: Komponenten auf der Komponentenseite ändern, Varianten 
 - Jobtabelle: `component-sync` | `component-sync.sh <slug> <name>` | Review bei Exit 3.
 - Endpunkte: `POST /api/sites/<slug>/components/draft` `{ name, prompt, variant?, newVariant?: {key,label} }` → 202 `{ job }` (Typ `draft`, `mode: "library"`), 400/404/409; `POST /api/sites/<slug>/components/sync` `{ name }` → 202 `{ job }`, 404, 409.
 - `GET …/drafts`: Felder `target`, `newVariant`.
-- Abschnitt Bibliothek: Absätze „Ändern auf der Komponentenseite“ (Material = Vorlage, Ziel `__komponenten`, Übernahme schreibt nur `components/`, Herkunft bleibt, verwendete Varianten Pflicht über `DRAFT_REQUIRED_VARIANTS`), „Vorschau“ (`/__komponenten?__modio_draft=…`), „Angleichen“ (Regeln aus `syncInstance`: Slots nach Schlüssel und Reihenfolge, Attribute `src srcset sizes alt width height href target rel title aria-label datetime loading`, Icon-Klasse, eingebettete Komponenten, Kontextklassen und `id`; optionale fehlende Slots entfallen, fehlende Pflicht-Slots behalten den Beispielinhalt; Mehrdeutiges und unbekannte Varianten bleiben unverändert).
+- Abschnitt Bibliothek: Absätze „Ändern auf der Komponentenseite“ (Material = Vorlage, Ziel `__komponenten`, Übernahme schreibt nur `components/`, Herkunft bleibt, verwendete Varianten Pflicht über `DRAFT_REQUIRED_VARIANTS`), „Vorschau“ (`/__komponenten?__dps_draft=…`), „Angleichen“ (Regeln aus `syncInstance`: Slots nach Schlüssel und Reihenfolge, Attribute `src srcset sizes alt width height href target rel title aria-label datetime loading`, Icon-Klasse, eingebettete Komponenten, Kontextklassen und `id`; optionale fehlende Slots entfallen, fehlende Pflicht-Slots behalten den Beispielinhalt; Mehrdeutiges und unbekannte Varianten bleiben unverändert).
 
 - [ ] **Step 2: `README.md`**
 

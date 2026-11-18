@@ -1,6 +1,6 @@
 // Komponenten-Export: je Komponente component.html und component.css, dazu Tokens, Sammel-CSS und Vorschau.
-// Bei neuen Projekten (design/tokens-map.json) werden var(--modio-…) wieder auf die Variablen des Projekts
-// (design/tokens-quelle.css) umgeschrieben; Tokens ohne Gegenstück stehen in modio-zusatz.css.
+// Bei neuen Projekten (design/tokens-map.json) werden var(--dps-…) wieder auf die Variablen des Projekts
+// (design/tokens-quelle.css) umgeschrieben; Tokens ohne Gegenstück stehen in dps-zusatz.css.
 // Aufruf: node export.mjs <site-dir> <ziel-ordner>
 // Ausgabe: eine JSON-Zeile { status, dir, components: [{ name, title, page }], warnings }
 import fs from 'node:fs';
@@ -23,11 +23,11 @@ if (!names.length) out({ status: 'error', error: 'Keine Komponenten vorhanden (e
 
 const map = readJson(path.join(siteDir, 'design', 'tokens-map.json'), null);
 const tokens = readJson(path.join(siteDir, 'design', 'tokens.json'), { tokens: {} }).tokens || {};
-// --modio-<kategorie>-<name> -> --<name im Projekt>
+// --dps-<kategorie>-<name> -> --<name im Projekt>
 const rename = new Map();
 if (map) for (const [orig, key] of Object.entries(map.tokens || {})) rename.set(cssVarName(key), orig);
 const usedExtra = new Set();
-const rewrite = (text) => text.replace(/--modio-[a-z0-9-]+/g, (v) => {
+const rewrite = (text) => text.replace(/--dps-[a-z0-9-]+/g, (v) => {
   if (rename.has(v)) return rename.get(v);
   usedExtra.add(v);
   return v;
@@ -65,11 +65,11 @@ for (const name of names) {
   components.push({ name, title: lib ? lib.title : title, page, html: html ? rewrite(html).trim() : null, variants });
 }
 
-// Tokens: Datei des Projekts (neue Projekte) oder die erzeugten --modio-Variablen
+// Tokens: Datei des Projekts (neue Projekte) oder die erzeugten --dps-Variablen
 const quelle = path.join(siteDir, 'design', 'tokens-quelle.css');
 if (map && fs.existsSync(quelle)) fs.copyFileSync(quelle, path.join(target, 'tokens.css'));
 else fs.copyFileSync(path.join(siteDir, 'design', 'tokens.css'), path.join(target, 'tokens.css'));
-// Tokens, die nur in Modio existieren (z. B. im Design-Panel ergänzt), samt Verweisen darin
+// Tokens, die nur in Page Studio existieren (z. B. im Design-Panel ergänzt), samt Verweisen darin
 const extra = [];
 const seen = new Set();
 const queue = [...usedExtra];
@@ -80,14 +80,14 @@ while (queue.length) {
   const key = Object.keys(tokens).find((k) => cssVarName(k) === v);
   if (!key) { warnings.push(`${v}: Token nicht gefunden`); continue; }
   const val = tokens[key].value;
-  for (const m of val.matchAll(/--modio-[a-z0-9-]+/g)) if (!rename.has(m[0])) queue.push(m[0]);
+  for (const m of val.matchAll(/--dps-[a-z0-9-]+/g)) if (!rename.has(m[0])) queue.push(m[0]);
   extra.push(`  ${v}: ${rewrite(val)};`);
 }
 const files = ['tokens.css'];
 if (map && extra.length) {
-  fs.writeFileSync(path.join(target, 'modio-zusatz.css'), `/* Tokens, die nur in Modio angelegt wurden (nicht in tokens-quelle.css) */\n:root {\n${extra.sort().join('\n')}\n}\n`);
-  files.push('modio-zusatz.css');
-  warnings.push(`${extra.length} Token(s) nur in Modio angelegt: modio-zusatz.css einbinden oder in tokens-quelle.css übernehmen`);
+  fs.writeFileSync(path.join(target, 'dps-zusatz.css'), `/* Tokens, die nur in Page Studio angelegt wurden (nicht in tokens-quelle.css) */\n:root {\n${extra.sort().join('\n')}\n}\n`);
+  files.push('dps-zusatz.css');
+  warnings.push(`${extra.length} Token(s) nur in Page Studio angelegt: dps-zusatz.css einbinden oder in tokens-quelle.css übernehmen`);
 }
 fs.writeFileSync(path.join(target, 'komponenten.css'), components.map((c) => fs.readFileSync(path.join(target, 'komponenten', c.name, 'component.css'), 'utf8').trim()).join('\n\n') + '\n');
 files.push('komponenten.css');
@@ -112,10 +112,10 @@ ${components.filter((c) => c.html).map((c) => (c.variants
 `);
 fs.writeFileSync(path.join(target, 'README.md'), `# Komponenten-Export: ${site.title || site.slug}
 
-Erzeugt von Modio am ${new Date().toLocaleString('de-DE')}.
+Erzeugt von Page Studio am ${new Date().toLocaleString('de-DE')}.
 
 ## Einbinden
-1. ${map ? 'tokens.css (die Variablen des Projekts aus design/tokens-quelle.css)' : 'tokens.css (Design-Tokens als --modio-Variablen)'} einbinden${files.includes('modio-zusatz.css') ? ', dazu modio-zusatz.css' : ''}.
+1. ${map ? 'tokens.css (die Variablen des Projekts aus design/tokens-quelle.css)' : 'tokens.css (Design-Tokens als --dps-Variablen)'} einbinden${files.includes('dps-zusatz.css') ? ', dazu dps-zusatz.css' : ''}.
 2. komponenten.css einbinden (oder je Komponente component.css). Jede Komponente ist mit @scope (.mx-<name>) gekapselt.
 3. Das Markup aus component.html an der gewünschten Stelle einsetzen. Elemente mit data-mx-platzhalter sind im echten Projekt anzubinden.
 4. Komponenten aus der Bibliothek haben zusätzlich component.json: Varianten (Klassen auf dem Wurzelelement, data-mx-variant) und austauschbare Inhalte (Elemente mit data-mx-slot, z. B. als Parameter eines Templates).

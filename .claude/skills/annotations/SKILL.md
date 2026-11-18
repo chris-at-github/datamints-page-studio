@@ -1,9 +1,9 @@
 ---
 name: annotations
-description: Offene Modio-Jobs (jobs/pending/) in einer interaktiven Claude-Code-Sitzung manuell abarbeiten, ausschließlich über die Skripte unter scripts/. Nutzen, wenn der Worker nicht läuft oder ein Job gezielt von Hand ausgeführt werden soll.
+description: Offene Page-Studio-Jobs (jobs/pending/) in einer interaktiven Claude-Code-Sitzung manuell abarbeiten, ausschließlich über die Skripte unter scripts/. Nutzen, wenn der Worker nicht läuft oder ein Job gezielt von Hand ausgeführt werden soll.
 ---
 
-# Offene Modio-Jobs manuell abarbeiten
+# Offene Page-Studio-Jobs manuell abarbeiten
 
 Regelbasiertes läuft ausschließlich über die Skripte. Keine direkten git-, wget- oder curl-Befehle.
 

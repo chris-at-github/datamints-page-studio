@@ -1,5 +1,5 @@
 /* Design-Tokens des Projekts als CSS Custom Properties.
-   Modio übernimmt die Variablen im :root-Block mit „Paket erstellen“ als gesperrte Tokens.
+   Page Studio übernimmt die Variablen im :root-Block mit „Paket erstellen“ als gesperrte Tokens.
    Der Name bestimmt die Kategorie: --color-…, --font-…, --size-… (auch --text-…, --fs-…),
    --radius-…, --space-… (auch --spacing-…, --gap-…), --shadow-…, --breakpoint-… (auch --bp-…),
    --container-max-width (Inhaltsbreite) und --container-spacing-x (Seitenrand auf schmalen Bildschirmen).

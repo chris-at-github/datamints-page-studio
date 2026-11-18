@@ -20,7 +20,7 @@ export const CATEGORIES = ['color', 'font', 'size', 'radius', 'space', 'shadow',
 const KEY_RE = new RegExp(`^(${CATEGORIES.join('|')})\\.[a-z0-9]+(?:-[a-z0-9]+)*$`);
 const FORBIDDEN = ['url(', '@', ';', '{', '}', '<', '>', '\\', '/*', '*/', '\n', '\r'];
 const ALLOWED_FUNCS = new Set(['rgb', 'rgba', 'hsl', 'hsla', 'clamp', 'min', 'max', 'calc', 'var']);
-// Ausdrücke mit clamp()/min()/max()/calc() oder Verweisen auf andere Tokens (nur var(--modio-…))
+// Ausdrücke mit clamp()/min()/max()/calc() oder Verweisen auf andere Tokens (nur var(--dps-…))
 const EXPR_RE = /^[a-z0-9#.,%()\s/*+-]+$/i;
 const hasExpr = (v) => /\b(?:clamp|min|max|calc|var)\s*\(/i.test(v);
 const MEASURE = '(?:-?(?:\\d+\\.?\\d*|\\.\\d+)(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex|pt)?)';
@@ -32,7 +32,7 @@ const FONT_NAME = `(?:"[^"\\n]{1,60}"|'[^'\\n]{1,60}'|[A-Za-z0-9][A-Za-z0-9 -]{0
 const FONT_RE = new RegExp(`^\\s*${FONT_NAME}\\s*(?:,\\s*${FONT_NAME}\\s*)*$`);
 const SHADOW_RE = /^(?:[a-z0-9#.,%()\s/+-])+$/i;
 
-export const cssVarName = (key) => '--modio-' + key.replace('.', '-');
+export const cssVarName = (key) => '--dps-' + key.replace('.', '-');
 export const NOTES_MAX_LINES = Number(process.env.NOTES_MAX_LINES || 40);
 
 function isColor(v) {
@@ -50,13 +50,13 @@ export function checkValue(key, value) {
     if (!ALLOWED_FUNCS.has(m[1].toLowerCase())) return `Funktion ${m[1]}() nicht erlaubt`;
   }
   for (const m of v.matchAll(/var\s*\(([^)]*)\)/gi)) {
-    if (!/^\s*--modio-[a-z0-9-]+\s*$/.test(m[1])) return 'var() nur mit Verweis auf einen anderen Token (--modio-…)';
+    if (!/^\s*--dps-[a-z0-9-]+\s*$/.test(m[1])) return 'var() nur mit Verweis auf einen anderen Token (--dps-…)';
   }
   const cat = key.split('.')[0];
   if (hasExpr(v)) {
     if (!EXPR_RE.test(v)) return 'ungültiger Ausdruck';
     if (cat === 'font') return 'Schriften ohne Funktionen angeben';
-    if (cat === 'color' && !/^var\s*\(\s*--modio-[a-z0-9-]+\s*\)$/i.test(v) && !COLOR_FN_RE.test(v)) return 'Farbe: Wert oder Verweis var(--modio-…)';
+    if (cat === 'color' && !/^var\s*\(\s*--dps-[a-z0-9-]+\s*\)$/i.test(v) && !COLOR_FN_RE.test(v)) return 'Farbe: Wert oder Verweis var(--dps-…)';
     return null;
   }
   switch (cat) {
@@ -162,7 +162,7 @@ function context(site, currentId, count) {
     '<regeln>',
     notes ? neutral(notes) : '(noch keine Regeln)',
     '</regeln>',
-    ...(shared.length ? ['<gleiche-bereiche hinweis="nur auf der Seite der Annotation ändern, Modio überträgt sie automatisch auf alle Seiten">', shared.join('\n').replace(/</g, '‹'), '</gleiche-bereiche>'] : []),
+    ...(shared.length ? ['<gleiche-bereiche hinweis="nur auf der Seite der Annotation ändern, Page Studio überträgt sie automatisch auf alle Seiten">', shared.join('\n').replace(/</g, '‹'), '</gleiche-bereiche>'] : []),
     '</vorgaben>',
   ].join('\n');
 
@@ -422,7 +422,7 @@ export function importCss(site) {
     used.add(key);
     map[name] = key;
   }
-  // Verweise auflösen: auf andere Tokens -> var(--modio-…), auf Werte ohne Token -> Wert einsetzen
+  // Verweise auflösen: auf andere Tokens -> var(--dps-…), auf Werte ohne Token -> Wert einsetzen
   const resolve = (v, depth = 0) => v.replace(/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,\s*([^()]*))?\)/g, (all, ref, fb) => {
     if (map[ref]) return `var(${cssVarName(map[ref])})`;
     if (vars.has(ref) && depth < 5) return resolve(vars.get(ref), depth + 1);

@@ -47,7 +47,7 @@ if [[ -n "${DESIGN_FROM:-}" && -d "$DESIGN_FROM/design" ]]; then
   for f in tokens.json notes.md consistency.json; do
     [[ -f "$DESIGN_FROM/design/$f" ]] && cp "$DESIGN_FROM/design/$f" "$SITE/design/$f"
   done
-  log "Design-Vorgaben übernommen aus ${DESIGN_FROM#$MODIO_ROOT/}"
+  log "Design-Vorgaben übernommen aus ${DESIGN_FROM#$DPS_ROOT/}"
 fi
 "$SCRIPTS_DIR/design-init.sh" "$SLUG" --no-commit >/dev/null || die "design/ konnte nicht angelegt werden"
 

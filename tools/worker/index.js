@@ -1,4 +1,4 @@
-// Modio Worker: arbeitet jobs/pending/ strikt nacheinander ab und ruft ausschließlich die Skripte auf.
+// Page Studio Worker: arbeitet jobs/pending/ strikt nacheinander ab und ruft ausschließlich die Skripte auf.
 // Start (in der WSL): node --env-file=.env tools/worker/index.js
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -106,7 +106,7 @@ function cancelRunning(id) {
   const child = currentChild;
   if (!child || child.exitCode !== null) return;
   log(`■ ${id} wird abgebrochen`);
-  child.modioCancelled = true;
+  child.dpsCancelled = true;
   // Unterprozesse zuerst merken: nach dem Ende von timeout/claude hängen sie sonst an init
   const tree = [child.pid, ...descendants(child.pid)];
   for (const pid of tree) { try { process.kill(pid, 'SIGTERM'); } catch { /* schon beendet */ } }
@@ -131,7 +131,7 @@ function runScript(name, args, logFile) {
       let result = null;
       try { result = JSON.parse(line); } catch { /* keine JSON-Ausgabe */ }
       if (currentChild === child) currentChild = null;
-      resolve({ code, result, cancelled: !!child.modioCancelled });
+      resolve({ code, result, cancelled: !!child.dpsCancelled });
     });
     child.on('error', (e) => { out.end(); resolve({ code: 1, result: { status: 'error', error: e.message } }); });
   });
@@ -365,7 +365,7 @@ async function tick() {
 
 await recoverStale();
 await runScript('site-list.sh', [], path.join(LOG_DIR, 'worker.log'));
-log(`Modio Worker gestartet, beobachte ${path.relative(ROOT, JOBS_DIR)}/pending`);
+log(`Page Studio Worker gestartet, beobachte ${path.relative(ROOT, JOBS_DIR)}/pending`);
 try {
   fs.watch(path.join(JOBS_DIR, 'pending'), () => tick());
 } catch { /* Polling reicht */ }

@@ -4,7 +4,7 @@ Einzige Quelle für die Gestaltungsleitlinien aller Projekte. Die Skripte setzen
 CLAUDE.md der Abzüge (Annotationen), Systemprompt der Entwürfe, Briefing für claude.ai und Paket für neue Projekte.
 „Für alle Projekte“ gilt immer, „Zusätzlich bei bestehenden Websites“ nur für Abzüge bestehender Websites,
 „Zusätzlich bei neuen Projekten“ nur für Projekte ohne bestehende Website,
-„Rangfolge“ nur bei Läufen in Modio (Annotationen und Entwürfe). Leerzeilen werden beim Einsetzen entfernt.
+„Rangfolge“ nur bei Läufen in Page Studio (Annotationen und Entwürfe). Leerzeilen werden beim Einsetzen entfernt.
 
 ## Für alle Projekte
 - Gestalterisch hochwertig und eigenständig, passend zu Regeln, Tokens und Hintergrund des Projekts.

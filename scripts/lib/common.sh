@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Gemeinsame Funktionen für alle Modio-Skripte.
+# Gemeinsame Funktionen für alle Page-Studio-Skripte.
 # Einbinden mit: source "$(dirname "$0")/lib/common.sh"
 #
 # Konventionen:
@@ -10,22 +10,22 @@
 
 set -euo pipefail
 
-MODIO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCRIPTS_DIR="$MODIO_ROOT/scripts"
+DPS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPTS_DIR="$DPS_ROOT/scripts"
 LIB_DIR="$SCRIPTS_DIR/lib"
 SCRIPT_NAME="$(basename "$0" .sh)"
 
-cd "$MODIO_ROOT"
+cd "$DPS_ROOT"
 
 # .env füllt nur, was nicht schon gesetzt ist: ausdrücklich übergebene Werte (z. B. CLAUDE_EFFORT=max ./scripts/…) gewinnen
-if [[ -f "$MODIO_ROOT/.env" ]]; then
-  _modio_preset="$(export -p)"
+if [[ -f "$DPS_ROOT/.env" ]]; then
+  _dps_preset="$(export -p)"
   set -a
   # shellcheck disable=SC1091
-  source "$MODIO_ROOT/.env"
+  source "$DPS_ROOT/.env"
   set +a
-  eval "$_modio_preset" 2>/dev/null || true
-  unset _modio_preset
+  eval "$_dps_preset" 2>/dev/null || true
+  unset _dps_preset
 fi
 
 # Übliche Installationsorte (z. B. Claude Code in ~/.local/bin) auch in Nicht-Login-Shells finden
@@ -37,22 +37,22 @@ if [[ -n "${CLAUDE_BIN:-}" ]]; then PATH="$(dirname "$CLAUDE_BIN"):$PATH"; fi
 export PATH
 unset _dir
 
-# Node.js: passende Version wählen (MODIO_NODE, PATH, nvm), siehe node-env.sh
+# Node.js: passende Version wählen (DPS_NODE, PATH, nvm), siehe node-env.sh
 # shellcheck source=node-env.sh
-source "$MODIO_ROOT/scripts/lib/node-env.sh"
+source "$DPS_ROOT/scripts/lib/node-env.sh"
 
-abspath() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$MODIO_ROOT" "${1#./}" ;; esac; }
+abspath() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$DPS_ROOT" "${1#./}" ;; esac; }
 
 SITES_DIR="$(abspath "${SITES_DIR:-./sites}")"
 ARCHIVE_DIR="$(abspath "${ARCHIVE_DIR:-./archive}")"
 JOBS_DIR="$(abspath "${JOBS_DIR:-./jobs}")"
 STATE_DIR="$(abspath "${STATE_DIR:-./state}")"
-LOG_DIR="$MODIO_ROOT/logs"
+LOG_DIR="$DPS_ROOT/logs"
 mkdir -p "$SITES_DIR" "$ARCHIVE_DIR" "$JOBS_DIR" "$STATE_DIR" "$LOG_DIR"
 
 # Git-Identität nur für diesen Prozess (kommt aus .env).
-export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-Modio}"
-export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-modio@localhost}"
+export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-Page-Studio}"
+export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-page-studio@localhost}"
 export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$GIT_AUTHOR_NAME}"
 export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$GIT_AUTHOR_EMAIL}"
 export GIT_TERMINAL_PROMPT=0
@@ -98,7 +98,7 @@ require_cmd() {
   for c in "$@"; do
     command -v "$c" >/dev/null 2>&1 || die "Benötigtes Programm fehlt: $c"
     if [[ "$c" == node ]] && ! node_version_ok "$(command -v node)"; then
-      die "Node.js ab $MODIO_NODE_MIN nötig, gefunden: $(node -v 2>/dev/null) ($(command -v node)). MODIO_NODE=/pfad/zu/node in der .env setzen oder per nvm installieren."
+      die "Node.js ab $DPS_NODE_MIN nötig, gefunden: $(node -v 2>/dev/null) ($(command -v node)). DPS_NODE=/pfad/zu/node in der .env setzen oder per nvm installieren."
     fi
   done
 }
@@ -193,7 +193,7 @@ claude_effort() {
 claude_auth_setup() {
   local settings="$1" mode
   mode="$(claude_auth_mode)"
-  CLAUDE_ENV_UNSET=(-u MODIO_API_TOKEN -u CRAWL_HTTP_PASSWORD -u CRAWL_HTTP_USER)
+  CLAUDE_ENV_UNSET=(-u DPS_API_TOKEN -u CRAWL_HTTP_PASSWORD -u CRAWL_HTTP_USER)
   case "$mode" in
     api)
       if [[ -z "${ANTHROPIC_API_KEY:-}" ]] && ! jq -e '.apiKeyHelper' "$settings" >/dev/null 2>&1; then
@@ -221,7 +221,7 @@ claude_call_cost() {
 # Gestaltungsleitlinien aus templates/leitlinien.md (einzige Quelle für alle Projekte).
 # Aufruf: leitlinien_text <neu|bestand> [--rangfolge]
 #   neu: „Für alle Projekte“ + „Zusätzlich bei neuen Projekten“; bestand: „Für alle Projekte“ + „Zusätzlich bei bestehenden Websites“;
-#   --rangfolge hängt die Rangfolge an (nur für Läufe in Modio).
+#   --rangfolge hängt die Rangfolge an (nur für Läufe in Page Studio).
 leitlinien_text() {
   local kind="${1:-bestand}" rang="${2:-}"
   awk -v kind="$kind" -v rang="$rang" '
@@ -235,7 +235,7 @@ leitlinien_text() {
       next
     }
     sec != "x" && NF { print }
-  ' "$MODIO_ROOT/templates/leitlinien.md"
+  ' "$DPS_ROOT/templates/leitlinien.md"
 }
 
 # Art des Projekts aus site.json: "neu" (ohne bestehende Website) oder "bestand"
@@ -248,7 +248,7 @@ site_kind() {
 site_claude_md() {
   local guide
   guide="$(printf '## Gestaltungsleitlinien (gelten für Annotationen und Entwürfe)\n\n'; leitlinien_text "$(site_kind "$1")" --rangfolge)"
-  awk -v guide="$guide" '/^<!-- GESTALTUNGSLEITLINIEN/ { print guide; next } { print }' "$MODIO_ROOT/templates/CLAUDE.md"
+  awk -v guide="$guide" '/^<!-- GESTALTUNGSLEITLINIEN/ { print guide; next } { print }' "$DPS_ROOT/templates/CLAUDE.md"
 }
 
 # Systemprompt für Claude-Läufe zusammensetzen: Grundregeln (z. B. DRAFT.md oder CLAUDE.md bei --bare),

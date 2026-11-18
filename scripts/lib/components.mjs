@@ -642,7 +642,7 @@ function pageStyles(siteDir, page) {
   const text = readFile(path.join(siteDir, 'www', page));
   if (!text) return '';
   return [...text.matchAll(/<style\b[^>]*>[\s\S]*?<\/style\s*>|<link\b[^>]*>/gi)].map((m) => m[0])
-    .filter((t) => (/^<style/i.test(t) || /\brel\s*=\s*["']?[^"'>]*stylesheet/i.test(t)) && !/\sdata-modio/i.test(t)).join('\n');
+    .filter((t) => (/^<style/i.test(t) || /\brel\s*=\s*["']?[^"'>]*stylesheet/i.test(t)) && !/\sdata-dps/i.test(t)).join('\n');
 }
 
 // Ab dieser Breite (px am Einsatzort) gilt eine Komponente als breit: volle Breite, Varianten untereinander

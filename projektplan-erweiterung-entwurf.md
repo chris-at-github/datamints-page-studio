@@ -1,6 +1,6 @@
-# Modio – Erweiterung: Entwurf und Integration (Komponenten)
+# datamints Page Studio – Erweiterung: Entwurf und Integration (Komponenten)
 
-Ergänzung zu `projektplan-modio.md` und `projektplan-erweiterung-design.md`. Stand: 13.11.2026
+Ergänzung zu `projektplan-page-studio.md` und `projektplan-erweiterung-design.md`. Stand: 13.11.2026
 
 ## 1. Ziel
 
@@ -19,7 +19,7 @@ Neu ist ein Ablauf in zwei Phasen:
 | Eigene Styles | `@scope (.mx-<name>) { … }`, Wurzelelement mit Klasse `mx-<name>` | Kurze Selektoren innen, nichts läuft nach außen aus. |
 | Bausteine aus dem Bestand | Original-Klassen (z. B. `.btn.btn-primary`), dafür kein neues CSS | Was behalten wird, kostet im Code nichts und gestaltet sich über das Theme selbst. |
 | Bausteine erfassen | Das Overlay misst beim Anlegen des Entwurfs per `getComputedStyle` typische Elemente der Seite (Buttons, Links, Überschriften, Text) | Gemessen wird die echt gerenderte Seite, ohne Playwright und ohne laufenden Server im Skript. |
-| Vorschau | Die echte Seite mit ersetztem Element: `…/seite.html?__modio_draft=D-001&v=3` | Was man sieht, ist exakt das Ergebnis nach der Übernahme. Der Server ersetzt nach demselben Verfahren wie `draft-apply.sh`. |
+| Vorschau | Die echte Seite mit ersetztem Element: `…/seite.html?__dps_draft=D-001&v=3` | Was man sieht, ist exakt das Ergebnis nach der Übernahme. Der Server ersetzt nach demselben Verfahren wie `draft-apply.sh`. |
 | Integration | Deterministisches Skript, kein Claude | Keine Qualitätsverluste beim Zusammenführen, schnell, kostenlos. |
 | Ablage der Entwürfe | `sites/<slug>/drafts/D-xxx/` (in `.gitignore`) | Iterationen gehören nicht in den Verlauf. Erst die Übernahme ist ein Schritt. Bei Umbenennen und Archivieren wandern sie mit. |
 | Modell und Budget | Standard Opus, `DRAFT_MAX_BUDGET_USD` (Standard 2.00) | Gestaltung ist die Stelle, an der sich das stärkere Modell lohnt. |
@@ -68,7 +68,7 @@ Gemeinsame Logik steckt in `scripts/lib/draft.mjs`: prüfen (keine Scripts, Even
   - `POST /api/sites/<slug>/drafts/<id>/apply` `{ version? }` → Job `draft-apply`.
   - `POST /api/sites/<slug>/drafts/<id>/discard` → Job `draft-discard`.
   - `GET /api/sites/<slug>/drafts` → Liste.
-  - Vorschau über `?__modio_draft=D-001&v=3`.
+  - Vorschau über `?__dps_draft=D-001&v=3`.
   - Auslieferung von `__components.css`. Sind Komponenten vorhanden oder ist die Vorschau aktiv, wird das Alt-CSS in `@layer legacy` gelegt.
 - **Worker:** Job-Typen `draft`, `draft-apply` (Exit 3 → `review`) und `draft-discard`.
 - **Overlay:**

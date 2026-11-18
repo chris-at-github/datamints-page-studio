@@ -1,15 +1,15 @@
 // Phase-2/3-Test gegen einen laufenden Bridge-Server.
 // Aufruf: node --env-file=.env tests/api-test.mjs [base-url] [slug]
-// Mit MODIO_TEST_ANNOTATE=1 wird zusätzlich eine echte Annotation (Claude Code) angelegt und abgewartet.
+// Mit DPS_TEST_ANNOTATE=1 wird zusätzlich eine echte Annotation (Claude Code) angelegt und abgewartet.
 const BASE = process.argv[2] || `http://localhost:${process.env.BRIDGE_PORT || 3000}`;
 const SLUG = process.argv[3] || 'testfirma';
-const TOKEN = process.env.MODIO_API_TOKEN;
+const TOKEN = process.env.DPS_API_TOKEN;
 let pass = 0, fail = 0;
 const check = (name, cond, extra = '') => {
   if (cond) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); }
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name} ${extra}`); }
 };
-const auth = { 'X-Modio-Token': TOKEN };
+const auth = { 'X-DPS-Token': TOKEN };
 
 console.log(`Server ${BASE}, Website ${SLUG}`);
 let r = await fetch(`${BASE}/`);
@@ -23,20 +23,20 @@ r = await fetch(BASE + loc);
 const html = await r.text();
 check('Abzug ausgeliefert', r.ok);
 check('overrides.css eingebunden', html.includes(`/s/${SLUG}/__overrides.css`));
-check('Overlay-Script eingebunden', html.includes('/__modio/overlay.js'));
-check('Overlay-Konfiguration vor </body>', /window\.__MODIO__=[\s\S]*<\/body>/i.test(html));
+check('Overlay-Script eingebunden', html.includes('/__dps/overlay.js'));
+check('Overlay-Konfiguration vor </body>', /window\.__DPS__=[\s\S]*<\/body>/i.test(html));
 check('CSP gesetzt', (r.headers.get('content-security-policy') || '').includes("connect-src 'self'"));
 
 r = await fetch(`${BASE}/s/${SLUG}/__overrides.css`);
 check('overrides.css lieferbar', r.ok && r.headers.get('content-type').startsWith('text/css'));
-r = await fetch(`${BASE}/__modio/overlay.js`);
+r = await fetch(`${BASE}/__dps/overlay.js`);
 check('overlay.js lieferbar', r.ok && (await r.text()).length > 1000);
 r = await fetch(`${BASE}/s/${SLUG}/%2e%2e/%2e%2e/.env`);
 check('Pfad außerhalb des Abzugs abgewiesen', r.status === 403 || r.status === 404, r.status);
 
 r = await fetch(`${BASE}/api/sites/${SLUG}/history`);
 check('API ohne Token abgewiesen', r.status === 403);
-r = await fetch(`${BASE}/api/sites/${SLUG}/history`, { headers: { 'X-Modio-Token': 'falsch' } });
+r = await fetch(`${BASE}/api/sites/${SLUG}/history`, { headers: { 'X-DPS-Token': 'falsch' } });
 check('API mit falschem Token abgewiesen', r.status === 403);
 r = await fetch(`${BASE}/api/sites/${SLUG}/history`, { headers: { ...auth, Origin: 'https://fremd.example' } });
 check('Fremde Origin abgewiesen', r.status === 403);
@@ -62,7 +62,7 @@ check('SVG-Upload abgewiesen', r.status === 400);
 r = await fetch(`${BASE}/api/sites/${SLUG}/annotations`, { method: 'POST', headers: auth, body: form({ page: '/x.html', selector: 'h1', prompt: 'x', references: [{ type: 'url', url: 'file:///etc/passwd' }] }) });
 check('Nicht-HTTP-Bild-URL abgewiesen', r.status === 400);
 
-if (process.env.MODIO_TEST_ANNOTATE === '1') {
+if (process.env.DPS_TEST_ANNOTATE === '1') {
   const sharp = (await import('sharp')).default;
   const png = await sharp({ create: { width: 400, height: 200, channels: 3, background: '#1f6feb' } }).png().toBuffer();
   const page = decodeURIComponent(loc.slice(`/s/${SLUG}`.length));

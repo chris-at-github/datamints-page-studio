@@ -1,4 +1,4 @@
-// Modio Bridge-Server: Startseite, Auslieferung der Abzüge mit Overlay, API, Job-Dateien, SSE.
+// Page Studio Bridge-Server: Startseite, Auslieferung der Abzüge mit Overlay, API, Job-Dateien, SSE.
 // Start: node --env-file=.env tools/server/index.js
 import http from 'node:http';
 import fs from 'node:fs';
@@ -23,11 +23,11 @@ const OVERLAY_FILE = path.join(ROOT, 'tools/overlay/overlay.js');
 const FAVICON_SVG = path.join(ROOT, 'tools/server/favicon.svg');
 const FAVICON_ICO = path.join(ROOT, 'tools/server/favicon.ico');
 const PORT = Number(env.BRIDGE_PORT || 3000);
-const TOKEN = env.MODIO_API_TOKEN || '';
+const TOKEN = env.DPS_API_TOKEN || '';
 const IMAGE_MAX_COUNT = Number(env.IMAGE_MAX_COUNT || 3);
 const IMAGE_MAX_MB = Number(env.IMAGE_MAX_MB || 10);
 const ALLOWED_ORIGINS = new Set(
-  (env.MODIO_ALLOWED_ORIGINS || 'https://modio.ddev.site:3443,http://modio.ddev.site:3080,http://localhost:3000')
+  (env.DPS_ALLOWED_ORIGINS || 'https://datamints-page-studio.ddev.site:3443,http://datamints-page-studio.ddev.site:3080,http://localhost:3000')
     .split(',')
     .map((s) => s.trim().replace(/\/$/, ''))
     .filter(Boolean),
@@ -38,7 +38,7 @@ const CANCELABLE = ['draft']; // Aufträge mit Abbrechen-Knopf (Worker: CANCEL_T
 const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
 
 if (!TOKEN || TOKEN.length < 16 || TOKEN.startsWith('<')) {
-  console.error('MODIO_API_TOKEN fehlt oder ist zu kurz (.env prüfen, z. B. openssl rand -hex 32).');
+  console.error('DPS_API_TOKEN fehlt oder ist zu kurz (.env prüfen, z. B. openssl rand -hex 32).');
   process.exit(1);
 }
 for (const s of STATUSES.concat('assets')) fs.mkdirSync(path.join(JOBS_DIR, s), { recursive: true });
@@ -170,15 +170,15 @@ function injectHtml(buf, slug, opts = {}) {
   let head;
   if (layered) {
     const exclude = preview ? `?exclude=${encodeURIComponent(preview.name)}` : '';
-    head = `<style data-modio="layers">@import url("${b}/__tokens.css") layer(legacy);@import url("${b}/__overrides.css") layer(legacy);</style>` +
-      `<link rel="stylesheet" href="${b}/__components.css${exclude}" data-modio="components">` +
-      (preview ? `<link rel="stylesheet" href="${b}/__draft.css?d=${preview.draft}&amp;v=${preview.version}" data-modio="draft">` : '');
+    head = `<style data-dps="layers">@import url("${b}/__tokens.css") layer(legacy);@import url("${b}/__overrides.css") layer(legacy);</style>` +
+      `<link rel="stylesheet" href="${b}/__components.css${exclude}" data-dps="components">` +
+      (preview ? `<link rel="stylesheet" href="${b}/__draft.css?d=${preview.draft}&amp;v=${preview.version}" data-dps="draft">` : '');
   } else {
     // Tokens vor overrides.css, damit overrides.css die Variablen verwenden kann
-    head = `<link rel="stylesheet" href="${b}/__tokens.css" data-modio="tokens"><link rel="stylesheet" href="${b}/__overrides.css" data-modio="overrides">`;
+    head = `<link rel="stylesheet" href="${b}/__tokens.css" data-dps="tokens"><link rel="stylesheet" href="${b}/__overrides.css" data-dps="overrides">`;
   }
-  head += '<link rel="icon" href="/favicon.svg" type="image/svg+xml" data-modio="favicon">';
-  const body = `<script data-modio="config">window.__MODIO__=${cfg}</script><script src="/__modio/overlay.js" defer data-modio="overlay"></script>`;
+  head += '<link rel="icon" href="/favicon.svg" type="image/svg+xml" data-dps="favicon">';
+  const body = `<script data-dps="config">window.__DPS__=${cfg}</script><script src="/__dps/overlay.js" defer data-dps="overlay"></script>`;
   let html = buf.toString('latin1'); // byte-treu, Injektion ist reines ASCII
   if (layered) html = layerLegacyCss(html);
   const hi = html.search(/<\/head\s*>/i);
@@ -193,7 +193,7 @@ function emptyProjectHtml(title) {
   const t = String(title).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${t} – noch ohne Seiten</title>
 <style>body{margin:0;font:16px/1.5 system-ui,sans-serif;color:#1f2328;background:#fff}main{max-width:640px;margin:0 auto;padding:96px 24px}h1{margin:0 0 8px;font-size:28px}p{margin:0 0 12px;color:#57606a}</style></head>
-<body><main data-modio-empty><h1>${t}</h1><p>Dieses Projekt hat noch keine Seiten.</p><p>Eine Seite aus Claude Chat als HTML-Datei herunterladen und unten in der Leiste über <strong>Seiten › Seite importieren …</strong> einspielen.</p></main></body></html>`;
+<body><main data-dps-empty><h1>${t}</h1><p>Dieses Projekt hat noch keine Seiten.</p><p>Eine Seite aus Claude Chat als HTML-Datei herunterladen und unten in der Leiste über <strong>Seiten › Seite importieren …</strong> einspielen.</p></main></body></html>`;
 }
 
 // ---------- Komponenten und Entwürfe ----------
@@ -291,10 +291,10 @@ async function serveSite(req, res, slug, rest, search) {
   }
   if (rest === '/__komponenten' || rest === '/__komponenten/') {
     // Komponenten-Bibliothek: alle Komponenten mit ihren Varianten (nicht Teil des Abzugs)
-    // ?__modio_draft=D-xxx&__modio_v=n: Vorschau eines Entwurfs mit Ziel Bibliothek (die Komponente in der Entwurfsversion)
+    // ?__dps_draft=D-xxx&__dps_v=n: Vorschau eines Entwurfs mit Ziel Bibliothek (die Komponente in der Entwurfsversion)
     const site = await readJson(path.join(dir, 'site.json'), {});
     let override = null, preview = null;
-    const did = sp.get('__modio_draft');
+    const did = sp.get('__dps_draft');
     if (did !== null) {
       const d = validDraftId(did) ? await readDraft(slug, did) : null;
       if (!d || d.status !== 'open' || d.target !== 'library') {
@@ -302,8 +302,8 @@ async function serveSite(req, res, slug, rest, search) {
         res.writeHead(302, { Location: `/s/${slug}/__komponenten`, 'Cache-Control': 'no-store' });
         return res.end();
       }
-      const version = Number(sp.get('__modio_v')) || Math.max(0, ...d.versions.map((v) => v.v));
-      if (!d.versions.some((v) => v.v === version)) return sendError(res, 409, `Vorschau nicht möglich: Version ${sp.get('__modio_v')} nicht gefunden`);
+      const version = Number(sp.get('__dps_v')) || Math.max(0, ...d.versions.map((v) => v.v));
+      if (!d.versions.some((v) => v.v === version)) return sendError(res, 409, `Vorschau nicht möglich: Version ${sp.get('__dps_v')} nicht gefunden`);
       const v = await loadVersion(dir, path.join(dir, 'drafts', did), version).catch(() => null);
       if (!v || v.errors.length || !v.library) return sendError(res, 409, 'Vorschau nicht möglich: Entwurf ungültig');
       override = { name: v.name, template: v.html, spec: v.library };
@@ -322,11 +322,11 @@ async function serveSite(req, res, slug, rest, search) {
     if (!v || v.errors.length) return sendError(res, 404, 'Entwurf nicht gefunden oder ungültig');
     return send(res, 200, v.css, { 'Content-Type': 'text/css; charset=utf-8' });
   }
-  // Vorschau eines Entwurfs: ?__modio_draft=D-001&__modio_v=2 (nicht Teil des wget-Dateinamens)
-  const previewId = sp.get('__modio_draft');
-  const previewV = sp.get('__modio_v');
+  // Vorschau eines Entwurfs: ?__dps_draft=D-001&__dps_v=2 (nicht Teil des wget-Dateinamens)
+  const previewId = sp.get('__dps_draft');
+  const previewV = sp.get('__dps_v');
   if (previewId !== null) {
-    sp.delete('__modio_draft'); sp.delete('__modio_v');
+    sp.delete('__dps_draft'); sp.delete('__dps_v');
     search = sp.toString() ? '?' + sp.toString() : '';
   }
 
@@ -389,7 +389,7 @@ function checkAuth(req, url) {
   } else if (origin === 'null') {
     return 'Origin nicht erlaubt';
   }
-  const given = req.headers['x-modio-token'] || (url.pathname === '/api/events' ? url.searchParams.get('token') : null) || '';
+  const given = req.headers['x-dps-token'] || (url.pathname === '/api/events' ? url.searchParams.get('token') : null) || '';
   const a = Buffer.from(String(given));
   const b = Buffer.from(TOKEN);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return 'Token fehlt oder ist falsch';
@@ -543,7 +543,7 @@ async function jobLogLines(id) {
       for (const c of ev.message?.content || []) if (c.type === 'tool_result' && c.is_error) lines.push('⚠ ' + short(typeof c.content === 'string' ? c.content : JSON.stringify(c.content), 160));
     } else if (ev.type === 'result') lines.push(`✔ Claude fertig (${ev.num_turns ?? '?'} Runden${ev.total_cost_usd != null ? ', ' + Number(ev.total_cost_usd).toFixed(3) + ' USD' : ''})`);
   }
-  // Skript-Log ohne Zeitstempel-Rauschen, nur Modio-Meldungen
+  // Skript-Log ohne Zeitstempel-Rauschen, nur Page-Studio-Meldungen
   const script = (await tailFile(path.join(ROOT, 'logs', `${id}.log`), 64 * 1024)).split('\n')
     .filter((l) => /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \[/.test(l)).map((l) => '· ' + short(l.replace(/^\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d) \[[^\]]+\] /, '$1 '), 200));
   return (lines.length ? [...script.slice(-4), ...lines] : script).slice(-40);
@@ -580,7 +580,7 @@ async function listSitePages(slug) {
   const walk = async (d) => {
     for (const e of await fsp.readdir(d, { withFileTypes: true }).catch(() => [])) {
       const p = path.join(d, e.name);
-      if (e.isDirectory()) { if (e.name !== '_modio-assets') await walk(p); }
+      if (e.isDirectory()) { if (e.name !== '_dps-assets') await walk(p); }
       else if (/\.html?(@.*)?$/i.test(e.name)) files.push(p);
       if (files.length > 1000) return;
     }
@@ -1247,7 +1247,7 @@ const server = http.createServer(async (req, res) => {
       const html = renderStartPage({ sites: sites.sites || [], token: TOKEN });
       return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': APP_CSP, 'X-Frame-Options': 'DENY' });
     }
-    if (p === '/__modio/overlay.js') {
+    if (p === '/__dps/overlay.js') {
       const js = await fsp.readFile(OVERLAY_FILE);
       return send(res, 200, js, { 'Content-Type': 'text/javascript; charset=utf-8' });
     }
@@ -1279,4 +1279,4 @@ const server = http.createServer(async (req, res) => {
 });
 
 await scanJobs(true);
-server.listen(PORT, '0.0.0.0', () => console.log(`Modio Bridge-Server auf 0.0.0.0:${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`Page Studio Bridge-Server auf 0.0.0.0:${PORT}`));

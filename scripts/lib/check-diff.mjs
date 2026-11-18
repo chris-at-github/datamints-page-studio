@@ -188,7 +188,7 @@ if (!newTokens.errors.length) {
       const before = lower[i - 1] || ' ';
       const after = lower[i + c.lower.length] || ' ';
       if (/[a-z0-9-]/.test(before) || /[a-z0-9]/.test(after)) continue; // nur ganze Werte
-      warnings.push({ rule: 'token-literal', file: f, line: ln, text: `Token verwenden: var(--modio-${c.key.replace('.', '-')}) statt ${c.value}` });
+      warnings.push({ rule: 'token-literal', file: f, line: ln, text: `Token verwenden: var(--dps-${c.key.replace('.', '-')}) statt ${c.value}` });
     }
     ln++;
   }

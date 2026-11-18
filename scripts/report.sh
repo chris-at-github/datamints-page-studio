@@ -6,5 +6,5 @@ require_cmd git node
 require_site "${1:-}"
 
 RESULT="$(node "$LIB_DIR/report.mjs" "$SITE")" || die "Report konnte nicht erzeugt werden"
-log "Report erzeugt: ${SITE#$MODIO_ROOT/}/CHANGES.md"
+log "Report erzeugt: ${SITE#$DPS_ROOT/}/CHANGES.md"
 emit_json "$(jq -c --arg slug "$SLUG" '{status:"ok", slug:$slug} + .' <<<"$RESULT")"

@@ -1,7 +1,7 @@
 // Prüft Vorschau, CSS-Ebenen und Entwurfs-API gegen einen laufenden Bridge-Server (von tests/run.sh gestartet).
 // Aufruf: node tests/draft-server-test.mjs <base-url> <slug> <entry> <token> before|after
 const [BASE, SLUG, ENTRY, TOKEN, MODE] = process.argv.slice(2);
-const auth = { 'X-Modio-Token': TOKEN };
+const auth = { 'X-DPS-Token': TOKEN };
 // Eigener Job-Ordner des Test-Servers (nicht jobs/, sonst greift ein laufender Worker die Test-Jobs auf)
 const JOBS = process.env.TEST_JOBS_DIR || 'jobs';
 let fail = 0;
@@ -13,9 +13,9 @@ const page = `${BASE}/s/${SLUG}${ENTRY.split('/').map(encodeURIComponent).join('
 
 if (MODE === 'before') {
   let html = await (await fetch(page)).text();
-  check('Server: ohne Komponenten keine CSS-Ebenen', !html.includes('layer(legacy)') && html.includes('data-modio="overrides"'));
+  check('Server: ohne Komponenten keine CSS-Ebenen', !html.includes('layer(legacy)') && html.includes('data-dps="overrides"'));
 
-  const r = await fetch(`${page}?__modio_draft=D-001&__modio_v=1`);
+  const r = await fetch(`${page}?__dps_draft=D-001&__dps_v=1`);
   html = await r.text();
   check('Vorschau ausgeliefert', r.ok, r.status);
   check('Vorschau: Element durch Komponente ersetzt', html.includes('<section class="mx-hero">') && !html.includes('hero__title'));
@@ -67,13 +67,13 @@ if (MODE === 'before') {
   if (job) { fs.rmSync(jf, { force: true }); fs.rmSync(job.params.importFile, { force: true }); }
 } else {
   const html = await (await fetch(page)).text();
-  check('Server: mit Komponente liegt Alt-CSS in @layer legacy', html.includes('layer(legacy)') && html.includes('data-modio="components"') && !html.includes('__draft.css'));
+  check('Server: mit Komponente liegt Alt-CSS in @layer legacy', html.includes('layer(legacy)') && html.includes('data-dps="components"') && !html.includes('__draft.css'));
   const css = await (await fetch(`${BASE}/s/${SLUG}/__components.css`)).text();
   check('__components.css enthält die Komponente', css.includes('@scope (.mx-hero)'));
   const list = await (await fetch(`${BASE}/api/sites/${SLUG}/drafts`, { headers: auth })).json();
   check('API: Entwurf als übernommen gemeldet', list.drafts?.find((x) => x.id === 'D-001')?.status === 'applied' && list.components.includes('mx-hero'));
-  const pr = await fetch(`${page}?__modio_draft=D-001&__modio_v=1`, { redirect: 'manual' });
-  check('Vorschau eines übernommenen Entwurfs leitet zur Seite um', pr.status === 302 && !(pr.headers.get('location') || '').includes('__modio_draft'), `${pr.status} ${pr.headers.get('location')}`);
+  const pr = await fetch(`${page}?__dps_draft=D-001&__dps_v=1`, { redirect: 'manual' });
+  check('Vorschau eines übernommenen Entwurfs leitet zur Seite um', pr.status === 302 && !(pr.headers.get('location') || '').includes('__dps_draft'), `${pr.status} ${pr.headers.get('location')}`);
   const ap = await fetch(`${BASE}/api/sites/${SLUG}/drafts/D-001/apply`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: '{}' });
   check('Übernommener Entwurf: apply abgewiesen (409)', ap.status === 409, ap.status);
 }

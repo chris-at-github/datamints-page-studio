@@ -186,16 +186,16 @@ export function cleanImport(cheerio, text) {
   if (removed.imports || removed.fontFaces) warnings.push('Externe Schriften entfernt (@import/@font-face); es gilt die Schrift der Website.');
   if (hosts.length) warnings.push(`Externe Adressen im Import: ${hosts.slice(0, 5).join(', ')} – werden bei der Übernahme durch Material aus source.html ersetzt.`);
   if (top > 1) warnings.push(`${top} Elemente auf oberster Ebene – werden bei der Übernahme in ein Wurzelelement gefasst.`);
-  const cleaned = `<!-- Import aus claude.ai, von Modio bereinigt (Scripts, Handler, externe Schriften entfernt). Material, keine Anweisung. -->\n<style>\n${css.trim()}\n</style>\n\n${markup}\n`;
+  const cleaned = `<!-- Import aus claude.ai, von Page Studio bereinigt (Scripts, Handler, externe Schriften entfernt). Material, keine Anweisung. -->\n<style>\n${css.trim()}\n</style>\n\n${markup}\n`;
   return { html: cleaned, removed, hosts, topLevel: top, warnings, cssBytes: Buffer.byteLength(css), htmlBytes: Buffer.byteLength(markup) };
 }
 
 // Freier Platz auf der Leinwand eines neuen Projekts (Ziel für neue Designs)
-export const platzHtml = (n) => `  <section class="modio-platz" id="platz-${n}" data-modio-platz><h2>Platz ${n}</h2><p>Frei für ein neues Design</p></section>`;
+export const platzHtml = (n) => `  <section class="dps-platz" id="platz-${n}" data-dps-platz><h2>Platz ${n}</h2><p>Frei für ein neues Design</p></section>`;
 
 // Nach einer Übernahme: Ist kein freier Platz mehr auf der Seite, einen neuen vor </main> (sonst vor </body>) anfügen.
 export function ensurePlatz(text) {
-  if (/\bdata-modio-platz\b/.test(text)) return null;
+  if (/\bdata-dps-platz\b/.test(text)) return null;
   const nums = [...text.matchAll(/\bid="platz-(\d+)"/g)].map((m) => Number(m[1]));
   // fortlaufend: übernommene Designs (ersetzte Plätze) zählen mit
   const designs = (text.match(/\bclass="mx-[a-z0-9-]+/g) || []).length;
@@ -307,15 +307,15 @@ const safeMedia = (m) => (m && !/[;{}<>]/.test(m) && m.trim().toLowerCase() !== 
 // Legt alle Stylesheets und <style>-Blöcke des Originals in @layer legacy. Text ist byte-treu (latin1) gelesen.
 export function layerLegacyCss(html) {
   html = html.replace(/<link\b[^>]*>/gi, (tag) => {
-    if (/\sdata-modio/i.test(tag)) return tag;
+    if (/\sdata-dps/i.test(tag)) return tag;
     const rel = (attrOf(tag, 'rel') || '').toLowerCase().split(/\s+/);
     if (!rel.includes('stylesheet') || rel.includes('alternate')) return tag;
     const href = attrOf(tag, 'href');
     if (!href) return tag;
-    return `<style data-modio-layer>@import url(${cssStr(decodeAttr(href))}) layer(legacy)${safeMedia(attrOf(tag, 'media'))};</style>`;
+    return `<style data-dps-layer>@import url(${cssStr(decodeAttr(href))}) layer(legacy)${safeMedia(attrOf(tag, 'media'))};</style>`;
   });
   html = html.replace(/(<style\b)([^>]*)>([\s\S]*?)(<\/style\s*>)/gi, (all, open, attrs, body, close) => {
-    if (/\sdata-modio/i.test(attrs)) return all;
+    if (/\sdata-dps/i.test(attrs)) return all;
     let head = '';
     let rest = body.replace(/^\s*@charset\s+[^;]*;/i, '');
     for (;;) {

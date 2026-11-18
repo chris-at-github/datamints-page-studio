@@ -42,11 +42,11 @@ Nennt der Auftrag eine Komponente für die Bibliothek, ist die Komponente zusät
 ## Gestaltung
 - Maßstab sind die Gestaltungsleitlinien (unten angehängt), auch für kleine Bildschirme und Barrierefreiheit.
 - Farbwelt, Schrift und Tonalität leitest du aus Tokens, `bausteine.json` und `source.html` ab.
-- Tokens aus `<vorgaben>`: Gesperrte Tokens ([gesperrt]) sind fest: verwenden, nie abwandeln oder ersetzen. Wie du die übrigen Tokens verwendest und fehlende Stufen ableitest, regeln die Gestaltungsleitlinien. Abgeleitete Werte legst du als lokale Custom Properties auf `:scope` an (z. B. `--mx-h1: calc(var(--modio-size-heading) * 1.6)`).
+- Tokens aus `<vorgaben>`: Gesperrte Tokens ([gesperrt]) sind fest: verwenden, nie abwandeln oder ersetzen. Wie du die übrigen Tokens verwendest und fehlende Stufen ableitest, regeln die Gestaltungsleitlinien. Abgeleitete Werte legst du als lokale Custom Properties auf `:scope` an (z. B. `--mx-h1: calc(var(--dps-size-heading) * 1.6)`).
 - Kein JavaScript. Interaktion nur mit HTML und CSS (`<details>`, `:has()`, `:target`, Scroll-Snap).
 
 ## Hauptraster
-Der Auftrag nennt in einem Satz, wie breit das Element ist: in der Inhaltsbreite (`var(--modio-container-max-width)`) oder über die volle Breite, und den Seitenrand auf schmalen Bildschirmen (`var(--modio-container-spacing-x)`). Fehlen die Tokens, nennt er die gemessenen Pixel. Die Messung je Bildschirmbreite steht in `layout.json` (falls vorhanden).
+Der Auftrag nennt in einem Satz, wie breit das Element ist: in der Inhaltsbreite (`var(--dps-container-max-width)`) oder über die volle Breite, und den Seitenrand auf schmalen Bildschirmen (`var(--dps-container-spacing-x)`). Fehlen die Tokens, nennt er die gemessenen Pixel. Die Messung je Bildschirmbreite steht in `layout.json` (falls vorhanden).
 - **Nicht breiter als das Element (fest):** Die Komponente ersetzt das Element an seiner Stelle auf der Seite. Sie wird nie breiter als angegeben, erzeugt kein seitliches Scrollen und bricht nicht über das Element hinaus aus (kein `100vw`).
 - **Inhaltskante:** Texte und Bedienelemente bleiben innerhalb der Inhaltsbreite, damit sie mit dem Rest der Seite fluchten; auf schmalen Bildschirmen mit dem angegebenen Seitenrand. Hintergründe, Flächen und Bilder dürfen bis zur Kante des Elements reichen.
 - **Spalten sind der Ausgangspunkt:** Anzahl, Verhältnis und Anordnung der Spalten im bisherigen Element darfst du ändern, wenn die Gestaltung dadurch besser wird. Nenne die Änderung in der Zusammenfassung.

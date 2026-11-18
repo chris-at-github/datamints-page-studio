@@ -39,8 +39,8 @@ export/
 GI
 
 # Angaben zum Pflegen
-for f in notes.md projekt.md tokens-quelle.css; do cp "$MODIO_ROOT/templates/projekt/$f" "$SITE/design/$f"; done
-cp "$MODIO_ROOT/templates/design/tokens.json" "$MODIO_ROOT/templates/design/consistency.json" "$SITE/design/"
+for f in notes.md projekt.md tokens-quelle.css; do cp "$DPS_ROOT/templates/projekt/$f" "$SITE/design/$f"; done
+cp "$DPS_ROOT/templates/design/tokens.json" "$DPS_ROOT/templates/design/consistency.json" "$SITE/design/"
 "$SCRIPTS_DIR/design-init.sh" "$SLUG" --no-commit >/dev/null || die "design/ konnte nicht angelegt werden"
 
 git -C "$SITE" init -q -b main

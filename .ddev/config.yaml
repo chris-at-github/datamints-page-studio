@@ -1,14 +1,14 @@
-name: modio
+name: datamints-page-studio
 type: generic
 webserver_type: generic
 nodejs_version: "22"
 omit_containers: [db]
 web_extra_exposed_ports:
-  - name: modio
+  - name: dps
     container_port: 3000
     http_port: 3080
     https_port: 3443
 web_extra_daemons:
-  - name: modio
+  - name: dps
     command: node --env-file=.env tools/server/index.js
     directory: /var/www/html

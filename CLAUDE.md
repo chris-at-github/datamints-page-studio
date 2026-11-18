@@ -1,6 +1,6 @@
-# Modio – Regeln für den Tool-Ordner
+# datamints Page Studio – Regeln für den Tool-Ordner
 
-Modio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne Element-Annotationen darin umsetzen und versioniert jeden Schritt. Projektplan: `projektplan-modio.md`, Erweiterung Design-Gedächtnis: `projektplan-erweiterung-design.md`, Erweiterung Entwurf und Integration: `projektplan-erweiterung-entwurf.md`, Schnittstellen: `docs/api.md`.
+Page Studio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne Element-Annotationen darin umsetzen und versioniert jeden Schritt. Projektplan: `projektplan-page-studio.md`, Erweiterung Design-Gedächtnis: `projektplan-erweiterung-design.md`, Erweiterung Entwurf und Integration: `projektplan-erweiterung-entwurf.md`, Schnittstellen: `docs/api.md`.
 
 ## Regelbasiertes nur über Skripte
 - Abzug, Bereinigung, Commit, Prüfung, Rücksprung, Verlauf, Archivierung und Report ausschließlich über die Skripte unter `scripts/` ausführen.

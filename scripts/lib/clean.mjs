@@ -36,7 +36,7 @@ for (const file of files) {
     if (!foreign) return match;
     removed++;
     removedList.push({ file: file.slice(wwwDir.length), kind, src: src || '(inline)' });
-    return `<!-- modio: ${kind} entfernt -->`;
+    return `<!-- dps: ${kind} entfernt -->`;
   };
 
   html = html.replace(/(<script\b[^>]*>)[\s\S]*?<\/script\s*>/gi, (m, open) => decide(m, open, 'script'));

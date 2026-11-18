@@ -44,7 +44,7 @@ chmod 644 "$SITE/annotations/$ID.json"
 
 # Neues Projekt mit Leinwand (Altprojekte): nur dort bleibt nach dem Übernehmen ein freier Platz
 PLATZ_SEITE=false
-[[ "$(site_kind "$SITE")" == neu ]] && grep -q 'data-modio-platz' "$SITE/www/${PAGE#/}" 2>/dev/null && PLATZ_SEITE=true
+[[ "$(site_kind "$SITE")" == neu ]] && grep -q 'data-dps-platz' "$SITE/www/${PAGE#/}" 2>/dev/null && PLATZ_SEITE=true
 
 restore() { git_site checkout -q -- . 2>/dev/null || true; git_site clean -fdq 2>/dev/null || true; }
 set +e

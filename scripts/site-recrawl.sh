@@ -18,7 +18,7 @@ URL="$(jq -r .url "$SITE/site.json")"
 
 ARCHIVE="$ARCHIVE_DIR/$SLUG-$(date '+%Y%m%d-%H%M%S')"
 mv "$SITE" "$ARCHIVE"
-log "Archiviert: ${ARCHIVE#$MODIO_ROOT/}"
+log "Archiviert: ${ARCHIVE#$DPS_ROOT/}"
 
 set +e
 if [[ "$KEEP_DESIGN" == "true" ]]; then
@@ -33,4 +33,4 @@ if (( rc != 0 )); then
   [[ -e "$SITE" ]] || mv "$ARCHIVE" "$SITE"
   die "Neu einlesen fehlgeschlagen: $(jq -r '.error // "unbekannt"' <<<"$NEW" 2>/dev/null || echo unbekannt)"
 fi
-emit_json "$(jq -c --arg a "${ARCHIVE#$MODIO_ROOT/}" --argjson keep "$KEEP_DESIGN" '. + {archive:$a, keepDesign:$keep}' <<<"$NEW")"
+emit_json "$(jq -c --arg a "${ARCHIVE#$DPS_ROOT/}" --argjson keep "$KEEP_DESIGN" '. + {archive:$a, keepDesign:$keep}' <<<"$NEW")"

@@ -21,8 +21,8 @@ while IFS= read -r w; do [[ -n "$w" ]] && WARN+=("$w"); done < <(jq -r '.skipped
 NOTES_ERR="$(node -e '
   import("'"$LIB_DIR"'/design.mjs").then((m) => process.stdout.write(m.validateNotes(require("fs").readFileSync(process.argv[1], "utf8")).join("; ")));' "$D/notes.md" 2>/dev/null || true)"
 [[ -z "$NOTES_ERR" ]] || WARN+=("notes.md: $NOTES_ERR")
-cmp -s "$D/notes.md" "$MODIO_ROOT/templates/projekt/notes.md" && WARN+=("design/notes.md ist noch die Vorlage.")
-cmp -s "$D/projekt.md" "$MODIO_ROOT/templates/projekt/projekt.md" 2>/dev/null && WARN+=("design/projekt.md ist noch die Vorlage.")
+cmp -s "$D/notes.md" "$DPS_ROOT/templates/projekt/notes.md" && WARN+=("design/notes.md ist noch die Vorlage.")
+cmp -s "$D/projekt.md" "$DPS_ROOT/templates/projekt/projekt.md" 2>/dev/null && WARN+=("design/projekt.md ist noch die Vorlage.")
 
 COMMIT=""
 if [[ -n "$(git_site status --porcelain -- design)" ]]; then
@@ -42,9 +42,9 @@ BG_FILES=()
 while IFS= read -r f; do cp "$f" "$P/$(basename "$f")"; BG_FILES+=("$(basename "$f")"); done \
   < <(find "$D" -maxdepth 1 -name '*.md' ! -name 'notes.md' -type f | sort)
 {
-  printf '/* Design-Tokens von %s (gesperrt). Erzeugt von Modio aus design/tokens-quelle.css – nicht von Hand ändern.\n' "$TITLE"
+  printf '/* Design-Tokens von %s (gesperrt). Erzeugt von Page Studio aus design/tokens-quelle.css – nicht von Hand ändern.\n' "$TITLE"
   printf '   Zuordnung zu den Variablen des Projekts:\n'
-  jq -r '.tokens | to_entries[] | "     --modio-\(.value | sub("\\."; "-")) = \(.key)"' "$D/tokens-map.json"
+  jq -r '.tokens | to_entries[] | "     --dps-\(.value | sub("\\."; "-")) = \(.key)"' "$D/tokens-map.json"
   printf '*/\n'
   sed '1{/^\/\*.*\*\/$/d}' "$D/tokens.css"
 } >"$P/tokens.css"
@@ -55,7 +55,7 @@ BG_LIST=""; for f in "${BG_FILES[@]+"${BG_FILES[@]}"}"; do BG_LIST+="- $f: Hinte
 cat >"$P/CLAUDE.md" <<C
 # $TITLE – Gestaltung neuer Designs
 
-Du gestaltest Elemente (Abschnitte, Komponenten) für ein neues Webprojekt. Es gibt keine bestehende Website. Maßgeblich sind die Dateien in diesem Ordner. Die Ergebnisse übernehme ich in mein Werkzeug (Modio) und passe sie dort im Detail an.
+Du gestaltest Elemente (Abschnitte, Komponenten) für ein neues Webprojekt. Es gibt keine bestehende Website. Maßgeblich sind die Dateien in diesem Ordner. Die Ergebnisse übernehme ich in mein Werkzeug (Page Studio) und passe sie dort im Detail an.
 
 ## Dateien
 - regeln.md: Gestaltungsregeln (verbindlich)
@@ -64,14 +64,14 @@ ${BG_LIST}- entwuerfe/: Ablage der Ergebnisse (nur bei Claude Code)
 
 ## Tokens
 - Übernimm den :root-Block aus tokens.css unverändert an den Anfang deines <style>.
-- Verwende die Variablen aus tokens.css über var(--modio-…). Die Tokens selbst sind festgelegt: nicht abwandeln.
+- Verwende die Variablen aus tokens.css über var(--dps-…). Die Tokens selbst sind festgelegt: nicht abwandeln.
 - Fehlende Stufen (z. B. Schriftgrößen, Abstände, Flächen) leitest du daraus ab (calc(), clamp(), color-mix()). Keine Farben außerhalb der Palette.
 ${OHNE:+- Weitere Werte des Projekts ohne eigene Variable (als Wert verwenden):
 $OHNE}
 
 ## Gestaltung
 $(leitlinien_text neu)
-$( [[ "$HAS_CONTENT" == true ]] && echo "- Inhaltsbreite höchstens var(--modio-container-max-width); nichts ragt darüber hinaus." )
+$( [[ "$HAS_CONTENT" == true ]] && echo "- Inhaltsbreite höchstens var(--dps-container-max-width); nichts ragt darüber hinaus." )
 - Inhalte realistisch und passend zum Hintergrund. Erfundene Angaben (Namen, Preise, Zahlen) sind erkennbare Beispiele.
 - Keine Bilder von außen: Bildflächen als Flächen mit festem Seitenverhältnis und kurzem Alternativtext.
 
@@ -79,7 +79,7 @@ $( [[ "$HAS_CONTENT" == true ]] && echo "- Inhaltsbreite höchstens var(--modio-
 - Eine vollständige HTML-Seite mit <title>. Keine React-Komponente, kein JavaScript.
 - Genau ein <style> im <head>: zuerst der :root-Block aus tokens.css, danach dein CSS.
 - Im <body> die ganze Seite mit semantischen Bereichen (<header>, <main>, <footer>). Bereiche, die auf jeder Seite vorkommen (Kopf, Navigation, Fuß), sind auf allen Seiten gleich aufgebaut (gleiches Markup, gleiche Klassen).
-- Links auf andere Seiten des Projekts als <seitenname>.html (Kleinbuchstaben, Ziffern, Bindestrich; die Startseite heißt startseite.html). Modio legt alle Seiten in einen Ordner, die Links funktionieren dann ohne Anpassung.
+- Links auf andere Seiten des Projekts als <seitenname>.html (Kleinbuchstaben, Ziffern, Bindestrich; die Startseite heißt startseite.html). Page Studio legt alle Seiten in einen Ordner, die Links funktionieren dann ohne Anpassung.
 - Keine externen Schriften (kein Google Fonts, kein @import), keine externen Bilder, keine Icon-Bibliotheken von außen. Icons als Inline-SVG, sofern regeln.md nichts anderes vorgibt.
 - Interaktion nur mit HTML und CSS (<details>, :has(), :target, Scroll-Snap).
 
@@ -92,18 +92,18 @@ C
 cat >"$P/README.md" <<R
 # Paket für $TITLE
 
-Erzeugt von Modio ($(date '+%d.%m.%Y %H:%M')). Neu erzeugen mit „Paket erstellen“ auf der Startseite (oder scripts/project-package.sh $SLUG); entwuerfe/ bleibt dabei erhalten.
+Erzeugt von Page Studio ($(date '+%d.%m.%Y %H:%M')). Neu erzeugen mit „Paket erstellen“ auf der Startseite (oder scripts/project-package.sh $SLUG); entwuerfe/ bleibt dabei erhalten.
 
 ## In claude.ai
 1. Neues Projekt anlegen.
 2. Den Inhalt von CLAUDE.md in die Projektanweisungen kopieren.
 3. regeln.md, tokens.css${BG_FILES[*]:+ und ${BG_FILES[*]}} als Projektwissen hochladen.
 4. Einen Chat starten und die Seite beschreiben (was, für wen, welche Inhalte). Weitere Seiten im selben Chat.
-5. Jedes HTML-Artefakt herunterladen und in Modio übernehmen: Projekt öffnen → Seiten → „Seite importieren …“ (Seitenname wie der Dateiname, z. B. startseite). Die Seite kommt unverändert dazu und wird dort nachbearbeitet.
+5. Jedes HTML-Artefakt herunterladen und in Page Studio übernehmen: Projekt öffnen → Seiten → „Seite importieren …“ (Seitenname wie der Dateiname, z. B. startseite). Die Seite kommt unverändert dazu und wird dort nachbearbeitet.
 
 ## Mit Claude Code
 1. Im Ordner $P \`claude\` starten und den Auftrag beschreiben.
-2. Die Ergebnisse liegen unter entwuerfe/ und werden in Modio wie oben importiert.
+2. Die Ergebnisse liegen unter entwuerfe/ und werden in Page Studio wie oben importiert.
 R
 
 FILES="$(cd "$P" && find . -maxdepth 1 -type f -printf '%P\n' | sort | jq -R . | jq -sc .)"

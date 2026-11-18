@@ -24,16 +24,16 @@ page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text(
 page.on('pageerror', (e) => consoleErrors.push(e.message));
 page.on('dialog', (d) => d.accept());
 
-const ov = (sel) => page.locator(`#modio-overlay-host ${sel}`);
+const ov = (sel) => page.locator(`#dps-overlay-host ${sel}`);
 
 console.log('Overlay laden');
 await page.goto(`${BASE}/s/${SLUG}/`);
-await page.waitForSelector('#modio-overlay-host', { state: 'attached', timeout: 5000 });
-check('Overlay eingebunden', await page.locator('#modio-overlay-host').count() === 1);
+await page.waitForSelector('#dps-overlay-host', { state: 'attached', timeout: 5000 });
+check('Overlay eingebunden', await page.locator('#dps-overlay-host').count() === 1);
 check('Seite normal bedienbar (Auswahl aus)', (await ov('button:has-text("Auswählen")').getAttribute('aria-pressed')) === 'false');
 await ov('button:has-text("Auswählen")').waitFor({ state: 'visible' });
 await page.waitForFunction(() => {
-  const b = [...document.querySelector('#modio-overlay-host').shadowRoot.querySelectorAll('button')].find((x) => x.textContent === 'Auswählen');
+  const b = [...document.querySelector('#dps-overlay-host').shadowRoot.querySelectorAll('button')].find((x) => x.textContent === 'Auswählen');
   return b && !b.disabled;
 }, null, { timeout: 10000 });
 
@@ -51,13 +51,13 @@ await page.keyboard.press('Alt+a');
 await page.hover('main p');
 await page.keyboard.press('ArrowUp');
 await page.keyboard.press('Enter');
-check('Pfeil nach oben wählt Elternelement', /section|hero/.test(await page.evaluate(() => document.querySelector('#modio-overlay-host').shadowRoot.textContent)));
+check('Pfeil nach oben wählt Elternelement', /section|hero/.test(await page.evaluate(() => document.querySelector('#dps-overlay-host').shadowRoot.textContent)));
 await page.keyboard.press('Escape');
 await page.keyboard.press('Alt+a');
 await page.hover('h1.hero__title');
 await page.click('h1.hero__title');
 check('Element gewählt', await ov('textarea').isVisible());
-const meta = await page.evaluate(() => document.querySelector('#modio-overlay-host').shadowRoot.textContent);
+const meta = await page.evaluate(() => document.querySelector('#dps-overlay-host').shadowRoot.textContent);
 check('Selektor angezeigt', /hero__title/.test(meta));
 
 console.log('Pfadleiste im Annotationsdialog');
@@ -66,7 +66,7 @@ const crumbCount = await crumbs.count();
 check('Pfadleiste zeigt Vorfahren', crumbCount >= 2, String(crumbCount));
 await crumbs.nth(crumbCount - 2).hover();
 const pvShown = await page.evaluate(() => {
-  const pv = document.querySelector('#modio-overlay-host').shadowRoot.querySelector('.hl.pv');
+  const pv = document.querySelector('#dps-overlay-host').shadowRoot.querySelector('.hl.pv');
   return getComputedStyle(pv).display === 'block' && pv.textContent.length > 0;
 });
 check('Hover über Elternglied zeigt Vorschau', pvShown);
@@ -84,7 +84,7 @@ check('Vorschau des Referenzbilds', (await ov('.thumbs img').count()) === 1);
 const reload = page.waitForEvent('load', { timeout: 10 * 60 * 1000 });
 await ov('button:has-text("Absenden")').click();
 await page.waitForTimeout(500);
-const statusText = await page.evaluate(() => document.querySelector('#modio-overlay-host').shadowRoot.querySelector('.status')?.textContent || '');
+const statusText = await page.evaluate(() => document.querySelector('#dps-overlay-host').shadowRoot.querySelector('.status')?.textContent || '');
 check('Status zeigt laufenden Job', /warte|arbeitet|Warteschlange|läuft/i.test(statusText), statusText);
 console.log('  … warte auf Claude Code und Reload');
 await reload;
@@ -110,7 +110,7 @@ fs.writeFileSync(path.join(ROOT, 'jobs/review', `${reviewId}.json`), JSON.string
 await page.reload();
 await ov('button:has-text("verwerfen")').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
 check('Prüfdialog erscheint', await ov('button:has-text("verwerfen")').isVisible());
-check('Trefferliste zeigt Regel', (await page.evaluate(() => document.querySelector('#modio-overlay-host').shadowRoot.textContent)).includes('event-handler'));
+check('Trefferliste zeigt Regel', (await page.evaluate(() => document.querySelector('#dps-overlay-host').shadowRoot.textContent)).includes('event-handler'));
 const reload2 = page.waitForEvent('load', { timeout: 60000 });
 await ov('button:has-text("verwerfen")').click();
 await reload2.catch(() => {});
@@ -120,7 +120,7 @@ check('Review-Job abgeschlossen', fs.existsSync(path.join(ROOT, 'jobs/done', `${
 
 console.log('Verlauf und Rücksprung');
 await page.waitForLoadState('networkidle');
-await ov('button[aria-controls=modio-history]').click();
+await ov('button[aria-controls=dps-history]').click();
 await ov('li:has-text("Ausgangsstand")').waitFor({ timeout: 5000 });
 const stepCount = await ov('li:has-text("A-0")').count();
 check('Verlauf listet Schritte', stepCount >= 1 && stepCount === hist.steps.length, `${stepCount} vs ${hist.steps.length}`);

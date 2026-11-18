@@ -23,7 +23,7 @@ if [[ "$SRC" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*:// ]]; then
   log "Lade Referenzbild $SRC"
   curl --fail --silent --show-error --location --max-redirs 3 --proto '=http,https' --proto-redir '=http,https' \
     --connect-timeout 10 --max-time 30 --max-filesize "$MAX_BYTES" \
-    --user-agent "${CRAWL_USER_AGENT:-Mozilla/5.0 (Modio)}" \
+    --user-agent "${CRAWL_USER_AGENT:-Mozilla/5.0 (datamints Page Studio)}" \
     --output "$TMP/download" "$SRC" 2>"$TMP/curl.err" \
     || die "Bild konnte nicht geladen werden ($(tr '\n' ' ' <"$TMP/curl.err")). Tipp: Screenshot per Strg+V einfügen."
   INPUT="$TMP/download"
@@ -45,6 +45,6 @@ esac
 N=1; while compgen -G "$ASSETS/$ID-ref-$N.*" >/dev/null; do N=$((N + 1)); done
 OUT_JSON="$(node "$LIB_DIR/image.mjs" "$INPUT" "$ASSETS/$ID-ref-$N" "$MAX_PX")" || die "Bild konnte nicht verarbeitet werden"
 FILE="$(jq -r .file <<<"$OUT_JSON")"
-log "Referenzbild gespeichert: ${FILE#$MODIO_ROOT/}"
+log "Referenzbild gespeichert: ${FILE#$DPS_ROOT/}"
 emit_json "$(jq -c --arg src "$SOURCE_URL" --arg rel "$REL_DIR/$(basename "$FILE")" \
   '{status:"ok", path:.file, relPath:$rel, sourceUrl:(if $src=="" then null else $src end), width, height, format}' <<<"$OUT_JSON")"

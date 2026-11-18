@@ -14,7 +14,7 @@ PAGE="${2:-}"
 [[ -n "$PAGE" ]] || usage "page-delete.sh <slug> <seite>"
 [[ "$PAGE" == /* && "$PAGE" != *..* && "$PAGE" != *//* ]] || die "Ungültige Seite: $PAGE" 2
 [[ "${PAGE##*/}" =~ \.html?(@.*)?$ ]] || die "Keine HTML-Seite: $PAGE" 2
-[[ "$PAGE" != /_modio-assets/* ]] || die "Keine Seite: $PAGE" 2
+[[ "$PAGE" != /_dps-assets/* ]] || die "Keine Seite: $PAGE" 2
 TARGET="$SITE/www$PAGE"
 [[ -f "$TARGET" && ! -L "$TARGET" ]] || die "Seite nicht gefunden: $PAGE" 4
 KIND="$(site_kind "$SITE")"

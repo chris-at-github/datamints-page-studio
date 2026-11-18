@@ -13,7 +13,7 @@ const norm = (p) => path.posix.normalize(p);
 function htmlFiles(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) { if (e.name !== '_modio-assets') htmlFiles(p, out); }
+    if (e.isDirectory()) { if (e.name !== '_dps-assets') htmlFiles(p, out); }
     else if (/\.html?(@.*)?$/i.test(e.name)) out.push(p);
   }
   return out;

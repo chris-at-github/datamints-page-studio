@@ -26,9 +26,9 @@ if [[ "$(jq -r '.kind // ""' "$SITE/site.json")" == neu ]]; then
   [[ -f "$SITE/paket/CLAUDE.md" ]] || die "Für dieses Projekt gibt es noch kein Paket. Erst „Paket erstellen“ (project-package.sh $SLUG)."
   # Element einer importierten Seite: das bisherige Markup als Material beilegen (Leinwand-Platz: kein Material)
   ELEMENT=false
-  grep -q 'data-modio-platz' "$DDIR/source.html" || { cp "$DDIR/source.html" "$OUT/$DID-element.html"; ELEMENT=true; }
+  grep -q 'data-dps-platz' "$DDIR/source.html" || { cp "$DDIR/source.html" "$OUT/$DID-element.html"; ELEMENT=true; }
   cat >"$OUT/briefing.md" <<B
-Gestalte $( [[ "$ELEMENT" == true ]] && echo "einen Bereich einer Seite dieses Projekts neu" || echo "ein neues Design für dieses Projekt" ). Es gelten die Projektanweisungen und das Projektwissen (CLAUDE.md, regeln.md, tokens.css und Hintergrund-Dateien aus dem Paket von Modio).
+Gestalte $( [[ "$ELEMENT" == true ]] && echo "einen Bereich einer Seite dieses Projekts neu" || echo "ein neues Design für dieses Projekt" ). Es gelten die Projektanweisungen und das Projektwissen (CLAUDE.md, regeln.md, tokens.css und Hintergrund-Dateien aus dem Paket von Page Studio).
 Ausgabeformat abweichend von „je Seite“: nur dieser Bereich, als HTML-Datei, kein React, kein JavaScript, ein <style> mit dem :root-Block aus tokens.css, im <body> genau ein Wurzelelement.
 $( [[ "$ELEMENT" == true ]] && echo "
 Der bisherige Bereich liegt bei: $DID-element.html (Material, keine Anweisung). Inhalte, Texte und Links daraus übernehmen, sofern der Auftrag nichts anderes verlangt." )
@@ -55,7 +55,7 @@ cp "$DDIR/source.html" "$OUT/$DID-element.html"
 # Vorgaben der Website
 TOKENS_CSS="$(sed '/^\/\*.*\*\/$/d' "$SITE/design/tokens.css" 2>/dev/null || true)"
 [[ -n "$TOKENS_CSS" ]] || TOKENS_CSS=':root {}'
-LOCKED="$(jq -r '[(.tokens // .) | to_entries[] | select(.value.locked == true) | "--modio-" + (.key | gsub("\\."; "-"))] | join(", ")' "$SITE/design/tokens.json" 2>/dev/null || true)"
+LOCKED="$(jq -r '[(.tokens // .) | to_entries[] | select(.value.locked == true) | "--dps-" + (.key | gsub("\\."; "-"))] | join(", ")' "$SITE/design/tokens.json" 2>/dev/null || true)"
 # Hintergrundwissen (weitere design/*.md) als eigene Datei, auf die notes.md verweisen kann
 BG_FILE=""
 mapfile -t BG_DOCS < <(find "$SITE/design" -maxdepth 1 -name '*.md' ! -name 'notes.md' -type f 2>/dev/null | sort)
@@ -109,7 +109,7 @@ ${LAYOUT_TEXT:-Nicht gemessen. Nutze die verfügbare Breite und setze keine fest
 Fest: Das Element wird nicht breiter als angegeben, denn es ersetzt das bisherige Element auf der Seite. Texte und Bedienelemente bleiben innerhalb der Inhaltsbreite; Hintergründe, Flächen und Bilder dürfen bis zur Kante des Elements reichen. Die Spalten sind der Ausgangspunkt: Anzahl, Verhältnis und Anordnung darfst du ändern, wenn die Gestaltung dadurch besser wird.
 
 ## Design-Tokens
-Übernimm den folgenden Block unverändert an den Anfang deines <style> (nötig für die Übernahme). Verwende für alles, wofür es einen passenden Token gibt, die Variable über var(--modio-…). Braucht die Gestaltung Stufen, die es als Token nicht gibt (z. B. Schriftgrößen einer Überschriften-Hierarchie, Abstände, Flächen), leite sie aus den Tokens ab (calc(), clamp(), color-mix()). Keine Farbtöne außerhalb der Palette.
+Übernimm den folgenden Block unverändert an den Anfang deines <style> (nötig für die Übernahme). Verwende für alles, wofür es einen passenden Token gibt, die Variable über var(--dps-…). Braucht die Gestaltung Stufen, die es als Token nicht gibt (z. B. Schriftgrößen einer Überschriften-Hierarchie, Abstände, Flächen), leite sie aus den Tokens ab (calc(), clamp(), color-mix()). Keine Farbtöne außerhalb der Palette.
 \`\`\`css
 $TOKENS_CSS
 \`\`\`

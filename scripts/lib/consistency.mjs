@@ -57,7 +57,7 @@ export function areaError(name, selector) {
 export function resolveLink(v, page) {
   if (!page || !v || /^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(v)) return v;
   try {
-    const u = new URL(v, 'http://modio.local/' + page);
+    const u = new URL(v, 'http://dps.local/' + page);
     return u.pathname.replace(/(^|\/)index\.html?$/i, '$1') + u.search + u.hash;
   } catch { return v; }
 }

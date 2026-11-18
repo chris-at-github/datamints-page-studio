@@ -46,7 +46,7 @@ export function renderStartPage({ sites, token }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Modio</title>
+<title>datamints Page Studio</title>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
@@ -107,7 +107,7 @@ export function renderStartPage({ sites, token }) {
 </style>
 </head>
 <body>
-<header><h1>Modio</h1><span class="muted">Websites lokal optimieren per Element-Annotation und Claude Code</span></header>
+<header><h1>datamints Page Studio</h1><span class="muted">Websites lokal optimieren per Element-Annotation und Claude Code</span></header>
 <main>
   <section>
     <h2>Neue Website</h2>
@@ -126,7 +126,7 @@ export function renderStartPage({ sites, token }) {
   </section>
   <section>
     <h2>Neues Projekt (ohne Website)</h2>
-    <p class="muted">Für neue Designs ohne bestehende Website. Modio legt ein Projekt ohne Seiten an. Danach „Öffnen“ und unten in der Leiste über „Seiten › Seite importieren …“ HTML-Seiten aus Claude Chat einspielen und nachbearbeiten. Regeln, Hintergrund und Tokens pflegst du in <code>sites/&lt;kurzname&gt;/design/</code> (notes.md, projekt.md, tokens-quelle.css), „Paket erstellen“ bereitet sie für ein Projekt in claude.ai auf.</p>
+    <p class="muted">Für neue Designs ohne bestehende Website. Page Studio legt ein Projekt ohne Seiten an. Danach „Öffnen“ und unten in der Leiste über „Seiten › Seite importieren …“ HTML-Seiten aus Claude Chat einspielen und nachbearbeiten. Regeln, Hintergrund und Tokens pflegst du in <code>sites/&lt;kurzname&gt;/design/</code> (notes.md, projekt.md, tokens-quelle.css), „Paket erstellen“ bereitet sie für ein Projekt in claude.ai auf.</p>
     <form id="new-project">
       <div class="row">
         <div><label for="p-title">Titel</label><input id="p-title" name="title" type="text" maxlength="80" required placeholder="z. B. Relaunch Musterfirma"></div>
@@ -176,7 +176,7 @@ export function renderStartPage({ sites, token }) {
   const jobs = new Map();
 
   async function api(path, opts = {}) {
-    const res = await fetch(path, { ...opts, headers: { 'X-Modio-Token': TOKEN, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+    const res = await fetch(path, { ...opts, headers: { 'X-DPS-Token': TOKEN, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;

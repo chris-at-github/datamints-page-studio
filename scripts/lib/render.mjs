@@ -69,10 +69,10 @@ export function makeReader(siteDir, mode, ref) {
 function injectHtml(buf, base, layered) {
   let head;
   if (layered) {
-    head = `<style data-modio="layers">@import url("${base}/__tokens.css") layer(legacy);@import url("${base}/__overrides.css") layer(legacy);</style>` +
-      `<link rel="stylesheet" href="${base}/__components.css" data-modio="components">`;
+    head = `<style data-dps="layers">@import url("${base}/__tokens.css") layer(legacy);@import url("${base}/__overrides.css") layer(legacy);</style>` +
+      `<link rel="stylesheet" href="${base}/__components.css" data-dps="components">`;
   } else {
-    head = `<link rel="stylesheet" href="${base}/__tokens.css" data-modio="tokens"><link rel="stylesheet" href="${base}/__overrides.css" data-modio="overrides">`;
+    head = `<link rel="stylesheet" href="${base}/__tokens.css" data-dps="tokens"><link rel="stylesheet" href="${base}/__overrides.css" data-dps="overrides">`;
   }
   let html = buf.toString('latin1');
   if (layered) html = layerLegacyCss(html);
@@ -339,7 +339,7 @@ async function main() {
 // breitesten Ansicht; in den anderen Ansichten wird derselbe Knoten gemessen (Spalten ggf. untereinander).
 // Inneres (Kartenraster, Listen) gehört bewusst nicht zum Hauptraster.
 export function measureLayout([sel, path0]) {
-  const describe = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (typeof n.className === 'string' && n.className.trim() ? '.' + n.className.trim().split(/\s+/).filter((c) => !c.startsWith('modio')).slice(0, 3).join('.') : '');
+  const describe = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (typeof n.className === 'string' && n.className.trim() ? '.' + n.className.trim().split(/\s+/).filter((c) => !c.startsWith('dps')).slice(0, 3).join('.') : '');
   const box = (n) => { const r = n.getBoundingClientRect(); return { x: Math.round(r.left + window.scrollX), w: Math.round(r.width) }; };
   let el;
   try { el = document.querySelector(sel); } catch { return { error: 'Ungültiger Selektor' }; }
