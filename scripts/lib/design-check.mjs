@@ -37,7 +37,12 @@ function detect(cmd, url, vp, env, cwd) {
   });
 }
 
-const keyOf = (f) => `${f.antipattern}|${f.selector || f.snippet || ''}`;
+// Vorher und nachher laufen auf verschiedenen Ports: Adressen des Prüfservers aus den Texten entfernen (sonst gilt
+// z. B. jeder Script-Fehler mit Fundstelle als neu)
+const LOCAL_URL = /https?:\/\/127\.0\.0\.1:\d+\/s\/[^/\s)]+/g;
+const plain = (s) => String(s || '').replace(LOCAL_URL, '');
+// Zum Vergleich auch Zeile und Spalte weglassen: Ein Entwurf verschiebt die Zeilen der Seite
+const keyOf = (f) => `${f.antipattern}|${f.selector || plain(f.snippet).replace(/:\d+:\d+\b/g, '')}`;
 
 async function browserPath() {
   for (const p of [process.env.IMPECCABLE_BROWSER, process.env.PLAYWRIGHT_CHROMIUM]) if (p && fs.existsSync(p)) return p;
@@ -132,7 +137,7 @@ async function main() {
           if (old.has(keyOf(f))) continue;
           if (findings.has(k)) { findings.get(k).viewports.push(vp.name); continue; }
           findings.set(k, { rule: f.antipattern, name: f.name, severity: f.severity, page, selector: f.selector || null,
-            snippet: String(f.snippet || '').slice(0, 300), description: String(f.description || '').slice(0, 500), viewports: [vp.name] });
+            snippet: plain(f.snippet).slice(0, 300), description: String(f.description || '').slice(0, 500), viewports: [vp.name] });
         }
       }
     }

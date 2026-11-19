@@ -394,10 +394,11 @@ check "Ohne Skill nur Leitlinien" 'grep -q "Gestaltungsleitlinien" <<<"$OUT2" &&
 SKD="$(mktemp -d)/testskill"; mkdir -p "$SKD/reference"
 printf -- '---\nname: testskill\ndescription: x\n---\n\nSKILL-A-INHALT\n' >"$SKD/SKILL.md"; printf 'REFERENZ-INHALT\n' >"$SKD/reference/boden.md"
 SKF="$(mktemp)"; printf -- '---\nname: zweiter\n---\nSKILL-B-INHALT\n' >"$SKF"
-OUT2="$(DESIGN_SKILLS="$SKD/SKILL.md:boden.md,fehlt.md $SKF gibtsnicht" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" "" annotation' 2>"$SKD/err")"
+# ohne Art des Laufs: nur DESIGN_SKILLS zählt (DESIGN_SKILLS_ANNOTATION/_DRAFT aus der .env greifen hier nicht)
+OUT2="$(DESIGN_SKILLS="$SKD/SKILL.md:boden.md,fehlt.md $SKF gibtsnicht" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" ""' 2>"$SKD/err")"
 check "DESIGN_SKILLS: mehrere Skills in Reihenfolge, Referenz eingebunden, Fehlendes nur als Hinweis" 'grep -q "^# Skill „testskill“" <<<"$OUT2" && grep -q "REFERENZ-INHALT" <<<"$OUT2" && [[ "$(grep -n "SKILL-A-INHALT\|SKILL-B-INHALT" <<<"$OUT2" | cut -d: -f2 | paste -sd,)" == "SKILL-A-INHALT,SKILL-B-INHALT" ]] && ! grep -q "^name: testskill" <<<"$OUT2" && grep -q "kein Bash" <<<"$OUT2" && grep -q "Skill-Referenz nicht gefunden (testskill: fehlt.md)" "$SKD/err" && grep -q "Skill nicht gefunden (gibtsnicht)" "$SKD/err"'
 OUT2="$(DESIGN_SKILLS="$SKF" DESIGN_SKILLS_DRAFT="" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" "" draft' 2>/dev/null)"
-OUT3="$(DESIGN_SKILLS="$SKF" DESIGN_SKILLS_DRAFT="" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" "" annotation' 2>/dev/null)"
+OUT3="$(DESIGN_SKILLS="$SKF" DESIGN_SKILLS_ANNOTATION="$SKF" DESIGN_SKILLS_DRAFT="" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" "" annotation' 2>/dev/null)"
 check "DESIGN_SKILLS_DRAFT leer: Entwurf ohne Skill, Annotation mit" '! grep -q SKILL-B-INHALT <<<"$OUT2" && grep -q SKILL-B-INHALT <<<"$OUT3"'
 rm -rf "$(dirname "$SKD")" "$SKF"
 check "Neuer Entwurf mit Version 1" '[[ "$(jq -r .status <<<"$OUT")" == ok && "$(jq -r .version <<<"$OUT")" == 1 && -f "$S/drafts/$DN/v1/component.html" ]]'
