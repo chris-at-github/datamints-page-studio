@@ -13,22 +13,11 @@ ddev start                                 # Bridge-Server: https://datamints-pa
 npm run worker                             # Worker in der WSL (eigenes Terminal, läuft dauerhaft)
 ```
 
-`install.sh` ist mehrfach ausführbar; eine vorhandene `.env` bleibt unverändert. Der Ordnername ist frei, die Adresse ergibt sich aus `name:` in `.ddev/config.yaml`. Läuft auf demselben Rechner noch eine alte Installation (Modio) mit denselben Ports 3080/3443, diese vorher mit `ddev stop` beenden.
+`install.sh` ist mehrfach ausführbar; eine vorhandene `.env` bleibt unverändert. Der Ordnername ist frei, die Adresse ergibt sich aus `name:` in `.ddev/config.yaml`.
 
 `inotify-tools` und ImageMagick werden nicht gebraucht: Der Worker ist ein Node-Prozess, Bilder verarbeitet `sharp`.
 
 **Node-Versionen:** Der Bridge-Server läuft im DDEV-Container (Node 22, `.ddev/config.yaml`), Worker und Skripte in der WSL. Die Skripte wählen ihre Node-Version selbst (`scripts/lib/node-env.sh`): zuerst `DPS_NODE` aus der `.env`, dann ein passender `node` im PATH (ab 20.6), dann nvm (Version aus `.nvmrc`). Ein alter System-Node wie `/usr/bin/node` 18 wird so auch in Shells ohne nvm übergangen; findet sich keine passende Version, bricht das Skript mit einer klaren Meldung ab. `npm run worker` selbst in einer Shell mit nvm starten (`nvm use`).
-
-### Abzüge aus einer Modio-Installation übernehmen
-
-Bis 2026-11 hieß das Werkzeug Modio. Abzüge von dort übernimmt `site-migrate.sh` in die neue Installation:
-
-```bash
-./scripts/site-migrate.sh <slug> ~/www/modio --dry-run   # nur anzeigen, was sich ändert
-./scripts/site-migrate.sh <slug> ~/www/modio             # übernehmen
-```
-
-Das Skript kopiert `sites/<slug>/` (und archivierte Stände `archive/<slug>-*`) und stellt die alten Namen um: `--modio-*` → `--dps-*`, `_modio-assets` → `_dps-assets`, `data-modio-*` → `data-dps-*`, von Claude vergebene Klassen wie `modio-btn` → `dps-btn`, „Modio“ → „Page Studio“. Umgeschrieben werden Seiten, CSS, Komponenten, Annotationen, Entwürfe und der **ganze Verlauf samt Tags**, damit Rücksprünge auf ältere Schritte weiter passen (die Commit-IDs ändern sich dabei). Binärdateien wie Schriften bleiben unverändert, Wörter mit „modio“ in der Mitte (z. B. *commodious*) ebenfalls. Die alte Installation wird nur gelesen. Voraussetzung: In der alten Installation gibt es für die Website keine offenen Jobs, keine gesammelten Annotationen und keine nicht übernommenen Änderungen. „Nachbessern“ des letzten Schritts startet nach dem Umzug neu, Entwürfe setzen mit einer frischen Claude-Sitzung fort.
 
 ## Bedienung
 
