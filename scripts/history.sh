@@ -7,7 +7,9 @@ source "$(dirname "$0")/lib/common.sh"
 require_cmd git jq
 require_site "${1:-}"
 
-STEPS="[]"
+# Schritte als JSON-Zeilen in einer Datei sammeln: Als Argument wird der Verlauf zu groß (je Argument höchstens 128 KB)
+STEPS_FILE="$(mktemp)"
+trap 'rc=$?; rm -f "$STEPS_FILE"; if (( rc != 0 && rc != 3 )); then log "Abbruch mit Exit-Code $rc"; fi' EXIT
 while IFS=$'\t' read -r COMMIT DATE SUBJECT; do
   [[ -n "$COMMIT" ]] || continue
   ID="$(sed -nE 's/^\[(A-[0-9]+)\].*/\1/p' <<<"$SUBJECT")"
@@ -26,17 +28,17 @@ while IFS=$'\t' read -r COMMIT DATE SUBJECT; do
       warnings: ((.check.warnings // []) | length),
       costUsd: (.result.costUsd // null), usage: (.result.usage // null)
     }' <<<"$ANN")"
-  STEPS="$(jq -c --argjson s "$STEP" '. + [$s]' <<<"$STEPS")"
+  printf '%s\n' "$STEP" >>"$STEPS_FILE"
 done < <(git_site log --reverse --format='%H%x09%aI%x09%s' baseline..HEAD)
 
-OUT="$(jq -c -n --arg slug "$SLUG" --arg head "$(git_site rev-parse HEAD)" --arg base "$(git_site rev-parse baseline)" \
-  --argjson steps "$STEPS" '{slug:$slug, head:$head, baseline:$base, steps:$steps,
+OUT="$(jq -c -s --arg slug "$SLUG" --arg head "$(git_site rev-parse HEAD)" --arg base "$(git_site rev-parse baseline)" \
+  '. as $steps | {slug:$slug, head:$head, baseline:$base, steps:$steps,
     totals: {
       costUsd: ([$steps[].costUsd // 0] | add // 0),
       inputTokens: ([$steps[].usage.input_tokens // 0] | add // 0),
       outputTokens: ([$steps[].usage.output_tokens // 0] | add // 0),
       cacheReadTokens: ([$steps[].usage.cache_read_input_tokens // 0] | add // 0),
       cacheCreationTokens: ([$steps[].usage.cache_creation_input_tokens // 0] | add // 0)
-    }}')"
+    }}' "$STEPS_FILE")"
 tmp="$(mktemp "$SITE/.history.XXXXXX")"; printf '%s\n' "$OUT" >"$tmp"; mv "$tmp" "$SITE/.history.json"; chmod 644 "$SITE/.history.json"
 emit_json "$OUT"
