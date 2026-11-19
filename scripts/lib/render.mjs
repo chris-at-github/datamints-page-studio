@@ -66,11 +66,12 @@ export function makeReader(siteDir, mode, ref) {
 
 // ---------- Lokaler Server, liefert wie der Bridge-Server aus (ohne Overlay) ----------
 
-function injectHtml(buf, base, layered) {
+function injectHtml(buf, base, layered, draft = null) {
   let head;
   if (layered) {
     head = `<style data-dps="layers">@import url("${base}/__tokens.css") layer(legacy);@import url("${base}/__overrides.css") layer(legacy);</style>` +
-      `<link rel="stylesheet" href="${base}/__components.css" data-dps="components">`;
+      `<link rel="stylesheet" href="${base}/__components.css" data-dps="components">` +
+      (draft ? `<link rel="stylesheet" href="${base}/__draft.css" data-dps="draft">` : '');
   } else {
     head = `<link rel="stylesheet" href="${base}/__tokens.css" data-dps="tokens"><link rel="stylesheet" href="${base}/__overrides.css" data-dps="overrides">`;
   }
@@ -81,7 +82,10 @@ function injectHtml(buf, base, layered) {
   return Buffer.from(html, 'latin1');
 }
 
-export async function startServer(reader, slug) {
+// opts.draft: { name, css } – Vorschau eines Entwurfs wie im Bridge-Server: immer mit Ebenen, das CSS der gleichnamigen
+// Komponente entfällt, das Entwurfs-CSS kommt darüber (das Markup ersetzt der Reader)
+export async function startServer(reader, slug, opts = {}) {
+  const draft = opts.draft || null;
   const base = `/s/${slug}`;
   const send = (res, status, body, type) => {
     res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'Content-Security-Policy': SITE_CSP });
@@ -94,9 +98,10 @@ export async function startServer(reader, slug) {
       const rest = u.pathname.slice(base.length);
       if (rest === '/__tokens.css') return send(res, 200, (await reader.read('design/tokens.css')) || '', MIME['.css']);
       if (rest === '/__overrides.css') return send(res, 200, (await reader.read('overrides.css')) || '', MIME['.css']);
+      if (rest === '/__draft.css' && draft) return send(res, 200, draft.css || '', MIME['.css']);
       if (rest === '/__components.css') {
         const parts = [];
-        for (const f of await reader.components()) parts.push(((await reader.read(`components/${f}`)) || '').toString('utf8'));
+        for (const f of await reader.components()) if (!draft || f !== `mx-${draft.name}.css`) parts.push(((await reader.read(`components/${f}`)) || '').toString('utf8'));
         return send(res, 200, parts.join('\n'), MIME['.css']);
       }
       let rel;
@@ -120,7 +125,7 @@ export async function startServer(reader, slug) {
           const m = c.match(/\.(css|js|svg|png|jpe?g|gif|webp|woff2?)@/i);
           type = (m && MIME['.' + m[1].toLowerCase().replace('jpg', 'jpeg')]) || 'application/octet-stream';
         }
-        const body = type === 'text/html' ? injectHtml(buf, base, (await reader.components()).length > 0) : buf;
+        const body = type === 'text/html' ? injectHtml(buf, base, !!draft || (await reader.components()).length > 0, draft) : buf;
         return send(res, 200, body, type);
       }
       return send(res, 404, 'nicht im Abzug', 'text/plain');

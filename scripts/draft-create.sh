@@ -118,7 +118,7 @@ CREATED_DIR=""
 on_cancel() {
   trap '' TERM INT
   if [[ -n "$CREATED_DIR" ]]; then rm -rf "$CREATED_DIR"
-  elif [[ -n "${DDIR:-}" && -n "${VERSION:-}" ]]; then rm -rf "$DDIR/v$VERSION" "$DDIR/import-v$VERSION.html" "$DDIR/import-v$VERSION.original.html"; fi
+  elif [[ -n "${DDIR:-}" && -n "${VERSION:-}" ]]; then rm -rf "$DDIR/v$VERSION" "$DDIR/.v$VERSION.vor-pruefung" "$DDIR/import-v$VERSION.html" "$DDIR/import-v$VERSION.original.html"; fi
   die "Abgebrochen" 5
 }
 trap on_cancel TERM INT
@@ -285,7 +285,7 @@ NO_LAYOUT_NOTE=""
 [[ -n "$LAYOUT_TEXT" || "$TARGET" == library ]] || NO_LAYOUT_NOTE=$'\n'"Das Hauptraster konnte nicht gemessen werden: Rate keine festen Breiten, nutze die verfügbare Breite (Inhaltsbreite und Seitenrand aus den Tokens, falls vorhanden) und nenne das in der Zusammenfassung."
 cp "$DPS_ROOT/templates/DRAFT.md" "$DDIR/CLAUDE.md"
 # Systemprompt (Regeln, Gestaltungsleitlinien, Skill) als Kopie im Entwurf: nachvollziehbar, womit er entstand
-build_system_prompt "$DDIR/SYSTEM.md" "$DDIR/CLAUDE.md" "--leitlinien$([[ "$SITE_KIND" == neu ]] && echo =neu)"
+build_system_prompt "$DDIR/SYSTEM.md" "$DDIR/CLAUDE.md" "--leitlinien$([[ "$SITE_KIND" == neu ]] && echo =neu)" draft
 mkdir -p "$DDIR/v$VERSION"
 
 fail() {
@@ -493,6 +493,51 @@ $ERRS"
 fi
 (( crc == 0 )) || fail "Entwurf ungültig: $(jq -r '(.errors // [.error]) | join("; ")' <<<"$CHECK" 2>/dev/null | head -c 500)"
 
+# ----- Gestaltungsprüfung (design-check.sh, Detektor des Skills „impeccable“) -----
+# Nur Befunde in der Komponente, die es auf der Seite ohne Entwurf nicht gab. Beim Entwerfen (neu, neue Version) eine
+# Korrekturrunde; bei Import und „Als Komponente“ (nicht neu gestalten) nur Hinweise. DESIGN_CHECK=off schaltet ab.
+# Macht die Korrektur die Komponente ungültig, bleibt die Fassung davor.
+DESIGN_JSON="null"
+if [[ "${DESIGN_CHECK:-on}" == on && "$TARGET" != library ]]; then
+  set +e; DOUT="$("$SCRIPTS_DIR/design-check.sh" "$SLUG" "$DID" "$VERSION")"; drc=$?; set -e
+  if (( drc == 3 )) && [[ "$MODE" == create && -n "$SESSION" ]]; then
+    DFIND="$(jq -r '.findings[] | "- [\(.viewports | join(", "))] \(.name) (\(.rule))\(if .selector then " bei \(.selector)" else "" end): \(.snippet)"' <<<"$DOUT")"
+    log "$DID v$VERSION: $(jq -r '.findings | length' <<<"$DOUT") Gestaltungsbefunde, Korrekturrunde"
+    BACKUP="$DDIR/.v$VERSION.vor-pruefung"; rm -rf "$BACKUP"; cp -a "$DDIR/v$VERSION" "$BACKUP"
+    CHECK_PREV="$CHECK"
+    set +e
+    run_claude "$SESSION" "Die Gestaltungsprüfung (Detektor des Skills „impeccable“, im Browser auf der Seite mit eingesetzter Komponente gemessen) hat in v$VERSION/ diese Befunde gefunden, die es auf der Seite ohne Entwurf nicht gab:
+$DFIND
+
+Behebe berechtigte Befunde in v$VERSION/, ohne die Gestaltung sonst zu ändern. Gesperrte Tokens, Vorgaben und Gestaltungsleitlinien haben Vorrang; ist ein Befund gewollt oder nicht vereinbar, ändere nichts und begründe das in einem Satz. Antworte mit 1–3 Sätzen, beginnend mit „Gestaltungsprüfung:“."
+    rc=$?
+    set -e
+    R="$(last_result)"
+    if (( rc == 0 )) && [[ "$(jq -r '.is_error // false' <<<"$R")" != "true" ]]; then
+      COST="$(jq -rn --argjson a "$COST" --argjson b "$(claude_call_cost "$R" "$SESSION" "$SESSION_COST")" '$a + $b | . * 1e6 | round / 1e6')"
+      SESSION_COST="$(jq -r '.total_cost_usd // 0' <<<"$R")"
+      DSUM="$(jq -r '.result // ""' <<<"$R")"
+      set +e; CHECK="$(DRAFT_REQUIRED_VARIANTS="$REQUIRED_VARIANTS" DRAFT_REQUIRE_LIBRARY="$REQUIRE_LIBRARY" DRAFT_EXPECT_NAME="${LIB_NAME:-$REVISES}" node "$LIB_DIR/draft.mjs" validate "$SITE" "$DDIR" "$VERSION")"; crc=$?; set -e
+      if (( crc == 0 )); then
+        [[ -n "$DSUM" ]] && SUMMARY+=$'\n\n'"$DSUM"
+        set +e; DOUT="$("$SCRIPTS_DIR/design-check.sh" "$SLUG" "$DID" "$VERSION")"; drc=$?; set -e
+      else
+        log "$DID v$VERSION: Korrektur nach Gestaltungsprüfung macht die Komponente ungültig, Fassung davor bleibt"
+        rm -rf "$DDIR/v$VERSION"; mv "$BACKUP" "$DDIR/v$VERSION"; CHECK="$CHECK_PREV"
+      fi
+    else
+      log "$DID v$VERSION: Korrekturrunde nach Gestaltungsprüfung fehlgeschlagen (Exit $rc), Fassung davor bleibt"
+      rm -rf "$DDIR/v$VERSION"; mv "$BACKUP" "$DDIR/v$VERSION"
+    fi
+    rm -rf "$BACKUP"
+  fi
+  if (( drc == 0 || drc == 3 )); then
+    DESIGN_JSON="$(jq -c '{status, counts, findings:[.findings[] | {rule, name, severity, selector, snippet, viewports}]}' <<<"$DOUT")"
+  else
+    log "$DID v$VERSION: Gestaltungsprüfung übersprungen: $(jq -r '.error // "unbekannt"' <<<"$DOUT" 2>/dev/null)"
+  fi
+fi
+
 NAME="$(jq -r .name <<<"$CHECK")"; TITLE="$(jq -r .title <<<"$CHECK")"; WARN="$(jq -c '.warnings // []' <<<"$CHECK")"
 if (( ${#IMPORT_WARN[@]} )); then
   WARN="$(jq -c '. as $w | $ARGS.positional + $w' --args "${IMPORT_WARN[@]}" <<<"$WARN")"
@@ -500,16 +545,21 @@ fi
 if (( ${#MATERIAL_WARN[@]} )); then
   WARN="$(jq -c '. as $w | $ARGS.positional + $w' --args "${MATERIAL_WARN[@]}" <<<"$WARN")"
 fi
+if [[ "$DESIGN_JSON" != null ]]; then
+  WARN="$(jq -c --argjson d "$DESIGN_JSON" '. + [$d.findings[0:3][] | "Gestaltungsprüfung: \(.name)\(if .selector then " bei \(.selector)" else "" end) – \(.snippet)"]
+    + (if ($d.findings | length) > 3 then ["Gestaltungsprüfung: \(($d.findings | length) - 3) weitere Befunde"] else [] end)' <<<"$WARN")"
+fi
 NPH="$(jq '.platzhalter | length' <<<"$CHECK")"; NOPEN="$(jq '[.befund[] | select(.umgesetzt | not)] | length' <<<"$CHECK")"; NBEF="$(jq '.befund | length' <<<"$CHECK")"
 # Ab hier ist die Version fertig: ein später Abbruch verwirft sie nicht mehr
 trap '' TERM INT
 tmp="$(mktemp)"
 jq --argjson v "$VERSION" --arg prompt "$PROMPT_USER" --arg created "$(now_iso)" --arg summary "$SUMMARY" --arg name "$NAME" \
    --arg title "$TITLE" --arg model "$MODEL" --arg effort "$EFFORT" --argjson cost "$COST" --arg session "$SESSION" --argjson scost "$SESSION_COST" --argjson warn "$WARN" \
-   --argjson nph "$NPH" --argjson nopen "$NOPEN" --argjson nbef "$NBEF" --arg mode "$MODE" '
+   --argjson nph "$NPH" --argjson nopen "$NOPEN" --argjson nbef "$NBEF" --arg mode "$MODE" --argjson design "$DESIGN_JSON" '
   .sessionId = (if $session == "" then .sessionId else $session end)
   | .sessionCostUsd = (if $session == "" then .sessionCostUsd else $scost end)
   | .versions += [{v:$v, prompt:$prompt, created:$created, summary:$summary, name:$name, title:$title, model:$model, effort:$effort, costUsd:$cost, warnings:$warn, befund:$nbef, offen:$nopen, platzhalter:$nph}
+      + (if $design then {designCheck:$design} else {} end)
       + (if $mode == "import" then {source:"import"} elif $mode == "component" then {source:"component"} elif $mode == "library" then {source:"library"} else {} end)]' \
   "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
 chmod 644 "$DDIR/draft.json"

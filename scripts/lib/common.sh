@@ -253,26 +253,75 @@ site_claude_md() {
 
 # Systemprompt für Claude-Läufe zusammensetzen: Grundregeln (z. B. DRAFT.md oder CLAUDE.md bei --bare),
 # optional die Gestaltungsleitlinien (für Entwürfe; bei Annotationen stehen sie schon in der CLAUDE.md
-# des Abzugs) und – falls vorhanden – der Skill „frontend-design“.
+# des Abzugs) und die Gestaltungs-Skills (nachrangig zu den Leitlinien).
 # --leitlinien: bestehende Website, --leitlinien=neu: neues Projekt (ohne „bestehende Websites“).
-# DESIGN_SKILL_FILE in der .env überschreibt den Pfad; leer gesetzt schaltet den Skill ab.
-# Aufruf: build_system_prompt <ziel> [grundregeln-datei] [--leitlinien|--leitlinien=neu]
-DEFAULT_DESIGN_SKILL="$HOME/.claude/plugins/marketplaces/claude-plugins-official/plugins/frontend-design/skills/frontend-design/SKILL.md"
+# Skills: DESIGN_SKILLS (Liste, Reihenfolge = Rangfolge), für eine Art von Lauf überschreibbar mit
+# DESIGN_SKILLS_ANNOTATION bzw. DESIGN_SKILLS_DRAFT. Eintrag: <name>[:<referenz.md>,…] oder ein absoluter Pfad
+# zu einer SKILL.md. Leer gesetzt = ohne Skills. Älter: DESIGN_SKILL_FILE (eine Datei) gilt, solange DESIGN_SKILLS fehlt.
+# Aufruf: build_system_prompt <ziel> [grundregeln-datei] [--leitlinien|--leitlinien=neu|""] [annotation|draft]
+DEFAULT_DESIGN_SKILLS="impeccable:craft-floor.md frontend-design"
+
+# Pfad der SKILL.md zu einem Skill-Namen: Projekt (.claude/skills), Benutzer (~/.claude/skills), installierte Plugins
+design_skill_path() {
+  local name="$1" f
+  if [[ "$name" == /* ]]; then [[ -f "$name" ]] && printf '%s' "$name"; return 0; fi
+  [[ "$name" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || return 0
+  for f in "$DPS_ROOT/.claude/skills/$name/SKILL.md" "$HOME/.claude/skills/$name/SKILL.md" \
+           "$HOME/.claude/plugins/marketplaces/claude-plugins-official/plugins/$name/skills/$name/SKILL.md"; do
+    [[ -f "$f" ]] && { printf '%s' "$f"; return 0; }
+  done
+  f="$(find "$HOME/.claude/plugins" -path "*/skills/$name/SKILL.md" -type f 2>/dev/null | sort | head -n 1)"
+  [[ -n "$f" ]] && printf '%s' "$f"
+  return 0
+}
+
+# Liste der Skill-Einträge für eine Art von Lauf (annotation|draft), ein Eintrag je Zeile
+design_skills_list() {
+  local kind="${1:-}" list
+  case "$kind" in
+    annotation) list="${DESIGN_SKILLS_ANNOTATION-${DESIGN_SKILLS-__default__}}" ;;
+    draft) list="${DESIGN_SKILLS_DRAFT-${DESIGN_SKILLS-__default__}}" ;;
+    *) list="${DESIGN_SKILLS-__default__}" ;;
+  esac
+  if [[ "$list" == __default__ ]]; then
+    if [[ -n "${DESIGN_SKILL_FILE+x}" ]]; then list="$DESIGN_SKILL_FILE"; else list="$DEFAULT_DESIGN_SKILLS"; fi
+  fi
+  tr -s ' \t' '\n\n' <<<"$list" | sed '/^$/d'
+}
+
+# Ein Skill als Abschnitt des Systemprompts (ohne Frontmatter), danach die genannten Referenzdateien
+design_skill_section() {
+  local entry="$1" name refs skill dir title r rf
+  name="${entry%%:*}"; refs=""; [[ "$entry" == *:* ]] && refs="${entry#*:}"
+  skill="$(design_skill_path "$name")"
+  if [[ -z "$skill" ]]; then log "Hinweis: Skill nicht gefunden ($name), Lauf ohne diesen Skill"; return 0; fi
+  dir="$(dirname "$skill")"; title="$(basename "$dir")"
+  printf '\n\n# Skill „%s“ (nachrangig, siehe Rangfolge in den Gestaltungsleitlinien)\n\n' "$title"
+  printf '> Hinweis von Page Studio: Dieser Lauf hat kein Bash, kein Netz und keinen Zugriff auf den Skill-Ordner. Setup-Schritte, Befehle und Skripte des Skills entfallen ohne Meldung; nicht danach suchen. Verweise auf Referenzdateien gelten nur, wenn die Datei unten mitgegeben ist. Der Auftrag und die Gestaltungsleitlinien haben Vorrang: bestehende Gestaltung verfeinern, nicht neu erfinden, sofern der Auftrag nichts anderes verlangt.\n\n'
+  awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm' "$skill"
+  [[ -n "$refs" ]] || return 0
+  while IFS= read -r r; do
+    [[ -n "$r" ]] || continue
+    if [[ "$r" == *".."* || "$r" == /* ]]; then log "Hinweis: ungültige Skill-Referenz ($title: $r)"; continue; fi
+    rf=""
+    [[ -f "$dir/reference/$r" ]] && rf="$dir/reference/$r"
+    [[ -z "$rf" && -f "$dir/$r" ]] && rf="$dir/$r"
+    if [[ -z "$rf" ]]; then log "Hinweis: Skill-Referenz nicht gefunden ($title: $r), Lauf ohne sie"; continue; fi
+    printf '\n\n## Referenz „%s“ des Skills „%s“\n\n' "$r" "$title"
+    awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm' "$rf"
+  done < <(tr ',' '\n' <<<"$refs")
+}
+
 build_system_prompt() {
-  local out="$1" base="${2:-}" guide="${3:-}" skill="${DESIGN_SKILL_FILE-$DEFAULT_DESIGN_SKILL}"
+  local out="$1" base="${2:-}" guide="${3:-}" kind="${4:-}" entry
   {
     if [[ -n "$base" && -f "$base" ]]; then cat "$base"; printf '\n\n'; fi
     if [[ "$guide" == --leitlinien* ]]; then
       printf '## Gestaltungsleitlinien\n\n'
       leitlinien_text "$([[ "$guide" == "--leitlinien=neu" ]] && echo neu || echo bestand)" --rangfolge
     fi
-    if [[ -n "$skill" && -f "$skill" ]]; then
-      printf '\n\n# Skill „frontend-design“ (nachrangig, siehe Rangfolge in den Gestaltungsleitlinien)\n\n'
-      # Frontmatter weglassen
-      awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm' "$skill"
-    fi
+    while IFS= read -r entry; do design_skill_section "$entry"; done < <(design_skills_list "$kind")
   } >"$out"
-  if [[ -n "$skill" && ! -f "$skill" ]]; then log "Hinweis: Skill-Datei nicht gefunden ($skill), Lauf ohne Skill"; fi
 }
 
 state_get() {

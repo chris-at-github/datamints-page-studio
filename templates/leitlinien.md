@@ -29,4 +29,4 @@ CLAUDE.md der Abzüge (Annotationen), Systemprompt der Entwürfe, Briefing für 
 2. Verbindliche Vorgaben des Projekts: gesperrte Tokens, Regeln aus notes.md, gleiche Bereiche, Bausteine „wie bisher“.
 3. Diese Gestaltungsleitlinien.
 4. Hintergrundwissen aus den weiteren Dateien in design/ (Angebot, Inhalte, Funktionen, Zielgruppen des Projekts).
-5. Der Skill „frontend-design“ (falls mitgegeben). Er gilt nur innerhalb der Grenzen 1–4 (Palette und Schrift kommen aus den Tokens). Nutze ihn für Haltung, Hierarchie, Komposition, Typografie im Detail, Weißraum und Feinschliff. Rückfragen sind nicht möglich: triff begründete Annahmen und nenne sie in der Zusammenfassung.
+5. Die mitgegebenen Gestaltungs-Skills (z. B. „impeccable“, „frontend-design“), untereinander in der mitgegebenen Reihenfolge. Sie gelten nur innerhalb der Grenzen 1–4 (Palette und Schrift kommen aus den Tokens). Nutze sie für Haltung, Hierarchie, Komposition, Typografie im Detail, Weißraum und Feinschliff. Rückfragen sind nicht möglich: triff begründete Annahmen und nenne sie in der Zusammenfassung.

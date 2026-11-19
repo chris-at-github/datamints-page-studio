@@ -34,6 +34,7 @@ Page Studio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne El
 | `check-diff.sh` | `check-diff.sh <slug> [annotation-id]` |
 | `check-consistency.sh` | `check-consistency.sh <slug> [--changed-only]` |
 | `render-check.sh` | `render-check.sh <slug> <annotation-id>` |
+| `design-check.sh` | `design-check.sh <slug> <annotation-id\|entwurf-id> [version]` |
 | `commit-step.sh` | `commit-step.sh <slug> <annotation-id> [--accept]` |
 | `discard-step.sh` | `discard-step.sh <slug>` |
 | `rollback.sh` | `rollback.sh <slug> <annotation-id\|baseline\|commit>` |

@@ -71,18 +71,27 @@ DRAFT_MAX_BUDGET_USD=4.00                          # je Entwurfslauf
 DRAFT_SOURCE_MAX_BYTES=200000                      # Ausgangsmaterial eines Entwurfs (Element aus der Seitendatei), darüber gekürzt mit Warnung
 DRAFT_IMPORT_EFFORT=medium                         # Übernahme eines Imports aus claude.ai (keine Neugestaltung)
 DRAFT_IMPORT_MAX_BUDGET_USD=2.00                   # je Übernahme eines Imports
-# DESIGN_SKILL_FILE=/pfad/zu/SKILL.md              # nicht gesetzt = installiertes Plugin frontend-design, leer gesetzt = ohne Skill
+# DESIGN_SKILLS="impeccable:craft-floor.md frontend-design"   # Gestaltungs-Skills im Systemprompt (Standard), Reihenfolge = Rangfolge; leer = ohne Skills
+# DESIGN_SKILLS_ANNOTATION= / DESIGN_SKILLS_DRAFT= # eigene Liste nur für Annotationen bzw. Entwürfe
+# DESIGN_SKILL_FILE=/pfad/zu/SKILL.md              # älter: eine Datei; gilt nur, solange DESIGN_SKILLS nicht gesetzt ist
 DESIGN_DOCS_MAX_BYTES=60000                        # weitere design/*.md als Hintergrund
 CONTEXT_HISTORY_COUNT=5
 RENDER_REVIEW=always                               # Sichtprüfung nach jeder Annotation: always | issues | off
 RENDER_MAX_ROUNDS=1                                # höchstens so viele Korrekturrunden nach der Sichtprüfung
 RENDER_VIEWPORTS=desktop:1440x900,mobil:390x844    # Ansichten der Sichtprüfung (dazu der Viewport der Auswahl, falls abweichend)
 # PLAYWRIGHT_CHROMIUM=/pfad/zu/chrome              # nur falls der Playwright-Browser nicht installiert werden kann
+DESIGN_CHECK=on                                    # Gestaltungsprüfung (impeccable detect) nach Annotationen und Entwürfen: on | off
+DESIGN_CHECK_VIEWPORTS=desktop:1440x900,mobil:390x844
+# IMPECCABLE_CMD=./.claude/skills/impeccable/scripts/impeccable   # Detektor; IMPECCABLE_BROWSER=/pfad/zu/chrome (sonst Playwright-Chromium)
 # DPS_NODE=/home/<user>/.nvm/versions/node/v24.13.1/bin/node   # fester Node für alle Skripte (sonst automatisch)
 NOTES_MAX_LINES=40
 ```
 
 **Sichtprüfung:** Nach dem Umsetzen rendert `render-check.sh` die Seite vorher und nachher mit Playwright (Chromium, ohne Netz, nur ein lokal gebundener Server), misst das gewählte Element (Stilwerte, abgeschnittener oder überstehender Text, horizontales Scrollen, Verdeckung, Kontrast, neue Script-Fehler) und legt Ausschnitte unter `sites/<slug>/.render/<id>/` ab (lokal ignoriert, nicht im Verlauf). Claude sieht sich die Bilder in derselben Session an und bessert bei Bedarf einmal nach; das kostet je Annotation etwa 5–10 s Rendern plus eine kurze Claude-Runde. Gemeldet werden nur Verschlechterungen gegenüber vorher. Fehlt Playwright oder der Browser, wird die Sichtprüfung übersprungen. Der Browser muss zur installierten Playwright-Version passen: nach `npm install` einmal `./node_modules/.bin/playwright install chromium` (nicht ein globales `npx playwright`).
+
+**Gestaltungs-Skills:** Gestaltungs-Skills werden in den Systemprompt jedes Claude-Laufs eingebettet, nachrangig zu den Gestaltungsleitlinien. Die Läufe haben kein Bash und können Skills nicht selbst laden. Ein Eintrag in `DESIGN_SKILLS` ist ein Skill-Name, optional mit Referenzdateien (`impeccable:craft-floor.md,polish.md`), oder ein absoluter Pfad zu einer `SKILL.md`. Gesucht wird in `.claude/skills/`, `~/.claude/skills/` und in den installierten Plugins. Fehlt ein Skill oder eine Referenz, läuft der Lauf ohne sie weiter und schreibt einen Hinweis ins Log. Skills aktualisieren: `npx skills update` (Stand in `skills-lock.json`), Plugins über `/plugin` in Claude Code. Page Studio liest die Dateien bei jedem Lauf neu ein.
+
+**Gestaltungsprüfung:** `design-check.sh` lässt den Detektor des Skills „impeccable“ über die ausgelieferte Seite laufen, vorher und nachher, je Ansicht im Browser. Gemeldet werden nur Befunde, die durch den Schritt neu entstanden sind, etwa zu wenig Kontrast, überlaufende Inhalte oder zu lange Zeilen; Altlasten der Website zählen nicht. Bei Annotationen kommen die Befunde in dieselbe Korrekturrunde wie die Sichtprüfung (Ergebnis in `annotations/A-xxx.json` unter `designCheck`). Bei Entwürfen zählen nur Befunde innerhalb der Komponente: Beim Entwerfen gibt es eine Korrekturrunde, bei Import und „Als Komponente“ nur Hinweise im Panel (Ergebnis in `draft.json` je Version). Eine Prüfung dauert etwa 8 s je Seite. Fehlen Detektor oder Browser, wird sie übersprungen.
 
 Ohne DDEV: `npm run server` (Port aus `BRIDGE_PORT`, Origin muss in `DPS_ALLOWED_ORIGINS` stehen).
 

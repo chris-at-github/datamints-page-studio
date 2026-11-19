@@ -20,6 +20,14 @@ if [[ "${FAKE_CLAUDE_DROP_VARIANT:-}" == "1" && "$PROMPT" == "Die Prüfung von "
 fi
 V="$(grep -oE 'v[0-9]+/' <<<"$PROMPT" | head -1 | tr -d /)"
 [[ -n "$V" ]] || V=v1
+# Gestaltungsprüfung: Kontrast erhöhen (FAKE_CLAUDE_PALE_BREAK=1: Korrektur macht die Komponente ungültig)
+if [[ "$PROMPT" == "Die Gestaltungsprüfung"* ]]; then
+  [[ -n "${FAKE_CLAUDE_ARGS:-}" ]] && cp "$FAKE_CLAUDE_ARGS" "$FAKE_CLAUDE_ARGS.design"
+  if [[ "${FAKE_CLAUDE_PALE_BREAK:-}" == "1" ]]; then sed -i 's#</section>#<script>x</script></section>#' "$V/component.html"
+  else sed -i 's/color: #eeeeee;/color: #1a1a1a;/' "$V/component.css"; fi
+  printf '{"type":"result","is_error":false,"result":"Gestaltungsprüfung: Kontrast der Überschrift erhöht.","session_id":"fake-session","total_cost_usd":'"$(fake_total 0.01)"',"num_turns":1}\n'
+  exit 0
+fi
 # Bei einer Überarbeitung den Namen der bestehenden Komponente beibehalten
 NAME="$(grep -oE 'Überarbeitung der bestehenden Komponente mx-[a-z0-9-]+' <<<"$PROMPT" | head -1 | sed 's/.*mx-//')"
 [[ -n "$NAME" ]] || NAME="${FAKE_CLAUDE_NAME:-test}"
@@ -29,7 +37,11 @@ if [[ "${FAKE_CLAUDE_BAD:-}" == "1" ]]; then
 else
   printf '<section class="mx-%s"><h2>Neu %s</h2></section>\n' "$NAME" "$V" >"$V/component.html"
 fi
-printf '@scope (.mx-%s) {\n  :scope { padding: 2rem; }\n}\n' "$NAME" >"$V/component.css"
+if [[ "${FAKE_CLAUDE_PALE:-}" == "1" ]]; then
+  printf '@scope (.mx-%s) {\n  :scope { padding: 2rem; background: #ffffff; }\n  h2 { color: #eeeeee; }\n}\n' "$NAME" >"$V/component.css"
+else
+  printf '@scope (.mx-%s) {\n  :scope { padding: 2rem; }\n}\n' "$NAME" >"$V/component.css"
+fi
 printf '[{"id":"P1","gruppe":"pflicht","titel":"Ansprache","text":"Sie-Form","umgesetzt":true}]\n' >"$V/befund.json"
 printf '{"name":"%s","title":"Test","bausteine":[{"key":"layout","label":"Layout","source":"neu"}]}\n' "$NAME" >"$V/meta.json"
 # Komponente für die Bibliothek: Vorlage mit Slots und zwei Varianten, component.json

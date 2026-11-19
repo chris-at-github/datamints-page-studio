@@ -391,7 +391,29 @@ check "Änderung an design/sortiment.md ohne „merken“ blockiert" '(( rc == 3
 rm -f "$SKILLF"
 OUT2="$(DESIGN_SKILL_FILE="" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" --leitlinien' 2>/dev/null)"
 check "Ohne Skill nur Leitlinien" 'grep -q "Gestaltungsleitlinien" <<<"$OUT2" && ! grep -q "Skill „frontend-design“ (nachrangig" <<<"$OUT2"'
+SKD="$(mktemp -d)/testskill"; mkdir -p "$SKD/reference"
+printf -- '---\nname: testskill\ndescription: x\n---\n\nSKILL-A-INHALT\n' >"$SKD/SKILL.md"; printf 'REFERENZ-INHALT\n' >"$SKD/reference/boden.md"
+SKF="$(mktemp)"; printf -- '---\nname: zweiter\n---\nSKILL-B-INHALT\n' >"$SKF"
+OUT2="$(DESIGN_SKILLS="$SKD/SKILL.md:boden.md,fehlt.md $SKF gibtsnicht" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" "" annotation' 2>"$SKD/err")"
+check "DESIGN_SKILLS: mehrere Skills in Reihenfolge, Referenz eingebunden, Fehlendes nur als Hinweis" 'grep -q "^# Skill „testskill“" <<<"$OUT2" && grep -q "REFERENZ-INHALT" <<<"$OUT2" && [[ "$(grep -n "SKILL-A-INHALT\|SKILL-B-INHALT" <<<"$OUT2" | cut -d: -f2 | paste -sd,)" == "SKILL-A-INHALT,SKILL-B-INHALT" ]] && ! grep -q "^name: testskill" <<<"$OUT2" && grep -q "kein Bash" <<<"$OUT2" && grep -q "Skill-Referenz nicht gefunden (testskill: fehlt.md)" "$SKD/err" && grep -q "Skill nicht gefunden (gibtsnicht)" "$SKD/err"'
+OUT2="$(DESIGN_SKILLS="$SKF" DESIGN_SKILLS_DRAFT="" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" "" draft' 2>/dev/null)"
+OUT3="$(DESIGN_SKILLS="$SKF" DESIGN_SKILLS_DRAFT="" bash -c 'source scripts/lib/common.sh; build_system_prompt /dev/stdout "" "" annotation' 2>/dev/null)"
+check "DESIGN_SKILLS_DRAFT leer: Entwurf ohne Skill, Annotation mit" '! grep -q SKILL-B-INHALT <<<"$OUT2" && grep -q SKILL-B-INHALT <<<"$OUT3"'
+rm -rf "$(dirname "$SKD")" "$SKF"
 check "Neuer Entwurf mit Version 1" '[[ "$(jq -r .status <<<"$OUT")" == ok && "$(jq -r .version <<<"$OUT")" == 1 && -f "$S/drafts/$DN/v1/component.html" ]]'
+# Gestaltungsprüfung beim Entwurf: blasse Überschrift -> Korrekturrunde; Korrektur ungültig -> Fassung davor bleibt
+OUTP="$(FAKE_CLAUDE_PALE=1 FAKE_CLAUDE_NAME=blass PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
+DP="$(jq -r .draft <<<"$OUTP")"
+if [[ "$(jq -r '.versions[-1].designCheck // null' "$S/drafts/$DP/draft.json" 2>/dev/null)" == null ]]; then
+  echo "  (Gestaltungsprüfung beim Entwurf übersprungen: Detektor oder Browser nicht verfügbar)"
+else
+  check "Entwurf: Gestaltungsbefund korrigiert, Nachmessung ohne Befund" 'grep -q "#1a1a1a" "$S/drafts/$DP/v1/component.css" && jq -e ".versions[-1].designCheck.findings == [] and (.versions[-1].summary | test(\"Gestaltungsprüfung:\"))" "$S/drafts/$DP/draft.json" >/dev/null'
+  OUTP="$(FAKE_CLAUDE_PALE=1 FAKE_CLAUDE_PALE_BREAK=1 FAKE_CLAUDE_NAME=blass PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBF" 2>/dev/null)" || true
+  DP2="$(jq -r .draft <<<"$OUTP")"
+  check "Entwurf: ungültige Korrektur verworfen, Befund bleibt als Hinweis" '[[ "$(jq -r .status <<<"$OUTP")" == ok ]] && ! grep -q "<script" "$S/drafts/$DP2/v1/component.html" && [[ ! -e "$S/drafts/$DP2/.v1.vor-pruefung" ]] && jq -e "[.warnings[] | select(startswith(\"Gestaltungsprüfung:\"))] | length > 0" <<<"$OUTP" >/dev/null'
+  ./scripts/draft-discard.sh "$SLUG" "$DP2" >/dev/null 2>&1 || true
+fi
+./scripts/draft-discard.sh "$SLUG" "$DP" >/dev/null 2>&1 || true
 check "Ausgangsmaterial und Regeln im Entwurf" '[[ -f "$S/drafts/$DN/source.html" && -f "$S/drafts/$DN/CLAUDE.md" ]] && jq -e ".[0].classes == \"btn\"" "$S/drafts/$DN/bausteine.json" >/dev/null'
 check "Abzug unverändert" '[[ -z "$(git -C "$S" status --porcelain)" ]]'
 check "Material ungekürzt aus der Seitendatei (nicht aus dem Browser)" 'jq -e ".material.source == \"abzug\" and .material.truncated == false" "$S/drafts/$DN/draft.json" >/dev/null && grep -q "<footer>© Testfirma</footer>" "$S/drafts/$DN/source.html" && ! grep -q "Browser-Stand" "$S/drafts/$DN/source.html"'
@@ -496,9 +518,29 @@ else
   check "Fehler korrigiert, Nachmessung ohne Fehler" '! grep -q TESTFEHLER "$S/overrides.css" && jq -e ".render.status == \"ok\" and .render.errors == 0" "$S/annotations/$RID.json" >/dev/null'
   check "Korrekturrunde und Kosten in der Annotation" 'jq -e "(.result.review | length) == 1 and .result.review[0].costUsd == 0.02 and .result.costUsd == 0.07 and (.result.summary | test(\"Sichtprüfung: korrigiert\"))" "$S/annotations/$RID.json" >/dev/null'
   check "Keine Bilder im Commit" '! git -C "$S" show --name-only --format= HEAD | grep -q "\.render"'
-  OUT="$(RENDER_REVIEW=off PATH="$ROOT/tests/fake-claude-render:$PATH" ./scripts/run-annotation.sh "$SLUG" "$JOBR" 2>/dev/null)" || true
+  OUT="$(RENDER_REVIEW=off DESIGN_CHECK=off PATH="$ROOT/tests/fake-claude-render:$PATH" ./scripts/run-annotation.sh "$SLUG" "$JOBR" 2>/dev/null)" || true
   RID="$(jq -r .annotationId <<<"$OUT")"
-  check "RENDER_REVIEW=off: keine Sichtprüfung" 'jq -e ".render == null and .result.review == null" "$S/annotations/$RID.json" >/dev/null'
+  check "RENDER_REVIEW=off, DESIGN_CHECK=off: keine Prüfung" 'jq -e ".render == null and .designCheck == null and .result.review == null" "$S/annotations/$RID.json" >/dev/null'
+
+  echo "Gestaltungsprüfung (design-check.sh, Detektor des Skills impeccable)"
+  ann091() { jq -n --arg page "$ENTRY" '{id:"A-091", prompt:"Headline", page:$page, selector:"h1.hero__title"}' >"$S/annotations/A-091.json"; }
+  ann091
+  printf '/* A-091: blass */\nh1, p { color: #ececec !important; }\n' >>"$S/overrides.css"
+  set +e; OUT="$(./scripts/design-check.sh "$SLUG" A-091 2>/dev/null)"; rc=$?; set -e
+  if (( rc == 4 )); then
+    echo "  (übersprungen: $(jq -r .error <<<"$OUT" | cut -c1-120))"
+  else
+    check "Neuer Kontrast-Befund: Exit 3" '(( rc == 3 )) && jq -e "[.findings[] | select(.rule == \"low-contrast\")] | length > 0" <<<"$OUT" >/dev/null'
+    check "Befunde mit Ansichten und ohne Altlasten" 'jq -e "(.findings | all(.viewports | length > 0)) and .counts.after > .counts.before" <<<"$OUT" >/dev/null'
+    ./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1
+    ann091; printf '/* A-091: unverändert */\n' >>"$S/overrides.css"
+    set +e; OUT="$(./scripts/design-check.sh "$SLUG" A-091 2>/dev/null)"; rc=$?; set -e
+    check "Ohne sichtbare Änderung keine Befunde: Exit 0" '(( rc == 0 )) && jq -e ".findings == []" <<<"$OUT" >/dev/null'
+    ./scripts/discard-step.sh "$SLUG" >/dev/null 2>&1; ann091
+    set +e; OUT="$(DESIGN_CHECK=off ./scripts/design-check.sh "$SLUG" A-091 2>/dev/null)"; rc=$?; set -e
+    check "DESIGN_CHECK=off: Exit 4" '(( rc == 4 ))'
+  fi
+  rm -f "$S/annotations/A-091.json"
   rm -f "$JOBR" "$PROMPTF" logs/claude-job-test-render.json logs/claude-job-test-render.stderr.log
 fi
 
