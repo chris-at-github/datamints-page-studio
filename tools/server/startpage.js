@@ -198,6 +198,7 @@ export function renderStartPage({ sites, token }) {
     </div>
   </form>
 </dialog>
+<script src="/__dps/notify.js"></script>
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
@@ -208,6 +209,7 @@ export function renderStartPage({ sites, token }) {
   const jobs = new Map();
 
   async function api(path, opts = {}) {
+    if (opts.method === 'POST' && window.dpsNotify) window.dpsNotify.ask();
     const res = await fetch(path, { ...opts, headers: { 'X-DPS-Token': TOKEN, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || res.statusText);
@@ -407,13 +409,22 @@ export function renderStartPage({ sites, token }) {
       jobsEl.append(tr);
     }
   }
-  function upsert(job) { jobs.set(job.id, job); render(); }
+  function upsert(job) { jobs.set(job.id, job); if (window.dpsNotify) window.dpsNotify.observe(job, LABEL[job.type]); render(); }
 
-  api('/api/jobs').then((d) => { d.jobs.forEach((j) => jobs.set(j.id, j)); render(); }).catch((e) => { jobsEl.textContent = e.message; });
-  const es = new EventSource('/api/events?token=' + encodeURIComponent(TOKEN));
-  es.addEventListener('job', (e) => upsert(JSON.parse(e.data)));
-  // Liste neu laden, aber keine laufende Eingabe verwerfen
-  es.addEventListener('sites', () => { if (!document.getElementById('url').value && !document.getElementById('urls').value && !document.getElementById('p-slug').value && !document.getElementById('p-title').value && !pagesDialog.open) location.reload(); });
+  api('/api/jobs').then((d) => { d.jobs.forEach((j) => { jobs.set(j.id, j); if (window.dpsNotify) window.dpsNotify.observe(j, LABEL[j.type]); }); render(); }).catch((e) => { jobsEl.textContent = e.message; });
+  let esOpened = false;
+  function connectEvents() {
+    const es = new EventSource('/api/events?token=' + encodeURIComponent(TOKEN));
+    es.addEventListener('job', (e) => upsert(JSON.parse(e.data)));
+    // Liste neu laden, aber keine laufende Eingabe verwerfen
+    es.addEventListener('sites', () => { if (!document.getElementById('url').value && !document.getElementById('urls').value && !document.getElementById('p-slug').value && !document.getElementById('p-title').value && !pagesDialog.open) location.reload(); });
+    // nach Verbindungsabbruch Auftragsliste neu abgleichen
+    es.addEventListener('open', () => { if (esOpened) api('/api/jobs').then((d) => d.jobs.forEach(upsert)).catch(() => {}); esOpened = true; });
+    // Antwortet der Server beim Wiederverbinden mit einem Fehler (z. B. 502 während ddev restart),
+    // gibt der Browser die Verbindung endgültig auf – dann selbst neu verbinden
+    es.addEventListener('error', () => { if (es.readyState === EventSource.CLOSED) { es.close(); setTimeout(connectEvents, 3000); } });
+  }
+  connectEvents();
 })();
 </script>
 </body>

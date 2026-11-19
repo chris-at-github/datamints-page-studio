@@ -143,6 +143,7 @@
   }
 
   function api(method, path, body) {
+    if (method === 'POST' && window.dpsNotify) window.dpsNotify.ask();
     var opts = { method: method, headers: { 'X-DPS-Token': TOKEN }, credentials: 'same-origin' };
     if (body instanceof FormData) {
       opts.body = body;
@@ -2518,6 +2519,7 @@
 
   function trackJob(job) {
     if (!job || job.slug !== SLUG) return;
+    if (window.dpsNotify) window.dpsNotify.observe(job, TYPE_LABEL[job.type]);
     var prev = jobs[job.id];
     // Statuswechsel eines Auftrags: gemerkten Dateistatus verwerfen (könnte Claudes Zwischenstand enthalten)
     if (!prev || prev.status !== job.status) {
@@ -2678,6 +2680,7 @@
       .then(function (data) {
         (data && data.jobs ? data.jobs : []).forEach(function (j) {
           if (j.slug !== SLUG) return;
+          if (window.dpsNotify) window.dpsNotify.observe(j, TYPE_LABEL[j.type]);
           jobs[j.id] = j;
           if (ACTIVE[j.status]) seenActive[j.id] = true;
         });
@@ -2713,6 +2716,14 @@
     es.addEventListener('open', function () {
       // nach Verbindungsabbruch Zustand neu abgleichen
       loadJobs();
+      loadQueue();
+    });
+    // Antwortet der Server beim Wiederverbinden mit einem Fehler (z. B. 502 während ddev restart),
+    // gibt der Browser die Verbindung endgültig auf – dann selbst neu verbinden
+    es.addEventListener('error', function () {
+      if (es.readyState !== EventSource.CLOSED) return;
+      es.close();
+      setTimeout(connectEvents, 3000);
     });
   }
 

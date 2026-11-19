@@ -20,11 +20,13 @@ const SITES_DIR = abs(env.SITES_DIR, './sites');
 const JOBS_DIR = abs(env.JOBS_DIR, './jobs');
 const STATE_DIR = abs(env.STATE_DIR, './state');
 const OVERLAY_FILE = path.join(ROOT, 'tools/overlay/overlay.js');
+const NOTIFY_FILE = path.join(ROOT, 'tools/overlay/notify.js');
 const FAVICON_SVG = path.join(ROOT, 'tools/server/favicon.svg');
 const FAVICON_ICO = path.join(ROOT, 'tools/server/favicon.ico');
 const FONTS_DIR = path.join(ROOT, 'tools/server/fonts');
 const LOGO_SVG = path.join(ROOT, 'tools/server/logo.svg');
 const LOGO_MARK_SVG = path.join(ROOT, 'tools/server/logo-mark.svg');
+const NOTIFY_ICON = path.join(ROOT, 'tools/server/notify-icon.png');
 const PORT = Number(env.BRIDGE_PORT || 3000);
 const TOKEN = env.DPS_API_TOKEN || '';
 const IMAGE_MAX_COUNT = Number(env.IMAGE_MAX_COUNT || 3);
@@ -181,7 +183,7 @@ function injectHtml(buf, slug, opts = {}) {
     head = `<link rel="stylesheet" href="${b}/__tokens.css" data-dps="tokens"><link rel="stylesheet" href="${b}/__overrides.css" data-dps="overrides">`;
   }
   head += '<link rel="icon" href="/favicon.svg" type="image/svg+xml" data-dps="favicon">';
-  const body = `<script data-dps="config">window.__DPS__=${cfg}</script><script src="/__dps/overlay.js" defer data-dps="overlay"></script>`;
+  const body = `<script data-dps="config">window.__DPS__=${cfg}</script><script src="/__dps/notify.js" defer data-dps="notify"></script><script src="/__dps/overlay.js" defer data-dps="overlay"></script>`;
   let html = buf.toString('latin1'); // byte-treu, Injektion ist reines ASCII
   if (layered) html = layerLegacyCss(html);
   const hi = html.search(/<\/head\s*>/i);
@@ -1260,8 +1262,8 @@ const server = http.createServer(async (req, res) => {
       const html = renderStartPage({ sites: sites.sites || [], token: TOKEN });
       return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': APP_CSP, 'X-Frame-Options': 'DENY' });
     }
-    if (p === '/__dps/overlay.js') {
-      const js = await fsp.readFile(OVERLAY_FILE);
+    if (p === '/__dps/overlay.js' || p === '/__dps/notify.js') {
+      const js = await fsp.readFile(p === '/__dps/overlay.js' ? OVERLAY_FILE : NOTIFY_FILE);
       return send(res, 200, js, { 'Content-Type': 'text/javascript; charset=utf-8' });
     }
     let m;
@@ -1283,6 +1285,10 @@ const server = http.createServer(async (req, res) => {
     if (p === '/__dps/logo.svg' || p === '/__dps/logo-mark.svg') {
       const svg = await fsp.readFile(p === '/__dps/logo.svg' ? LOGO_SVG : LOGO_MARK_SVG);
       return send(res, 200, svg, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+    }
+    if (p === '/__dps/notify-icon.png') {
+      const png = await fsp.readFile(NOTIFY_ICON);
+      return send(res, 200, png, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
     }
     if (p === '/favicon.svg') {
       const svg = await fsp.readFile(FAVICON_SVG);
