@@ -29,6 +29,7 @@ function siteRow(s) {
         <button class="btn menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-${esc(s.slug)}" aria-label="Weitere Aktionen für ${esc(s.slug)}">Aktionen <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
         <span class="menu" id="menu-${esc(s.slug)}" role="menu" hidden>
           ${menu}
+          <button type="button" role="menuitem" data-action="share">Für Kunden exportieren …</button>
           <button type="button" role="menuitem" data-action="report">Report erzeugen</button>
           ${s.hasReport ? `<a role="menuitem" href="/report/${esc(s.slug)}" target="_blank">Report ansehen</a>` : ''}
         </span>
@@ -103,6 +104,11 @@ export function renderStartPage({ sites, token }) {
   dialog h2 { margin-bottom:4px; }
   dialog p.muted { word-break:normal; overflow-wrap:anywhere; }
   dialog .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+  fieldset.choices { border:0; margin:12px 0 4px; padding:0; }
+  fieldset.choices legend { font-weight:600; margin-bottom:6px; padding:0; }
+  label.choice { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px; cursor:pointer; }
+  label.choice:has(input:checked) { border-color:var(--primary, #0f5d5d); }
+  label.choice input { margin-top:4px; }
   details { margin:14px 0 6px; }
   details summary { cursor:pointer; color:var(--muted); list-style:none; display:inline-flex; align-items:center; gap:6px; }
   details summary::-webkit-details-marker { display:none; }
@@ -160,6 +166,24 @@ export function renderStartPage({ sites, token }) {
     </table>
   </section>
 </main>
+<dialog id="share-dialog" aria-labelledby="share-title">
+  <form id="share-form" method="dialog">
+    <h2 id="share-title">Für Kunden exportieren</h2>
+    <p class="muted" id="share-site"></p>
+    <fieldset class="choices">
+      <legend>Was soll in die ZIP-Datei?</legend>
+      <label class="choice"><input type="radio" name="share-what" value="beides" checked><span><strong>Beides</strong><br><span class="muted">Seiten zum Öffnen im Browser und Screenshots</span></span></label>
+      <label class="choice"><input type="radio" name="share-what" value="bilder"><span><strong>Bilder</strong><br><span class="muted">Screenshots jeder Seite in voller Länge, Desktop (1440 px) und Mobil (390 px)</span></span></label>
+      <label class="choice"><input type="radio" name="share-what" value="html"><span><strong>HTML</strong><br><span class="muted">Seiten zum Öffnen per Doppelklick, ohne Webserver</span></span></label>
+    </fieldset>
+    <p class="muted">Mit Übersicht (index.html). Bilder bleiben auf dem Server der Website und werden beim Ansehen aus dem Internet geladen. Exportiert wird der aktuelle Stand, offene Entwürfe nicht.</p>
+    <div id="share-msg" class="err" role="alert"></div>
+    <div class="actions">
+      <button class="btn" type="button" id="share-cancel">Abbrechen</button>
+      <button class="btn primary" type="submit">Exportieren</button>
+    </div>
+  </form>
+</dialog>
 <dialog id="pages-dialog" aria-labelledby="pages-title">
   <form id="pages-form" method="dialog">
     <h2 id="pages-title">Seiten hinzufügen</h2>
@@ -177,7 +201,7 @@ export function renderStartPage({ sites, token }) {
 <script>
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, '\\u003c')};
-  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'page-import': 'Seite importieren', 'page-delete': 'Seite löschen', 'component-delete': 'Komponente löschen', 'component-sync': 'Kopien angleichen', 'component-rename': 'Komponente umbenennen', 'component-merge': 'Komponenten zusammenführen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
+  const LABEL = { 'project-new': 'Neues Projekt', 'project-package': 'Paket', 'project-export': 'Export', 'site-share': 'Kunden-Export', 'site-new': 'Neue Website', 'site-recrawl': 'Neu einlesen', annotate: 'Annotation', decision: 'Entscheidung', rollback: 'Rücksprung', report: 'Report', 'design-save': 'Design-Vorgaben', 'tokens-propose': 'Token-Vorschläge', 'pages-add': 'Seiten hinzufügen', 'page-import': 'Seite importieren', 'page-delete': 'Seite löschen', 'component-delete': 'Komponente löschen', 'component-sync': 'Kopien angleichen', 'component-rename': 'Komponente umbenennen', 'component-merge': 'Komponenten zusammenführen', 'areas-sync': 'Bereiche angleichen', 'local-commit': 'Lokale Änderungen', 'inspect-apply': 'Inspektor-Änderung' };
   const STATUS = { pending: 'wartet', running: 'läuft', review: 'Prüfung nötig', done: 'fertig', failed: 'fehlgeschlagen' };
   const msg = document.getElementById('msg');
   const jobsEl = document.getElementById('jobs');
@@ -259,6 +283,7 @@ export function renderStartPage({ sites, token }) {
     const action = btn.dataset.action;
     closeMenu();
     if (action === 'pages') { openPages(slug); return; }
+    if (action === 'share') { openShare(slug); return; }
     const keepDesign = document.getElementById('keep-design').checked;
     if (action === 'recrawl' && !confirm('Website „' + slug + '“ neu einlesen?\\n\\nDer bisherige Stand wird mit Report archiviert, alle Änderungen sind danach nicht mehr aktiv.\\n' +
       (keepDesign ? 'Tokens und Regeln werden übernommen.' : 'Tokens und Regeln werden NICHT übernommen.'))) return;
@@ -270,6 +295,32 @@ export function renderStartPage({ sites, token }) {
       upsert(job);
     }
     catch (err) { alert(err.message); }
+    finally { btn.disabled = false; }
+  });
+
+  // Für Kunden exportieren: Beides, Bilder oder HTML
+  const shareDialog = document.getElementById('share-dialog');
+  const shareForm = document.getElementById('share-form');
+  const shareMsg = document.getElementById('share-msg');
+  let shareSlug = null;
+  function openShare(slug) {
+    shareSlug = slug;
+    document.getElementById('share-site').textContent = slug;
+    shareMsg.textContent = '';
+    shareDialog.showModal();
+    shareForm.querySelector('input[name=share-what]:checked').focus();
+  }
+  document.getElementById('share-cancel').addEventListener('click', () => shareDialog.close());
+  shareForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const what = shareForm.querySelector('input[name=share-what]:checked').value;
+    const btn = shareForm.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const { job } = await api('/api/sites/' + shareSlug + '/share', { method: 'POST', body: JSON.stringify({ what }) });
+      upsert(job);
+      shareDialog.close();
+    } catch (err) { shareMsg.textContent = err.message; }
     finally { btn.disabled = false; }
   });
 
@@ -341,6 +392,12 @@ export function renderStartPage({ sites, token }) {
       if (j.type === 'component-sync' && j.params?.name) details.append('mx-' + j.params.name + (j.result?.synced !== undefined ? ': ' + j.result.synced + ' Kopie(n) angeglichen' : ''));
       if ((j.type === 'project-package' || j.type === 'project-export') && j.status === 'done' && j.result) {
         details.append((j.type === 'project-package' ? 'Paket: ' : (j.result.components || []).length + ' Komponente(n): ') + j.result.dir);
+        for (const w of j.result.warnings || []) { const d = document.createElement('div'); d.className = 'muted'; d.textContent = '⚠ ' + w; details.append(d); }
+      }
+      if (j.type === 'site-share' && j.status === 'done' && j.result) {
+        const what = { beides: 'HTML und Screenshots', bilder: 'Screenshots', html: 'HTML' }[j.result.what] || '';
+        details.append('ZIP (' + what + ', ' + ((j.result.bytes || 0) / 1048576).toFixed(1).replace('.', ',') + ' MB): ');
+        const code = document.createElement('code'); code.textContent = j.result.zipHost || j.result.zip; details.append(code);
         for (const w of j.result.warnings || []) { const d = document.createElement('div'); d.className = 'muted'; d.textContent = '⚠ ' + w; details.append(d); }
       }
       if (j.type === 'report' && j.status === 'done') { const a = document.createElement('a'); a.href = '/report/' + j.slug; a.target = '_blank'; a.textContent = 'Report ansehen'; details.append(a); }

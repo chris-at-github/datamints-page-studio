@@ -564,6 +564,32 @@ else
   rm -f "$JOBR" "$PROMPTF" logs/claude-job-test-render.json logs/claude-job-test-render.stderr.log
 fi
 
+echo "Kunden-Export (site-share.sh)"
+set +e; OUT="$(./scripts/site-share.sh "$SLUG" html 2>/dev/null)"; rc=$?; set -e
+ZD="$(mktemp -d)"
+[[ -f "$(jq -r .zip <<<"$OUT")" ]] && python3 -m zipfile -e "$(jq -r .zip <<<"$OUT")" "$ZD" 2>/dev/null
+ZR="$(ls -d "$ZD"/*/ 2>/dev/null | head -1)"; ZP="$(jq -r '.pages[0].page' <<<"$OUT")"
+check "HTML: ZIP mit Übersicht und Seite, nicht im Verlauf" '(( rc == 0 )) && [[ -f "$ZR/index.html" && -f "$ZR/website/$ZP" ]] && [[ -z "$(git -C "$S" status --porcelain)" ]]'
+check "HTML: CSS von Page Studio eingebettet, ohne Overlay und ohne Verweise auf den Server" 'grep -q "data-dps=\"overrides\"" "$ZR/website/$ZP" && grep -q "A-0" "$ZR/website/$ZP" && ! grep -q "__dps/overlay.js\|__overrides.css\|__tokens.css" "$ZR/website/$ZP"'
+check "HTML: Übersicht verlinkt die Seite, keine Screenshots" 'grep -q "href=\"website/$ZP\"" "$ZR/index.html" && [[ ! -d "$ZR/screenshots" ]]'
+rm -rf "$ZD"
+if node -e 'require("playwright")' 2>/dev/null; then
+  set +e; OUT="$(./scripts/site-share.sh "$SLUG" bilder 2>/dev/null)"; rc=$?; set -e
+  check "Bilder: Screenshots Desktop und Mobil je Seite, kein HTML" '(( rc == 0 )) && jq -e "(.pages | length) > 0 and all(.pages[]; .screenshots.desktop and .screenshots.mobil and .html == null)" <<<"$OUT" >/dev/null && python3 -m zipfile -l "$(jq -r .zip <<<"$OUT")" | grep -q "screenshots/.*-mobil.png" && ! python3 -m zipfile -l "$(jq -r .zip <<<"$OUT")" | grep -q " website/"'
+fi
+set +e; OUT="$(./scripts/site-share.sh "$SLUG" alles 2>/dev/null)"; rc=$?; set -e
+check "Ungültige Auswahl: Exit 2" '(( rc == 2 ))'
+SJ="$(mktemp -d)"; SHPORT="$((SPORT + 1))"
+JOBS_DIR="$SJ" DPS_API_TOKEN="$STOKEN" BRIDGE_PORT="$SHPORT" node tools/server/index.js >/dev/null 2>&1 &
+SH_PID=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$SHPORT/" && break; sleep 0.3; done
+C1="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-DPS-Token: $STOKEN" -H 'Content-Type: application/json' -d '{"what":"alles"}' "http://127.0.0.1:$SHPORT/api/sites/$SLUG/share")"
+C2="$(curl -s -X POST -H "X-DPS-Token: $STOKEN" -H 'Content-Type: application/json' -d '{"what":"bilder"}' "http://127.0.0.1:$SHPORT/api/sites/$SLUG/share")"
+kill "$SH_PID" 2>/dev/null || true
+check "API /share: ungültige Auswahl 400, gültige legt Auftrag site-share an" '[[ "$C1" == 400 ]] && jq -e ".job.type == \"site-share\" and .job.params.what == \"bilder\"" <<<"$C2" >/dev/null && ls "$SJ"/pending/*.json >/dev/null 2>&1'
+rm -rf "$SJ"
+rm -rf "$S/export"
+
 echo "Seite löschen (page-delete.sh)"
 HD="/$(basename "$(dirname "$P")")"
 set +e; OUT="$(./scripts/page-delete.sh "$SLUG" "$HD/leistungen/index.html" 2>/dev/null)"; rc=$?; set -e

@@ -229,6 +229,11 @@ async function handle(job, logFile) {
       return runScript('project-package.sh', [slug], logFile);
     case 'project-export':
       return runScript('project-export.sh', [slug], logFile);
+    case 'site-share': {
+      const what = String(job.params?.what || 'beides');
+      if (!['beides', 'bilder', 'html'].includes(what)) return { code: 1, result: { status: 'error', error: 'Ungültige Auswahl' } };
+      return runScript('site-share.sh', [slug, what], logFile);
+    }
     case 'draft-brief': {
       const d = String(job.params?.draft || '');
       if (!/^D-\d{3,}$/.test(d)) return { code: 1, result: { status: 'error', error: 'Ungültiger Entwurf' } };

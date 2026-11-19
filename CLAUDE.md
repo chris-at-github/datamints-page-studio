@@ -20,6 +20,7 @@ Page Studio erstellt lokale Abzüge von Websites, lässt Claude Code einzelne El
 | `component-merge.sh` | `component-merge.sh <slug> <quelle> <ziel> <variante>` |
 | `project-package.sh` | `project-package.sh <slug>` |
 | `project-export.sh` | `project-export.sh <slug>` |
+| `site-share.sh` | `site-share.sh <slug> [beides\|bilder\|html]` |
 | `crawl.sh` | `crawl.sh <slug>` |
 | `clean.sh` | `clean.sh <slug>` |
 | `pages-add.sh` | `pages-add.sh <slug> <urls.txt>` |

@@ -955,7 +955,7 @@ async function handleApi(req, res, url) {
     return send(res, 202, { job: await createJob('page-delete', slug, { page }) });
   }
 
-  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts|components|package|export)$/))) {
+  if ((m = p.match(/^\/api\/sites\/([^/]+)\/(recrawl|annotations|rollback|history|report|design|tokens\/propose|pages|areas\/sync|local-commit|inspect|status|queue|queue\/run|drafts|components|package|export|share)$/))) {
     const [, slug, action] = m;
     if (!validSlug(slug)) return sendError(res, 400, 'Ungültiger Slug');
     if (!siteExists(slug)) return sendError(res, 404, 'Website nicht gefunden');
@@ -1085,6 +1085,14 @@ async function handleApi(req, res, url) {
       // Tokens aus tokens-quelle.css übernehmen (Commit unter design/) und Paket für Claude erzeugen
       if (await busyCheck(res, slug, 'Das Paket')) return;
       return send(res, 202, { job: await createJob('project-package', slug, {}) });
+    }
+    if (action === 'share') {
+      // Kunden-Export (site-share.sh): beides | bilder | html; liest nur, blockiert nur bei laufendem Auftrag
+      const body = await readBody(req);
+      const what = body.what === undefined ? 'beides' : body.what;
+      if (!['beides', 'bilder', 'html'].includes(what)) return sendError(res, 400, 'Ungültige Auswahl (beides, bilder oder html)');
+      if (await draftBusyCheck(res, slug)) return;
+      return send(res, 202, { job: await createJob('site-share', slug, { what }) });
     }
     if (action === 'export') {
       if (await draftBusyCheck(res, slug)) return;
