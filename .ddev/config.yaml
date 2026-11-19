@@ -10,5 +10,5 @@ web_extra_exposed_ports:
     https_port: 3443
 web_extra_daemons:
   - name: dps
-    command: node --env-file=.env tools/server/index.js
+    command: node --watch --env-file=.env tools/server/index.js
     directory: /var/www/html

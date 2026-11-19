@@ -719,7 +719,10 @@ body{margin:0;background:#f2f1ed;color:#252624}
 .kb-comp>h2 code,.kb-meta code,.kb-vlabel code{font-size:12px;color:#1a6e40;background:#eaf5ec;padding:1px 5px;border-radius:4px}
 .kb-desc{margin:0 0 6px;font-size:14px}
 .kb-meta{margin:0 0 14px;font-size:13px;color:#5b5b56}
-.kb-vars{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 24px}
+/* Varianten nebeneinander: gestrichelte Linie mittig in der Spaltenlücke; am Zeilenanfang liegt sie links außerhalb und wird abgeschnitten */
+.kb-vars{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 49px;clip-path:inset(-100vh -100vw -100vh -20px)}
+.kb-var{position:relative}
+.kb-var::before{content:"";position:absolute;top:0;bottom:0;left:-25px;border-left:1px dashed #e1ded8;pointer-events:none}
 .kb-var{flex:1 1 100%;min-width:0;border-top:1px dashed #e1ded8;padding-top:12px}
 .kb-schmal .kb-vars{border-top:1px dashed #e1ded8;padding-top:12px}
 .kb-schmal .kb-var{flex:none;width:min-content;min-width:280px;max-width:100%;border-top:0;padding-top:0}
