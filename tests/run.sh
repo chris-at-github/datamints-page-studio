@@ -217,6 +217,7 @@ check "Ungültiger Selektor abgelehnt, nichts geändert" '(( rc != 0 )) && [[ -z
 printf 'http://127.0.0.1:%s/team.html\n' "$PORT" >"$PA"
 OUT="$(./scripts/pages-add.sh "$SLUG" "$PA" 2>/dev/null)"; rm -f "$PA"
 TP="$(dirname "$P")/team.html"
+check "picture/source srcset: Bilder nachgeladen und lokal verlinkt" '[[ -f "$(dirname "$TP")/img/team-gross.png" && -f "$(dirname "$TP")/img/team-klein.png" ]] && grep -q "srcset=\"img/team-gross.png\"" "$TP" && grep -q "srcset=\"img/team-klein.png 1x, http://127.0.0.1:$PORT/img/fehlt.png 2x\"" "$TP"'
 check "Neue Seite übernimmt einheitlichen Header automatisch" 'jq -e ".areas.changed[0].areas | index(\"Header\")" <<<"$OUT" >/dev/null && grep -q "<span>Neu</span>" "$TP" && grep -q "© Testfirma" "$TP"'
 ann A-017 "{\"page\":\"/$(basename "$(dirname "$P")")/index.html\"}"
 sed -i 's#<span>Neu</span>#<span>Neu</span><em>Schritt</em>#' "$P"
