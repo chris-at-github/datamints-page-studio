@@ -30,6 +30,9 @@ PROMPT_USER="$(jq -r '.prompt // ""' <<<"$P")"
 DID="$(jq -r '.draft // ""' <<<"$P")"
 IMPORT_FILE="$(jq -r '.importFile // ""' <<<"$P")"
 MODE="$(jq -r '.mode // ""' <<<"$P")"
+# Platzierung (nur neue Entwürfe): replace = Element ersetzen, before/after = Komponente davor/danach einfügen
+PLACEMENT="$(jq -r '.placement // "replace"' <<<"$P")"
+case "$PLACEMENT" in replace|before|after) ;; *) die "Ungültige Platzierung: $PLACEMENT" ;; esac
 [[ -n "$IMPORT_FILE" ]] && MODE=import
 [[ -n "$MODE" ]] || MODE=create
 case "$MODE" in create|brief|import|component|library) ;; *) die "Ungültiger Modus: $MODE" ;; esac
@@ -61,6 +64,7 @@ if [[ "$MODE" == library ]]; then
   fi
 fi
 [[ "$MODE" == brief && -n "$DID" ]] && die "Briefing für bestehende Entwürfe: draft-brief.sh"
+[[ "$MODE" == component || "$MODE" == library ]] && PLACEMENT=replace
 if [[ "$MODE" == import ]]; then
   [[ "$IMPORT_FILE" == jobs/assets/*.html && "$IMPORT_FILE" != *".."* && -f "$DPS_ROOT/$IMPORT_FILE" ]] || die "Import-Datei nicht gefunden: $IMPORT_FILE"
   [[ -n "$PROMPT_USER" ]] || PROMPT_USER="Übernahme des Entwurfs aus claude.ai"
@@ -153,7 +157,8 @@ if [[ -z "$DID" ]]; then
     const m = html.match(/^\s*<[a-z][a-z0-9-]*\b[^>]*\bclass\s*=\s*["\x27]([^"\x27]*)["\x27]/i);
     const c = m && m[1].split(/\s+/).find((x) => /^mx-[a-z0-9-]+$/.test(x));
     process.stdout.write(c ? c.slice(3) : "");' "$DDIR/source.html")"
-  if [[ -n "$REVISES" && -f "$SITE/components/mx-$REVISES.css" ]]; then
+  # Davor/danach einfügen: Das gewählte Element bleibt; auch wenn es eine Komponente ist, entsteht eine neue
+  if [[ -n "$REVISES" && "$PLACEMENT" == replace && -f "$SITE/components/mx-$REVISES.css" ]]; then
     cp "$SITE/components/mx-$REVISES.css" "$DDIR/bestand-komponente.css"
     log "$DID überarbeitet die Komponente mx-$REVISES"
   else
@@ -189,6 +194,7 @@ if [[ -z "$DID" ]]; then
      viewport:($p.viewport // null), rect:($p.rect // null), text:(($p.text // "")[0:4000]),
      appliedAs:null, appliedVersion:null, references:[], versions:[]}' >"$DDIR/draft.json"
   tmp="$(mktemp)"; jq --argjson m "$MATERIAL" '.material = $m' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"
+  if [[ "$PLACEMENT" != replace ]]; then tmp="$(mktemp)"; jq --arg p "$PLACEMENT" '.placement = $p' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
   if [[ -n "$REVISES" ]]; then tmp="$(mktemp)"; jq --arg r "$REVISES" '.revises = $r' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
   if [[ -n "${RENAMES:-}" ]]; then tmp="$(mktemp)"; jq --arg r "$RENAMES" '.renames = $r' "$DDIR/draft.json" >"$tmp" && mv "$tmp" "$DDIR/draft.json"; fi
   LIB_NAME="$COMP_NAME"; [[ -z "$LIB_NAME" && -f "$DDIR/bestand-komponente.json" ]] && LIB_NAME="$REVISES"
@@ -226,6 +232,7 @@ else
     cp "$DDIR/v$BASE/component.json" "$DDIR/v$VERSION/" 2>/dev/null || true
   fi
   PAGE="$(jq -r .page "$DDIR/draft.json")"; SELECTOR="$(jq -r .selector "$DDIR/draft.json")"
+  PLACEMENT="$(jq -r '.placement // "replace"' "$DDIR/draft.json")"
   # Ältere Entwürfe: Material stammt aus dem Browser und ist gekürzt -> einmalig ungekürzt aus der Seitendatei holen
   MATERIAL_REFRESHED=""
   if [[ "$(jq -r '.material // null' "$DDIR/draft.json")" == "null" && "$(tail -c 16 "$DDIR/source.html" | tr -d '[:space:]')" == *"…" ]]; then
@@ -317,6 +324,12 @@ else
 Selektor des Elements: $SELECTOR
 Breite des Elements beim Auswählen: $WIDTH (Viewport $VIEWPORT)"
   MATERIAL_TEXT="Ausgangsmaterial: source.html (bisheriges Element) und bausteine.json (Bausteine der Seite) in diesem Ordner."
+  if [[ "$PLACEMENT" != replace ]]; then
+    WO="$([[ "$PLACEMENT" == before ]] && echo "vor" || echo "nach")"
+    PLACE_TEXT+="
+Platzierung: Die Komponente ist ein NEUES Element und wird direkt $WO dem gewählten Element eingefügt, auf derselben Ebene (Geschwister). Das gewählte Element bleibt unverändert auf der Seite und gehört NICHT in die Komponente: kein Wrapper um beide, keine Kopie seiner Inhalte."
+    MATERIAL_TEXT="Ausgangsmaterial: source.html ist das gewählte Nachbarelement (nur Zusammenhang: Breite, Raster, Abstände und Stil der Umgebung, kein Inhalt der Komponente) und bausteine.json (Bausteine der Seite) in diesem Ordner. Inhalte der neuen Komponente kommen aus dem Auftrag; was dort fehlt, als erkennbare Beispiele mit data-mx-platzhalter."
+  fi
 fi
 
 LIB_NAME="$(jq -r '.component.name // ""' "$DDIR/draft.json")"
@@ -340,7 +353,7 @@ Anpassen musst du nur, was die Regeln in CLAUDE.md verlangen:
 1. Format: genau ein Wurzelelement mit der Klasse mx-<name>, alles CSS in @scope (.mx-<name>). Regeln für html, body, :root oder * auf :scope bzw. auf Elemente innerhalb umschreiben. Den :root-Block mit --dps-Variablen nicht übernehmen (die Tokens sind auf der Seite vorhanden).
 2. Tokens: Farben und Schriften über var(--dps-…); abweichende Farben auf den nächstliegenden passenden Token abbilden, fremde Schriften durch die Schrift der Website ersetzen. Größen und Abstände des Imports bleiben; Werte, die einem Token entsprechen, schreibst du als var(--dps-…). Gesperrte Tokens sind fest (z. B. Button-Höhe, Radien): dort gilt der Token, nie abwandeln.
 3. Nicht breiter als das Element, Texte und Bedienelemente innerhalb der Inhaltsbreite (siehe unten und CLAUDE.md „Hauptraster“). Die Spaltenaufteilung des Imports bleibt.
-4. $( [[ "$PLATZ" == true ]] && echo "Inhalte: Sie kommen aus dem Import (neues Projekt, source.html ist nur ein freier Platz). Übernimm sie vollständig. Externe Bilder oder Adressen ersetzt du durch Bildflächen mit festem Seitenverhältnis bzw. entfernst sie." || echo "Inhalte: Umfang und Auswahl wie im Import (der Import kann bewusst nur eine Auswahl oder Beispiele zeigen). Was der Import zeigt, gleichst du mit source.html ab: Texte stimmen, src- und href-Werte exakt aus source.html, externe Adressen aus dem Import ersetzen. Einträge aus source.html, die im Import fehlen, ergänzt du NICHT, sondern nennst sie zusammengefasst als einen Punkt in befund.json mit \"umgesetzt\": false (Ausnahme: der Auftrag verlangt Vollständigkeit). Erfundene Angaben nur, wenn der Auftrag sie verlangt, dann mit data-mx-platzhalter.")
+4. $( [[ "$PLATZ" == true || "$PLACEMENT" != replace ]] && echo "Inhalte: Sie kommen aus dem Import ($([[ "$PLACEMENT" != replace ]] && echo "neues Element neben dem gewählten, source.html ist nur der Nachbar" || echo "neues Projekt, source.html ist nur ein freier Platz")). Übernimm sie vollständig. Externe Bilder oder Adressen ersetzt du durch Bildflächen mit festem Seitenverhältnis bzw. entfernst sie." || echo "Inhalte: Umfang und Auswahl wie im Import (der Import kann bewusst nur eine Auswahl oder Beispiele zeigen). Was der Import zeigt, gleichst du mit source.html ab: Texte stimmen, src- und href-Werte exakt aus source.html, externe Adressen aus dem Import ersetzen. Einträge aus source.html, die im Import fehlen, ergänzt du NICHT, sondern nennst sie zusammengefasst als einen Punkt in befund.json mit \"umgesetzt\": false (Ausnahme: der Auftrag verlangt Vollständigkeit). Erfundene Angaben nur, wenn der Auftrag sie verlangt, dann mit data-mx-platzhalter.")
 5. Kein JavaScript, keine Event-Handler; Interaktion nur mit HTML und CSS.
 6. Bausteine: Nur Teile des Imports, die einem Baustein aus bausteine.json entsprechen (z. B. Buttons), kommen in meta.json (\"source\": \"neu\", klassen.neu und klassen.bestand) und tragen data-mx-baustein, wie in CLAUDE.md beschrieben. Alle anderen Teile bleiben ohne Baustein-Angaben.
 befund.json enthält nur Punkte zur Übernahme: was du angepasst hast und warum (Token statt Wert, Schrift ersetzt, Inhalte ergänzt, Raster), jeweils \"umgesetzt\": true; Punkte, die eine Entscheidung brauchen, mit \"umgesetzt\": false. Leere Liste, wenn nichts anzupassen war.
@@ -370,6 +383,8 @@ Material: source.html ist die Vorlage der Komponente (alle Slots, data-mx-varian
 Ändere nur, was der Auftrag verlangt. Varianten- und Slot-Namen bleiben (Kopien auf den Seiten hängen daran); Varianten, die auf Seiten verwendet werden, dürfen nicht wegfallen. Ein neuer Slot nur, wenn der Auftrag ihn verlangt.
 befund.json enthält nur Punkte zur Änderung, jeweils \"umgesetzt\": true; Entscheidungen mit \"umgesetzt\": false.
 Die Zusammenfassung nennt die Änderung und ob sich der Aufbau geändert hat (dann müssen die Kopien angeglichen werden)."
+elif (( VERSION == 1 )) && [[ "$PLACEMENT" != replace ]]; then
+  TASK="Entwirf ein neues Element als Komponente, das $([[ "$PLACEMENT" == before ]] && echo "vor" || echo "nach") dem gewählten Element eingefügt wird (Entwurf $DID, Version 1). Schreibe component.html, component.css und meta.json nach v1/ und zum Schluss den Befund nach v1/befund.json (höchstens 12 Punkte)."
 elif (( VERSION == 1 )); then
   TASK="Entwirf das gewählte Element als Komponente (Entwurf $DID, Version 1). Schreibe component.html, component.css und meta.json nach v1/ und zum Schluss den Befund nach v1/befund.json (höchstens 12 Punkte)."
 else

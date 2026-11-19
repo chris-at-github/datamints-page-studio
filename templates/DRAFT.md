@@ -47,7 +47,7 @@ Nennt der Auftrag eine Komponente für die Bibliothek, ist die Komponente zusät
 
 ## Hauptraster
 Der Auftrag nennt in einem Satz, wie breit das Element ist: in der Inhaltsbreite (`var(--dps-container-max-width)`) oder über die volle Breite, und den Seitenrand auf schmalen Bildschirmen (`var(--dps-container-spacing-x)`). Fehlen die Tokens, nennt er die gemessenen Pixel. Die Messung je Bildschirmbreite steht in `layout.json` (falls vorhanden).
-- **Nicht breiter als das Element (fest):** Die Komponente ersetzt das Element an seiner Stelle auf der Seite. Sie wird nie breiter als angegeben, erzeugt kein seitliches Scrollen und bricht nicht über das Element hinaus aus (kein `100vw`).
+- **Nicht breiter als das Element (fest):** Die Komponente ersetzt das Element an seiner Stelle auf der Seite (bei „davor/danach einfügen“ steht sie als neues Element daneben, in derselben Breite). Sie wird nie breiter als angegeben, erzeugt kein seitliches Scrollen und bricht nicht über das Element hinaus aus (kein `100vw`).
 - **Inhaltskante:** Texte und Bedienelemente bleiben innerhalb der Inhaltsbreite, damit sie mit dem Rest der Seite fluchten; auf schmalen Bildschirmen mit dem angegebenen Seitenrand. Hintergründe, Flächen und Bilder dürfen bis zur Kante des Elements reichen.
 - **Spalten sind der Ausgangspunkt:** Anzahl, Verhältnis und Anordnung der Spalten im bisherigen Element darfst du ändern, wenn die Gestaltung dadurch besser wird. Nenne die Änderung in der Zusammenfassung.
 - Verlangt der Auftrag ein bestimmtes Raster, gilt der Auftrag.

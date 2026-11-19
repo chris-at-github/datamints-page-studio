@@ -128,15 +128,31 @@ export function validateComponent(cheerio, { html, css, name, allowedHosts = new
   return { errors, warnings };
 }
 
-// Ersetzt das erste Element zu selector im HTML-Text; der Rest bleibt byte-gleich.
-export function replaceElement(cheerio, text, selector, html) {
+// Platzierung eines Entwurfs: das gewählte Element ersetzen oder die Komponente davor bzw. danach einfügen
+export const PLACEMENTS = ['replace', 'before', 'after'];
+export const placementOf = (d) => (d && PLACEMENTS.includes(d.placement) ? d.placement : 'replace');
+
+// Setzt html anstelle des ersten Elements zu selector ein (placement "replace") oder davor/danach als Geschwister
+// ("before"/"after", mit der Einrückung des Elements); der Rest bleibt byte-gleich.
+export function placeElement(cheerio, text, selector, html, placement = 'replace') {
   const $ = cheerio.load(text, { sourceCodeLocationInfo: true });
   let n;
   try { n = $(selector).first(); } catch { return { error: `Ungültiger Selektor: ${selector}` }; }
   if (!n.length) return { error: `Selektor trifft in der Seite nichts: ${selector}` };
   const loc = n[0].sourceCodeLocation;
   if (!loc || loc.startOffset == null || loc.endOffset == null) return { error: `Position nicht ermittelbar: ${selector}` };
-  return { text: text.slice(0, loc.startOffset) + html.trim() + text.slice(loc.endOffset) };
+  const h = html.trim();
+  const lineStart = text.lastIndexOf('\n', loc.startOffset - 1) + 1;
+  const lead = text.slice(lineStart, loc.startOffset);
+  const indent = /^[ \t]*$/.test(lead) ? lead : '';
+  if (placement === 'before') return { text: text.slice(0, loc.startOffset) + h + '\n' + indent + text.slice(loc.startOffset) };
+  if (placement === 'after') return { text: text.slice(0, loc.endOffset) + '\n' + indent + h + text.slice(loc.endOffset) };
+  return { text: text.slice(0, loc.startOffset) + h + text.slice(loc.endOffset) };
+}
+
+// Ersetzt das erste Element zu selector im HTML-Text; der Rest bleibt byte-gleich.
+export function replaceElement(cheerio, text, selector, html) {
+  return placeElement(cheerio, text, selector, html, 'replace');
 }
 
 // Element genau so aus der Seite holen, wie es beim Übernehmen ersetzt würde (Originalmarkup, ungekürzt).
@@ -440,6 +456,8 @@ async function main() {
   const toLibrary = page === '__komponenten';
   if (toLibrary && !v.library) out({ error: 'Ziel Bibliothek: Die Version braucht eine component.json' }, 3);
   let herkunft = '/' + page;
+  let placement = 'replace';
+  try { placement = placementOf(JSON.parse(fs.readFileSync(path.join(draftDir, 'draft.json'), 'utf8'))); } catch { /* ersetzen */ }
   // vorschau: Darstellung auf der Komponentenseite (Breite am Einsatzort beim Auswählen); auf der Komponentenseite bleibt sie
   let vorschau = null;
   try { vorschau = previewOf(JSON.parse(fs.readFileSync(path.join(siteDir, 'components', `mx-${v.name}.json`), 'utf8'))); } catch { vorschau = null; }
@@ -451,7 +469,7 @@ async function main() {
     const cheerio = await loadCheerio();
     const file = path.join(siteDir, 'www', page);
     const src = readText(file);
-    const r = replaceElement(cheerio, src.text, selector, instanceHtml(cheerio, v));
+    const r = placeElement(cheerio, src.text, selector, instanceHtml(cheerio, v), placement);
     if (r.error) out({ error: r.error }, 1);
     fs.writeFileSync(file, r.text, src.enc);
   }
@@ -473,7 +491,7 @@ async function main() {
     fs.writeFileSync(path.join(compDir, `mx-${v.name}.html`), v.html.trim() + '\n');
     fs.writeFileSync(path.join(compDir, `mx-${v.name}.json`), JSON.stringify({ ...v.library, ...(typeof herkunft === 'string' ? { herkunft } : {}), ...(vorschau ? { vorschau } : {}) }, null, 2) + '\n');
   }
-  out({ name: v.name, title: v.meta.title || '', page: '/' + page, cssFile: `components/mx-${v.name}.css`, library: !!v.library, target: toLibrary ? 'library' : 'page', warnings: v.warnings,
+  out({ name: v.name, title: v.meta.title || '', page: '/' + page, placement: toLibrary ? null : placement, cssFile: `components/mx-${v.name}.css`, library: !!v.library, target: toLibrary ? 'library' : 'page', warnings: v.warnings,
     platzhalter: v.platzhalter, offen: v.befund.filter((b) => !b.umgesetzt).map((b) => `${b.id} ${b.titel}`) });
 }
 

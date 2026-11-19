@@ -597,6 +597,7 @@
     '.bst-row > span:first-child{flex:1}' +
     '.bst-row.changed > span:first-child{font-weight:600;color:var(--ui-info)}' +
     '.seg{display:inline-flex;gap:0}' +
+    '.pplace{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin:10px 0 0;font-size:12px;color:var(--ui-muted)}' +
     '.seg button{border-radius:0;margin-left:-1px}' +
     '.seg button:first-child{border-radius:6px 0 0 6px;margin-left:0}' +
     '.seg button:last-child{border-radius:0 6px 6px 0}' +
@@ -747,6 +748,25 @@
   function showCompName(on) { pComp.style.display = on ? 'none' : ''; pCompName.style.display = pCompGo.style.display = on ? '' : 'none'; }
   showCompName(false);
   var pCompRow = el('div', { class: 'pcomp' }, [pComp, pCompName, pCompGo]);
+  // Platzierung eines Entwurfs: gewähltes Element ersetzen oder den Entwurf als neues Element davor/danach einfügen
+  var pPlace = 'replace';
+  var pPlaceBtns = [
+    ['replace', 'Ersetzen', 'Der Entwurf ersetzt das gewählte Element'],
+    ['before', 'Davor einfügen', 'Der Entwurf wird als neues Element vor dem gewählten eingefügt, auf derselben Ebene; das gewählte Element bleibt'],
+    ['after', 'Danach einfügen', 'Der Entwurf wird als neues Element nach dem gewählten eingefügt, auf derselben Ebene; das gewählte Element bleibt'],
+  ].map(function (o) {
+    var b = el('button', { type: 'button', text: o[1], title: o[2], 'aria-pressed': String(o[0] === 'replace'), 'data-place': o[0] });
+    b.addEventListener('click', function () { setPlace(o[0]); });
+    return b;
+  });
+  function setPlace(v) {
+    pPlace = v;
+    pPlaceBtns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-place') === v)); });
+  }
+  var pPlaceRow = el('div', { class: 'pplace' }, [
+    el('span', { class: 'pplace-lbl', id: 'dps-pplace', text: 'Entwurf:' }),
+    el('div', { class: 'seg', role: 'group', 'aria-labelledby': 'dps-pplace' }, pPlaceBtns),
+  ]);
   var pKeysQueue = el('span', { text: 'Entwurf erstellen' });
   var pKeys = el('div', { class: 'pkeys' }, [el('kbd', { text: 'Strg' }), '+', el('kbd', { text: 'Enter' }), ' ', pKeysQueue, ' · ', el('kbd', { text: 'Esc' }), ' Schließen']);
   var pTokBtn = iconButton('palette', 'Token oder Komponente einfügen', { class: 'ghost tokbtn', 'aria-expanded': 'false', 'aria-controls': 'dps-tokpop', title: 'Design-Token oder Komponente aus der Bibliothek in den Prompt einfügen (Strg+Leertaste)' });
@@ -764,6 +784,7 @@
     pDrop,
     pFile,
     pThumbs,
+    pPlaceRow,
     pErr,
     el('div', { class: 'pfoot' }, [pCompRow, el('span', { class: 'spacer' }), pSplit, pDraft]),
     pKeys,
@@ -1028,6 +1049,7 @@
     if (followupJob) closeQMenu(false);
     pKeysQueue.textContent = followupJob ? 'Direkt umsetzen' : 'Entwurf erstellen';
     pDraft.style.display = followupJob ? 'none' : '';
+    pPlaceRow.style.display = followupJob ? 'none' : '';
     pCompRow.style.display = followupJob || CFG.kind !== 'neu' ? 'none' : '';
     if (PREVIEW) { btnSelect.disabled = true; btnSelect.title = 'In der Vorschau eines Entwurfs nicht möglich'; }
     if (LIBRARY) { btnSelect.disabled = true; btnSelect.title = 'Auf der Komponentenseite nicht möglich: Komponenten auf einer Seite auswählen'; }
@@ -1511,6 +1533,7 @@
     pText.value = '';
     pCompName.value = ''; showCompName(false);
     pThorough.checked = true;
+    setPlace('replace');
     pText.placeholder = 'Was soll an diesem Element geändert werden?';
     refs.forEach(function (r) { if (r.kind === 'file' && r.url) URL.revokeObjectURL(r.url); });
     refs = [];
@@ -1932,6 +1955,7 @@
       delete annotation.followup; delete annotation.followup_of;
       if (extMode) annotation.mode = extMode;
       if (extMode === 'component') annotation.componentName = componentName;
+      else if (pPlace !== 'replace') annotation.placement = pPlace;
     }
     var fd = new FormData();
     fd.append('annotation', JSON.stringify(annotation));
@@ -3824,7 +3848,8 @@
   // Wo der Entwurf wirkt: Seite und Selektor oder (Ziel Bibliothek) die Komponentenseite
   function draftWhere(d) {
     if (d.target === 'library') return 'Komponentenseite · mx-' + d.component + (d.newVariant ? ' · neue Variante ' + d.newVariant.key : d.variant ? ' · Variante ' + d.variant : '');
-    return (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector;
+    return (d.page === currentPage() ? 'diese Seite' : d.page) + ' · ' + d.selector +
+      (d.placement === 'before' ? ' · neues Element davor' : d.placement === 'after' ? ' · neues Element danach' : '');
   }
   function draftLabel(d) { var l = latest(d); return (l && l.title) || truncate(d.prompt, 60); }
   function draftsApi(path, body) { return api('POST', '/api/sites/' + encodeURIComponent(SLUG) + '/drafts' + path, body || {}); }

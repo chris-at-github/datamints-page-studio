@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import busboy from 'busboy';
 import { renderStartPage } from './startpage.js';
 import { loadCheerio } from '../../scripts/lib/consistency.mjs';
-import { loadVersion, replaceElement, layerLegacyCss, readText, validateBefund, instanceHtml } from '../../scripts/lib/draft.mjs';
+import { loadVersion, placeElement, placementOf, PLACEMENTS, layerLegacyCss, readText, validateBefund, instanceHtml } from '../../scripts/lib/draft.mjs';
 import { listLibrary, libraryPage } from '../../scripts/lib/components.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -230,7 +230,7 @@ async function readDraft(slug, id) {
   return { id: d.id, page: d.page, selector: d.selector, prompt: d.prompt, created: d.created, status: draftStatus(slug, d),
     external: d.external === true, brief: brief ? { created: brief.created } : null,
     appliedAs: d.appliedAs || null, appliedVersion: d.appliedVersion || null, revises: d.revises || null, renames: d.renames || null, component: d.component?.name || null,
-    target: d.target || null, newVariant: d.newVariant || null, variant: d.variant || null, versions };
+    target: d.target || null, newVariant: d.newVariant || null, variant: d.variant || null, placement: placementOf(d), versions };
 }
 
 async function listDrafts(slug) {
@@ -252,7 +252,7 @@ async function draftPreview(slug, file, rel, draftId, versionArg) {
   if (v.errors.length) return { error: `Entwurf ungültig: ${v.errors.join('; ')}` };
   const src = readText(file);
   const cheerio = await loadCheerio();
-  const r = replaceElement(cheerio, src.text, d.selector, instanceHtml(cheerio, v));
+  const r = placeElement(cheerio, src.text, d.selector, instanceHtml(cheerio, v), d.placement);
   if (r.error) return { error: r.error };
   return { buf: Buffer.from(r.text, src.enc), preview: { draft: draftId, version, name: v.name } };
 }
@@ -1036,6 +1036,8 @@ async function handleApi(req, res, url) {
       const params = { site: slug, page, selector, html, text, viewport, prompt, references,
         rect: annotation.rect ? { width: Math.round(Number(annotation.rect.width)) || null, height: Math.round(Number(annotation.rect.height)) || null } : null,
         bausteine: annotation.bausteine || [] };
+      // Platzierung: Element ersetzen (Standard) oder die Komponente davor/danach einfügen; nicht bei „Als Komponente“
+      if (mode !== 'component' && PLACEMENTS.includes(annotation.placement) && annotation.placement !== 'replace') params.placement = annotation.placement;
       if (mode === 'brief') params.mode = 'brief';
       if (mode === 'component') { params.mode = 'component'; params.componentName = String(annotation.componentName); }
       if (mode === 'import') {

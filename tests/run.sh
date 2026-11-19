@@ -360,6 +360,25 @@ check "Überarbeitung erkannt (Name bleibt, bisheriges CSS als Material)" '[[ "$
 set +e; OUT="$(./scripts/draft-apply.sh "$SLUG" "$RD" 2>/dev/null)"; rc=$?; set -e
 check "Überarbeitung ersetzt components/mx-hero.css" '(( rc == 0 )) && grep -q "padding: 2rem" "$S/components/mx-hero.css" && [[ "$(ls "$S/components" | wc -l)" == 1 ]]'
 rm -f "$JOBR" logs/claude-job-test-rev*.json logs/claude-job-test-rev*.stderr.log
+# Platzierung „davor einfügen“: neues Element als Geschwister, das gewählte (auch eine Komponente) bleibt unverändert
+PREV_INS="$(git -C "$S" rev-parse HEAD)"
+JOBI="$(mktemp)"; ARGI="$(mktemp)"
+jq -n --arg page "$ENTRY" '{id:"job-test-ins", params:{page:$page, selector:"section.mx-hero", html:"<section class=\"mx-hero\"></section>", text:"", prompt:"Davor eine neue Section mit Downloads", placement:"before"}}' >"$JOBI"
+OUT="$(FAKE_CLAUDE_ARGS="$ARGI" FAKE_CLAUDE_NAME=downloads PATH="$ROOT/tests/fake-claude:$PATH" ./scripts/draft-create.sh "$SLUG" "$JOBI" 2>/dev/null)" || true
+ID_INS="$(jq -r .draft <<<"$OUT")"
+check "Davor einfügen: Platzierung gespeichert, keine Überarbeitung, Auftrag nennt Geschwister ohne Wrapper" '[[ "$(jq -r .placement "$S/drafts/$ID_INS/draft.json")" == before && "$(jq -r ".revises // empty" "$S/drafts/$ID_INS/draft.json")" == "" ]] && grep -q "Platzierung: Die Komponente ist ein NEUES Element und wird direkt vor dem gewählten Element eingefügt" "$ARGI" && grep -q "kein Wrapper" "$ARGI"'
+set +e; OUT="$(./scripts/draft-apply.sh "$SLUG" "$ID_INS" 2>/dev/null)"; rc=$?; set -e
+check "Davor einfügen: neue Komponente vor dem Element, Element bleibt" '(( rc == 0 )) && node -e "const t=require(\"fs\").readFileSync(process.argv[1],\"utf8\");const a=t.indexOf(\"class=\\\"mx-downloads\\\"\"),b=t.indexOf(\"class=\\\"mx-hero\\\"\");process.exit(a>=0&&b>a?0:1)" "$P" && [[ -f "$S/components/mx-downloads.css" && -f "$S/components/mx-hero.css" ]]'
+./scripts/rollback.sh "$SLUG" "$PREV_INS" >/dev/null 2>&1 || true
+check "Rücksprung entfernt die eingefügte Komponente wieder" '! grep -q "mx-downloads" "$P" && [[ ! -f "$S/components/mx-downloads.css" ]]'
+rm -f "$JOBI" "$ARGI" logs/claude-job-test-ins*.json logs/claude-job-test-ins*.stderr.log
+OUT="$(node --input-type=module -e "
+import { placeElement } from './scripts/lib/draft.mjs';
+import { loadCheerio } from './scripts/lib/consistency.mjs';
+const c = await loadCheerio(); const t = '<main>\n  <section id=\"a\">A</section>\n</main>';
+console.log(JSON.stringify(['before', 'after', 'replace'].map((p) => placeElement(c, t, '#a', '<div class=\"mx-n\">N</div>', p).text)));
+")"
+check "placeElement: davor/danach mit Einrückung, ersetzen wie bisher" 'jq -e ".[0] == \"<main>\n  <div class=\\\"mx-n\\\">N</div>\n  <section id=\\\"a\\\">A</section>\n</main>\" and .[1] == \"<main>\n  <section id=\\\"a\\\">A</section>\n  <div class=\\\"mx-n\\\">N</div>\n</main>\" and .[2] == \"<main>\n  <div class=\\\"mx-n\\\">N</div>\n</main>\"" <<<"$OUT" >/dev/null'
 OUT="$(node --input-type=module -e "
 import { layerLegacyCss } from './scripts/lib/draft.mjs';
 const h = '<link rel=\"stylesheet\" href=\"/css/a.css?x=1&amp;y=2\" media=\"screen\"><link rel=\"icon\" href=\"/f.ico\"><style>@import url(b.css);h1{color:red}</style><style data-dps>x{}</style>';

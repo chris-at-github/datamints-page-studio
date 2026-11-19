@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { startServer, makeReader } from './render.mjs';
-import { loadVersion, instanceHtml, replaceElement, readText } from './draft.mjs';
+import { loadVersion, instanceHtml, placeElement, placementOf, readText } from './draft.mjs';
 import { loadCheerio } from './consistency.mjs';
 import { exitJson } from './stdout.mjs';
 
@@ -101,7 +101,9 @@ async function main() {
     const cheerio = await loadCheerio();
     const pageRel = 'www' + spec.page;
     const src = readText(path.join(siteDir, pageRel));
-    const r = replaceElement(cheerio, src.text, spec.selector, instanceHtml(cheerio, v));
+    let placement = 'replace';
+    try { placement = placementOf(JSON.parse(fs.readFileSync(path.join(draftDir, 'draft.json'), 'utf8'))); } catch { /* ersetzen */ }
+    const r = placeElement(cheerio, src.text, spec.selector, instanceHtml(cheerio, v), placement);
     if (r.error) out({ status: 'error', error: `Element nicht ersetzbar: ${r.error}` }, 1);
     const base = makeReader(siteDir, 'after');
     const draftReader = { ...base, read: async (rel) => (rel === pageRel ? Buffer.from(r.text, src.enc) : base.read(rel)) };

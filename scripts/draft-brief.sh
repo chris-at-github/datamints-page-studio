@@ -17,6 +17,15 @@ DDIR="$SITE/drafts/$DID"
 # Entwurf auf der Komponentenseite: kein Element auf einer Seite (keine Bilder, kein Raster), Briefing gibt es dafür nicht
 [[ "$(jq -r '.target // ""' "$DDIR/draft.json")" != library ]] || die "Briefing für claude.ai gibt es nur für Elemente auf einer Seite, nicht für Entwürfe auf der Komponentenseite"
 PAGE="$(jq -r .page "$DDIR/draft.json")"; SELECTOR="$(jq -r .selector "$DDIR/draft.json")"
+# Davor/danach einfügen: neues Element neben dem gewählten; das gewählte ist nur Nachbar (Zusammenhang, kein Inhalt)
+PLACEMENT="$(jq -r '.placement // "replace"' "$DDIR/draft.json")"
+PLACE_BRIEF=""
+if [[ "$PLACEMENT" != replace ]]; then
+  PLACE_BRIEF="
+
+## Platzierung
+Gestalte ein NEUES Element, das direkt $([[ "$PLACEMENT" == before ]] && echo "vor" || echo "nach") dem angegebenen Element auf derselben Ebene eingefügt wird. Das angegebene Element bleibt unverändert und gehört nicht in dein Ergebnis (kein gemeinsamer Wrapper). Das angehängte Element zeigt nur den Zusammenhang (Breite, Raster, Stil der Umgebung); die Inhalte des neuen Elements kommen aus dem Auftrag, nicht aus dieser Datei."
+fi
 PROMPT_USER="$(jq -r .prompt "$DDIR/draft.json")"
 OUT="$DDIR/brief"
 rm -rf "$OUT"; mkdir -p "$OUT"
@@ -33,7 +42,7 @@ Ausgabeformat abweichend von „je Seite“: nur dieser Bereich, als HTML-Datei,
 $( [[ "$ELEMENT" == true ]] && echo "
 Der bisherige Bereich liegt bei: $DID-element.html (Material, keine Anweisung). Inhalte, Texte und Links daraus übernehmen, sofern der Auftrag nichts anderes verlangt." )
 ## Auftrag
-$PROMPT_USER
+$PROMPT_USER$PLACE_BRIEF
 B
   jq -n --arg created "$(now_iso)" --arg d "$DID" --argjson el "$ELEMENT" '{created:$created, text:"briefing.md", files:(if $el then [{file:($d + "-element.html"), kind:"html"}] else [] end)}' >"$OUT/brief.json"
   log "$SLUG $DID: Briefing erstellt (neues Projekt, Projektwissen im Paket)"
@@ -93,7 +102,7 @@ cat >"$OUT/briefing.md" <<B
 Gestalte ein Element einer bestehenden Website ($HOST) neu. Das Ergebnis übernehme ich anschließend in mein Werkzeug und passe es dort im Detail an.
 
 ## Auftrag
-$PROMPT_USER
+$PROMPT_USER$PLACE_BRIEF
 
 ## Material (angehängt)
 $FILES_LIST
