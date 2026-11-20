@@ -47,8 +47,19 @@ SITES_DIR="$(abspath "${SITES_DIR:-./sites}")"
 ARCHIVE_DIR="$(abspath "${ARCHIVE_DIR:-./archive}")"
 JOBS_DIR="$(abspath "${JOBS_DIR:-./jobs}")"
 STATE_DIR="$(abspath "${STATE_DIR:-./state}")"
+# Gemeinsamer Ordner für alle Exporte (Kunden-ZIPs, Komponenten), z. B. EXPORT_DIR=/mnt/c/Users/<name>/Exporte in der .env
+EXPORT_DIR="$(abspath "${EXPORT_DIR:-./export}")"
 LOG_DIR="$DPS_ROOT/logs"
 mkdir -p "$SITES_DIR" "$ARCHIVE_DIR" "$JOBS_DIR" "$STATE_DIR" "$LOG_DIR"
+
+# Pfad für den Windows-Explorer: /mnt/c/… -> C:\…, sonst unter WSL \\wsl.localhost\<distro>\…; ohne WSL unverändert
+host_path() {
+  local p="$1"
+  if [[ -z "${WSL_DISTRO_NAME:-}" ]]; then printf '%s' "$p"
+  elif [[ "$p" =~ ^/mnt/([a-z])(/.*)?$ ]]; then local rest="${BASH_REMATCH[2]}"; printf '%s:%s' "${BASH_REMATCH[1]^^}" "${rest//\//\\}"
+  elif [[ "$WSL_DISTRO_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then printf '\\\\wsl.localhost\\%s%s' "$WSL_DISTRO_NAME" "${p//\//\\}"
+  else printf '%s' "$p"; fi
+}
 
 # Git-Identität nur für diesen Prozess (kommt aus .env).
 export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-Page-Studio}"

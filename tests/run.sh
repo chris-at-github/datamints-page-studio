@@ -11,6 +11,8 @@ DPS_ROOT="$ROOT"
 source scripts/lib/node-env.sh
 node_version_ok "$(command -v node)" || { echo "Node.js ab $DPS_NODE_MIN nötig, gefunden: $(node -v 2>/dev/null)" >&2; exit 1; }
 SLUG=dps-test
+# Exporte der Tests in einen eigenen Ordner, nicht in den gemeinsamen Export-Ordner
+TEST_EXPORT_DIR="$(mktemp -d)"; export EXPORT_DIR="$TEST_EXPORT_DIR"
 PORT="${TEST_PORT:-8765}"
 S="sites/$SLUG"
 PASS=0; FAIL=0
@@ -24,7 +26,7 @@ if ! curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then
   SERVER_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.3; done
 fi
-cleanup() { [[ -n "$SERVER_PID" ]] && { kill "$SERVER_PID" 2>/dev/null || true; }; [[ -n "${SRV_PID:-}" ]] && { kill "$SRV_PID" 2>/dev/null || true; }; [[ -n "${TEST_JOBS_DIR:-}" ]] && rm -rf "$TEST_JOBS_DIR"; rm -rf "$S" "sites/dps-test-neu" "sites/dps-test-leer" "sites/dps-test-mig"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
+cleanup() { [[ -n "$SERVER_PID" ]] && { kill "$SERVER_PID" 2>/dev/null || true; }; [[ -n "${SRV_PID:-}" ]] && { kill "$SRV_PID" 2>/dev/null || true; }; [[ -n "${TEST_JOBS_DIR:-}" ]] && rm -rf "$TEST_JOBS_DIR"; rm -rf "$TEST_EXPORT_DIR"; rm -rf "$S" "sites/dps-test-neu" "sites/dps-test-leer" "sites/dps-test-mig"; rm -rf archive/"$SLUG"-*; ./scripts/site-list.sh >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 rm -rf "$S"
 
